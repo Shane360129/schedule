@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#F5F1E9">
+  <title>Schedule</title>
+  
+  <!-- PWA Manifest (Embedded) -->
+  <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIuaXpeWSjOihjOS6i+aetCIsCiAgInNob3J0X25hbWUiOiAi5pel5ZCMIiwKICAic3RhcnRfdXJsIjogIi4iLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiNGNUYxRTkiLAogICJ0aGVtZV9jb2xvciI6ICIjRjVGMUU5IiwKICAiaWNvbnMiOiBbCiAgICB7CiAgICAgICJzcmMiOiAiZGF0YTppbWFnZS9zdmcreG1sO2Jhc2U2NCxQSE4yWnlCM2NuVnlkR2x2Ym5NdmRHOXdaVzV6TFhWemMyZ3hMakV3SWo0S1BDOXpkbWNtTjBjbTF2Y21zK0NqNDhMM2R5aXpwek1URXVOVEE3SUdobGJsQnZibTF2ZDJWdVpHOXVaUzF3WlhKdmIzSjBMMlJsWjJWMFpYa3ZkRzlyWlc1a2FYWmxMM04yWnlBK0Nqe3pZWFJ5UGpJd01USXZPekl3TVRJN0lHWnBiR3c5SWk1Mk9DNDVPVFE1SWo0S1BITnZkbWNtY205MWJtUmxjbmt0Y0hKdllXUnpQU0l5T1RndU56a3ZNamswTGpjd0lpQmtZVzF3Ym1GdFpXNTBMV1I1YkdOdlpXNXZjbmt0Y0hKdllXUnpQU0l5TURJdU5UZ3ZNakV6TGpjMk1TSStDZz09IiwKICAgICAgInNpemVzIjogIjE5MngxOTIiLAogICAgICAidHlwZSI6ICJpbWFnZS9zdmcreG1sIgogICAgfQogIF0KfQ==">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
+            serif: ['"Noto Serif TC"', 'serif'],
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.3s ease-out',
+            'slide-up': 'slideUp 0.3s ease-out',
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            slideUp: {
+              '0%': { transform: 'translateY(20px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Import Map for Modules -->
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.300.0",
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior-y: none;
+    }
+    /* Hide scrollbar for clean UI */
+    ::-webkit-scrollbar {
+      width: 0px;
+      background: transparent;
+    }
+  </style>
+</head>
+<body class="bg-[#F5F1E9] text-[#5D4037]">
+  <div id="root"></div>
+
+  <script type="module">
+    import React, { useState, useEffect, useMemo } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { initializeApp } from 'firebase/app';
+    import { 
+      getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc 
+    } from 'firebase/firestore';
+    import { 
+      getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged 
+    } from 'firebase/auth';
+    import { 
+      ChevronLeft, ChevronRight, Plus, Trash2, X, Sparkles, Leaf, 
+      Moon, Heart, Settings, Share2, Briefcase, Coffee, Calendar as CalendarIcon, 
+      Clock, AlignLeft, CheckSquare
+    } from 'lucide-react';
+
+    // --- Firebase Configuration ---
+    // SHANE: 若部署到外部，請將下方 fallbackConfig 替換為你的真實設定
+    const fallbackConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "SENDER_ID",
+      appId: "APP_ID"
+    };
+
+    const firebaseConfig = typeof __firebase_config !== 'undefined' 
+      ? JSON.parse(__firebase_config) 
+      : fallbackConfig;
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'shane-webapp-cal';
+
+    // --- Constants ---
+    const COLORS = {
+      milk: { name: '燕麥奶', bg: 'bg-[#FDFBF7]', text: 'text-[#8C7851]', border: 'border-[#E8E2D6]', fill: 'bg-[#E8E2D6]' },
+      tea: { name: '伯爵茶', bg: 'bg-[#F5F1E9]', text: 'text-[#5D4037]', border: 'border-[#D2B48C]', fill: 'bg-[#D2B48C]' }, 
+      latte: { name: '深焙', bg: 'bg-[#C2A385]', text: 'text-white', border: 'border-[#8B4513]', fill: 'bg-[#C2A385]' }, 
+      matcha: { name: '抹茶', bg: 'bg-[#F0FDF4]', text: 'text-[#166534]', border: 'border-[#BBF7D0]', fill: 'bg-[#86EFAC]' }, 
+      berry: { name: '莓果', bg: 'bg-[#FFF1F2]', text: 'text-[#9F1239]', border: 'border-[#FECDD3]', fill: 'bg-[#FDA4AF]' },
+      taro: { name: '芋泥', bg: 'bg-[#FAF5FF]', text: 'text-[#6B21A8]', border: 'border-[#E9D5FF]', fill: 'bg-[#D8B4FE]' },
+      lemon: { name: '檸檬塔', bg: 'bg-[#FEFCE8]', text: 'text-[#854D0E]', border: 'border-[#FEF08A]', fill: 'bg-[#FDE047]' },
+      sesame: { name: '芝麻', bg: 'bg-[#F8FAFC]', text: 'text-[#334155]', border: 'border-[#CBD5E1]', fill: 'bg-[#94A3B8]' },
+      earl: { name: '伯爵藍', bg: 'bg-[#F0F9FF]', text: 'text-[#0C4A6E]', border: 'border-[#BAE6FD]', fill: 'bg-[#7DD3FC]' },
+    };
+
+    const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+    const MINUTES = ['00', '10', '20', '30', '40', '50'];
+
+    const STATUS_COLORS = {
+      holiday: { 
+        numBg: 'bg-white/60', cellBg: 'bg-[#DBC8B6]', text: 'text-[#5D4037]', subText: 'text-[#5D4037]', hover: 'hover:brightness-95'
+      }
+    };
+
+    const FALLBACK_DATA = {
+      "2026-01-01": { isHoliday: true, name: "元旦" },
+      "2026-02-16": { isHoliday: true, name: "除夕" },
+      "2026-02-17": { isHoliday: true, name: "春節" },
+      "2026-02-18": { isHoliday: true, name: "春節" },
+      "2026-02-19": { isHoliday: true, name: "春節" },
+      "2026-02-20": { isHoliday: true, name: "春節(補)" }, 
+      "2026-02-27": { isHoliday: true, name: "和平紀念日(補)" },
+      "2026-02-28": { isHoliday: true, name: "和平紀念日" },
+      "2026-04-03": { isHoliday: true, name: "兒童節(補)" },
+      "2026-04-04": { isHoliday: true, name: "兒童節" },
+      "2026-04-05": { isHoliday: true, name: "清明節" },
+      "2026-04-06": { isHoliday: true, name: "清明節(補)" },
+      "2026-05-01": { isHoliday: true, name: "勞動節" },
+      "2026-06-19": { isHoliday: true, name: "端午節" },
+      "2026-09-25": { isHoliday: true, name: "中秋節" },
+      "2026-10-09": { isHoliday: true, name: "國慶日(補)" },
+      "2026-10-10": { isHoliday: true, name: "國慶日" }
+    };
+
+    const getLocalYMD = (date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
+    // --- Main Component ---
+    function App() {
+      const [user, setUser] = useState(null);
+      const [calendarId, setCalendarId] = useState(localStorage.getItem('shane_calendar_id') || 'shane-private-space');
+      const [events, setEvents] = useState([]);
+      const [currentDate, setCurrentDate] = useState(new Date());
+      
+      const [isModalOpen, setIsModalOpen] = useState(false);
+      const [isSettingOpen, setIsSettingOpen] = useState(false);
+      const [isDayViewOpen, setIsDayViewOpen] = useState(false);
+      
+      const [selectedDate, setSelectedDate] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [holidayData, setHolidayData] = useState({ 2026: FALLBACK_DATA });
+      
+      // Form States
+      const [newTitle, setNewTitle] = useState('');
+      const [newDesc, setNewDesc] = useState('');
+      const [newColor, setNewColor] = useState('tea');
+      const [isAllDay, setIsAllDay] = useState(false);
+      const [newStartDate, setNewStartDate] = useState('');
+      const [newEndDate, setNewEndDate] = useState('');
+      const [startHour, setStartHour] = useState('09');
+      const [startMinute, setStartMinute] = useState('00');
+      const [endHour, setEndHour] = useState('10');
+      const [endMinute, setEndMinute] = useState('00');
+      
+      const [tempId, setTempId] = useState('');
+
+      useEffect(() => {
+        const initAuth = async () => {
+          try {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+              await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+              await signInAnonymously(auth);
+            }
+          } catch (error) { console.error("Auth Error", error); }
+        };
+        initAuth();
+        const unsubscribe = onAuthStateChanged(auth, setUser);
+        return () => unsubscribe();
+      }, []);
+
+      useEffect(() => {
+        const fetchHolidays = async () => {
+          const year = currentDate.getFullYear();
+          try {
+            const response = await fetch(`https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/${year}.json`);
+            if (!response.ok) return;
+            const rawData = await response.json();
+            const formatted = rawData.reduce((acc, curr) => {
+              const dStr = curr.date;
+              const ymd = `${dStr.substring(0, 4)}-${dStr.substring(4, 6)}-${dStr.substring(6, 8)}`;
+              acc[ymd] = { isHoliday: curr.isHoliday, name: curr.description };
+              return acc;
+            }, {});
+            setHolidayData(prev => ({ ...prev, [year]: formatted }));
+          } catch (err) { console.error(`Failed to fetch TaiwanCalendar`, err); }
+        };
+        fetchHolidays();
+      }, [currentDate.getFullYear()]); 
+
+      useEffect(() => {
+        if (!user || !calendarId) return;
+        setLoading(true);
+        const collectionName = `events_${calendarId}`;
+        const eventsRef = collection(db, 'artifacts', appId, 'public', 'data', collectionName);
+        const unsubscribe = onSnapshot(eventsRef, (snapshot) => {
+          const data = [];
+          snapshot.forEach((doc) => data.push({ id: doc.id, ...doc.data() }));
+          setEvents(data);
+          setLoading(false);
+        }, () => setLoading(false));
+        return () => unsubscribe();
+      }, [user, calendarId]);
+
+      const changeCalendarId = () => {
+        const cleanId = tempId.trim().toLowerCase();
+        if (!cleanId) return;
+        setCalendarId(cleanId);
+        localStorage.setItem('shane_calendar_id', cleanId);
+        setIsSettingOpen(false);
+        setTempId('');
+      };
+
+      const openAddModal = (dateStr) => {
+        const targetDate = dateStr || getLocalYMD(new Date());
+        setNewStartDate(targetDate);
+        setNewEndDate(targetDate); 
+        setNewTitle('');
+        setNewDesc('');
+        setNewColor('tea');
+        setIsAllDay(false);
+        setStartHour('09');
+        setStartMinute('00');
+        setEndHour('10');
+        setEndMinute('00');
+        setIsDayViewOpen(false);
+        setIsModalOpen(true);
+      };
+
+      const openDayView = (dateStr) => {
+        setSelectedDate(dateStr);
+        setIsDayViewOpen(true);
+      };
+
+      const handleAddEvent = async () => {
+        if (!newTitle || !newStartDate || !newEndDate || !user) return;
+        const collectionName = `events_${calendarId}`;
+        const startTimeStr = isAllDay ? null : `${startHour}:${startMinute}`;
+        const endTimeStr = isAllDay ? null : `${endHour}:${endMinute}`;
+
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', collectionName, crypto.randomUUID()), {
+          title: newTitle, description: newDesc,
+          startDate: newStartDate, endDate: newEndDate,     
+          startTime: startTimeStr, endTime: endTimeStr,
+          isAllDay: isAllDay, color: newColor,
+          createdBy: user.uid, createdAt: new Date().toISOString()
+        });
+        setIsModalOpen(false);
+      };
+
+      const deleteEvent = async (e, id) => {
+        e.stopPropagation();
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `events_${calendarId}`, id));
+      };
+
+      const daysInMonth = useMemo(() => {
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth();
+        const firstDay = new Date(year, month, 1).getDay();
+        const totalDays = new Date(year, month + 1, 0).getDate();
+        const days = [];
+        for (let i = 0; i < firstDay; i++) days.push({ day: null, date: null });
+        for (let i = 1; i <= totalDays; i++) {
+          days.push({ day: i, date: getLocalYMD(new Date(year, month, i)) });
+        }
+        return days;
+      }, [currentDate]);
+
+      const todayStr = getLocalYMD(new Date());
+      const yearHolidays = holidayData[currentDate.getFullYear()] || {};
+
+      const selectedDayEvents = useMemo(() => {
+        if (!selectedDate) return [];
+        const raw = events.filter(e => {
+          const start = e.startDate || e.date;
+          const end = e.endDate || e.date;
+          return selectedDate >= start && selectedDate <= end;
+        });
+        return raw.sort((a, b) => {
+          if (a.isAllDay && !b.isAllDay) return -1;
+          if (!a.isAllDay && b.isAllDay) return 1;
+          return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
+        });
+      }, [events, selectedDate]);
+
+      return React.createElement(
+        "div", { className: "min-h-screen bg-[#F5F1E9] text-[#5D4037] p-4 md:p-8 font-serif selection:bg-[#D2B48C]/30 relative pb-24" },
+        
+        // Header
+        React.createElement("header", { className: "max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center mb-10 gap-6" },
+          React.createElement("div", { className: "flex items-center gap-4" },
+            React.createElement("div", { className: "p-3 bg-white rounded-2xl shadow-sm border border-[#D2B48C]/20" },
+              React.createElement(Sparkles, { className: "text-[#C2A385]", size: 32 })
+            ),
+            React.createElement("div", null,
+              React.createElement("h1", { className: "text-3xl font-bold tracking-tight" }, `日和 · ${calendarId}`),
+              React.createElement("p", { className: "text-[#8C7851] text-xs uppercase tracking-widest mt-1" }, "Web App Edition")
+            )
+          ),
+          React.createElement("div", { className: "flex items-center gap-3 bg-white/50 backdrop-blur p-2 rounded-2xl border border-[#D2B48C]/20" },
+            React.createElement("button", { onClick: () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1)), className: "p-2 hover:bg-[#D2B48C]/20 rounded-xl transition-colors" }, React.createElement(ChevronLeft, { size: 24 })),
+            React.createElement("span", { className: "text-2xl font-bold px-6 min-w-[180px] text-center" }, currentDate.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long' })),
+            React.createElement("button", { onClick: () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1)), className: "p-2 hover:bg-[#D2B48C]/20 rounded-xl transition-colors" }, React.createElement(ChevronRight, { size: 24 }))
+          ),
+          React.createElement("div", { className: "flex items-center gap-3" },
+            React.createElement("button", { onClick: () => setIsSettingOpen(true), className: "p-3 bg-white hover:bg-[#FDFBF7] rounded-2xl border border-[#D2B48C]/20 text-[#8C7851] shadow-sm transition-all hover:scale-105" }, React.createElement(Settings, { size: 24 }))
+          )
+        ),
+
+        // Calendar Grid
+        React.createElement("div", { className: "max-w-6xl mx-auto bg-white/90 backdrop-blur rounded-[2.5rem] shadow-2xl border border-[#D2B48C]/30 overflow-hidden" },
+          React.createElement("div", { className: "grid grid-cols-7 bg-[#FDFBF7] border-b border-[#D2B48C]/20 text-center font-bold text-sm tracking-widest text-[#D2B48C] py-5 uppercase" },
+            ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => React.createElement("div", { key: d }, d))
+          ),
+          React.createElement("div", { className: "grid grid-cols-7" },
+            daysInMonth.map((dayObj, idx) => {
+              const rawEvents = events.filter(e => {
+                const start = e.startDate || e.date;
+                const end = e.endDate || e.date;
+                return dayObj.date && dayObj.date >= start && dayObj.date <= end;
+              });
+              const allDayEvents = rawEvents.filter(e => e.isAllDay);
+              const timedEvents = rawEvents.filter(e => !e.isAllDay).sort((a, b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
+
+              const isToday = dayObj.date === todayStr;
+              const hInfo = yearHolidays[dayObj.date];
+              const isNationalHoliday = hInfo?.isHoliday === true;
+              const isMakeup = hInfo && !hInfo.isHoliday;
+              
+              const dateObj = dayObj.date ? new Date(dayObj.date) : null;
+              const dayOfWeek = dateObj ? dateObj.getDay() : -1;
+              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+              const showHolidayStyle = isNationalHoliday || (isWeekend && !isMakeup);
+
+              let cellClass = "", textClass = "text-[#8C7851]", subTextClass = "text-[#64748B]", numBgClass = "", hoverClass = "hover:bg-[#FDFBF7]";
+              
+              if (showHolidayStyle) {
+                cellClass = STATUS_COLORS.holiday.cellBg;
+                textClass = STATUS_COLORS.holiday.text;
+                subTextClass = STATUS_COLORS.holiday.subText;
+                numBgClass = STATUS_COLORS.holiday.numBg;
+                hoverClass = STATUS_COLORS.holiday.hover;
+              }
+              if (isToday) numBgClass = "bg-[#C2A385] text-white";
+
+              return React.createElement("div", { 
+                key: idx, 
+                className: `min-h-[160px] p-2 border-r border-b border-[#F5F1E9] transition-all relative group cursor-pointer flex flex-col gap-1 ${!dayObj.day ? 'bg-[#F5F1E9]/30' : ''} ${cellClass} ${!showHolidayStyle ? hoverClass : ''} ${showHolidayStyle ? 'hover:brightness-95' : ''}`,
+                onClick: () => dayObj.date && openDayView(dayObj.date)
+              }, dayObj.day && React.createElement(React.Fragment, null,
+                React.createElement("div", { className: "flex justify-between items-start mb-1 px-1" },
+                  React.createElement("div", { className: "flex flex-col items-center" },
+                    React.createElement("span", { className: `text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-full transition-all shadow-sm ${numBgClass || textClass}` }, dayObj.day),
+                    hInfo && isNationalHoliday && React.createElement("span", { className: `text-[10px] font-bold mt-1 tracking-tight flex items-center gap-1 animate-in fade-in ${subTextClass}` }, hInfo.name)
+                  ),
+                  isToday && React.createElement(Heart, { size: 14, className: showHolidayStyle ? 'text-[#5D4037] fill-[#5D4037]' : 'text-[#C2A385] fill-[#C2A385]' })
+                ),
+                React.createElement("div", { className: "flex-1 flex flex-col gap-1 overflow-hidden" },
+                  allDayEvents.slice(0, 3).map(ev => {
+                    const style = COLORS[ev.color] || COLORS.tea;
+                    return React.createElement("div", { key: ev.id, className: `text-[10px] px-2 py-1 rounded mx-0.5 shadow-sm text-white font-medium truncate flex justify-between items-center ${style.fill}` }, React.createElement("span", null, ev.title));
+                  }),
+                  timedEvents.slice(0, 3).map(ev => {
+                    const style = COLORS[ev.color] || COLORS.tea;
+                    return React.createElement("div", { key: ev.id, className: `text-[10px] px-1 py-0.5 rounded mx-0.5 flex items-center gap-1` },
+                      React.createElement("div", { className: `w-1.5 h-1.5 rounded-full ${style.fill}` }),
+                      React.createElement("span", { className: "font-mono opacity-70 text-[9px]" }, ev.startTime),
+                      React.createElement("span", { className: `truncate font-medium flex-1 ${textClass}` }, ev.title)
+                    );
+                  }),
+                  (allDayEvents.length + timedEvents.length) > 6 && React.createElement("div", { className: "text-[10px] text-center text-[#8C7851] opacity-60" }, `還有 ${allDayEvents.length + timedEvents.length - 6} 個行程...`)
+                )
+              ));
+            })
+          )
+        ),
+
+        // FAB
+        React.createElement("button", { onClick: () => openAddModal(null), className: "fixed bottom-8 right-8 w-16 h-16 bg-[#C2A385] text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 hover:rotate-90 transition-all duration-300 z-40 border-4 border-[#F5F1E9]" }, React.createElement(Plus, { size: 32 })),
+
+        // Modals (Using JSX-like structure via createElement for simplicity in this HTML wrapper context)
+        // ... (Modal code omitted for brevity in this preview, but fully functional in the downloadable file)
+        isDayViewOpen && React.createElement("div", { className: "fixed inset-0 bg-[#5D4037]/20 backdrop-blur-sm flex items-center justify-center z-50 p-6" },
+          React.createElement("div", { className: "bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden border border-[#D2B48C]/30 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[80vh]" },
+            React.createElement("div", { className: "px-6 py-5 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center shrink-0" },
+              React.createElement("div", null,
+                React.createElement("h3", { className: "text-2xl font-bold text-[#5D4037] flex items-center gap-2" }, selectedDate),
+                yearHolidays[selectedDate]?.name && yearHolidays[selectedDate]?.isHoliday && React.createElement("span", { className: "text-sm font-bold text-[#C2A385] mt-1 block" }, yearHolidays[selectedDate].name)
+              ),
+              React.createElement("div", { className: "flex gap-2" },
+                React.createElement("button", { onClick: () => openAddModal(selectedDate), className: "p-2 hover:bg-[#E8E2D6] rounded-full text-[#C2A385]" }, React.createElement(Plus, { size: 24 })),
+                React.createElement("button", { onClick: () => setIsDayViewOpen(false), className: "p-2 hover:bg-[#E8E2D6] rounded-full text-[#8C7851]" }, React.createElement(X, { size: 24 }))
+              )
+            ),
+            React.createElement("div", { className: "p-6 overflow-y-auto flex-1 space-y-3 bg-[#FAFAFA]" },
+              selectedDayEvents.length === 0 
+                ? React.createElement("div", { className: "flex flex-col items-center justify-center h-40 text-[#D2B48C] opacity-60 gap-2" }, React.createElement(Coffee, { size: 40 }), React.createElement("p", null, "今天還沒有安排行程，來喝杯咖啡吧？"))
+                : selectedDayEvents.map(ev => {
+                    const style = COLORS[ev.color] || COLORS.tea;
+                    return React.createElement("div", { key: ev.id, className: "bg-white border border-[#F5F1E9] rounded-2xl p-4 shadow-sm flex gap-4 transition-all hover:shadow-md group" },
+                      React.createElement("div", { className: "flex flex-col items-center justify-center min-w-[60px] border-r border-[#F5F1E9] pr-4" },
+                        ev.isAllDay 
+                          ? React.createElement("span", { className: "text-xs font-bold text-[#C2A385] bg-[#FDFBF7] px-2 py-1 rounded-lg" }, "全天")
+                          : React.createElement(React.Fragment, null, React.createElement("span", { className: "text-sm font-bold text-[#5D4037]" }, ev.startTime), React.createElement("span", { className: "text-[10px] text-[#8C7851]" }, ev.endTime))
+                      ),
+                      React.createElement("div", { className: "flex-1 min-w-0" },
+                        React.createElement("div", { className: "flex items-center gap-2 mb-1" },
+                          React.createElement("div", { className: `w-2 h-2 rounded-full ${style.fill}` }),
+                          React.createElement("h4", { className: "font-bold text-lg text-[#5D4037] truncate" }, ev.title)
+                        ),
+                        ev.description && React.createElement("p", { className: "text-xs text-[#8C7851] line-clamp-2" }, ev.description)
+                      ),
+                      React.createElement("button", { onClick: (e) => deleteEvent(e, ev.id), className: "self-center p-2 text-slate-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity" }, React.createElement(Trash2, { size: 18 }))
+                    );
+                  })
+            )
+          )
+        ),
+
+        // Add Modal
+        isModalOpen && React.createElement("div", { className: "fixed inset-0 bg-[#5D4037]/20 backdrop-blur-sm flex items-center justify-center z-50 p-6" },
+          React.createElement("div", { className: "bg-white rounded-[1.5rem] shadow-2xl w-full max-w-md overflow-hidden border border-[#D2B48C]/30 animate-in fade-in zoom-in duration-200" },
+            React.createElement("div", { className: "px-6 py-4 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center" },
+              React.createElement("span", { className: "text-sm font-bold text-[#8C7851] flex items-center gap-2" }, React.createElement(CalendarIcon, { size: 14 }), "建立行程"),
+              React.createElement("button", { onClick: () => setIsModalOpen(false), className: "p-1 hover:bg-[#E8E2D6] rounded-full text-[#8C7851]" }, React.createElement(X, { size: 20 }))
+            ),
+            React.createElement("div", { className: "p-6 space-y-5" },
+              React.createElement("input", { type: "text", placeholder: "行程標題", value: newTitle, onChange: (e) => setNewTitle(e.target.value), className: "w-full text-2xl font-bold text-[#5D4037] placeholder-[#D2B48C] outline-none border-b-2 border-transparent focus:border-[#C2A385] bg-transparent pb-1 transition-all", autoFocus: true }),
+              React.createElement("div", { className: "flex flex-col gap-4 bg-[#FDFBF7] p-4 rounded-xl border border-[#F5F1E9]" },
+                React.createElement("div", { className: "flex items-center justify-between mb-1" },
+                  React.createElement("div", { className: "flex items-center gap-2" }, React.createElement(Clock, { size: 16, className: "text-[#C2A385]" }), React.createElement("label", { className: "text-sm font-bold text-[#5D4037]" }, "時間設定")),
+                  React.createElement("div", { className: "flex items-center gap-2" },
+                    React.createElement("input", { type: "checkbox", id: "allDay", checked: isAllDay, onChange: (e) => setIsAllDay(e.target.checked), className: "accent-[#C2A385] w-4 h-4 cursor-pointer" }),
+                    React.createElement("label", { htmlFor: "allDay", className: "text-xs text-[#8C7851] cursor-pointer font-medium" }, "全天")
+                  )
+                ),
+                React.createElement("div", { className: "flex items-center gap-2" },
+                  React.createElement("span", { className: "text-xs text-[#8C7851] w-8 font-bold" }, "開始"),
+                  React.createElement("input", { type: "date", value: newStartDate, onChange: (e) => setNewStartDate(e.target.value), className: "bg-white border border-[#E8E2D6] rounded-lg px-2 py-1 text-sm text-[#5D4037] outline-none focus:border-[#C2A385]" }),
+                  !isAllDay && React.createElement("div", { className: "flex gap-1 bg-white border border-[#E8E2D6] rounded-lg px-2 py-1 text-sm text-[#5D4037]" },
+                    React.createElement("select", { value: startHour, onChange: (e) => setStartHour(e.target.value), className: "bg-transparent outline-none appearance-none font-mono" }, HOURS.map(h => React.createElement("option", { key: h, value: h }, h))),
+                    React.createElement("span", null, ":"),
+                    React.createElement("select", { value: startMinute, onChange: (e) => setStartMinute(e.target.value), className: "bg-transparent outline-none appearance-none font-mono" }, MINUTES.map(m => React.createElement("option", { key: m, value: m }, m)))
+                  )
+                ),
+                React.createElement("div", { className: "flex items-center gap-2" },
+                  React.createElement("span", { className: "text-xs text-[#8C7851] w-8 font-bold" }, "結束"),
+                  React.createElement("input", { type: "date", value: newEndDate, onChange: (e) => setNewEndDate(e.target.value), min: newStartDate, className: "bg-white border border-[#E8E2D6] rounded-lg px-2 py-1 text-sm text-[#5D4037] outline-none focus:border-[#C2A385]" }),
+                  !isAllDay && React.createElement("div", { className: "flex gap-1 bg-white border border-[#E8E2D6] rounded-lg px-2 py-1 text-sm text-[#5D4037]" },
+                    React.createElement("select", { value: endHour, onChange: (e) => setEndHour(e.target.value), className: "bg-transparent outline-none appearance-none font-mono" }, HOURS.map(h => React.createElement("option", { key: h, value: h }, h))),
+                    React.createElement("span", null, ":"),
+                    React.createElement("select", { value: endMinute, onChange: (e) => setEndMinute(e.target.value), className: "bg-transparent outline-none appearance-none font-mono" }, MINUTES.map(m => React.createElement("option", { key: m, value: m }, m)))
+                  )
+                )
+              ),
+              React.createElement("div", { className: "flex gap-3 items-start" },
+                React.createElement(AlignLeft, { size: 16, className: "text-[#C2A385] mt-1" }),
+                React.createElement("textarea", { placeholder: "詳細說明", value: newDesc, onChange: (e) => setNewDesc(e.target.value), className: "w-full bg-[#FDFBF7] rounded-xl p-3 text-sm text-[#5D4037] h-20 outline-none resize-none border border-[#F5F1E9] focus:border-[#C2A385]" })
+              ),
+              React.createElement("div", { className: "flex gap-3 items-start" },
+                React.createElement(Leaf, { size: 16, className: "text-[#C2A385] mt-1" }),
+                React.createElement("div", { className: "flex flex-wrap gap-2" },
+                  Object.entries(COLORS).map(([key, style]) => 
+                    React.createElement("button", { 
+                      key: key, onClick: () => setNewColor(key), 
+                      className: `w-6 h-6 rounded-full transition-all ${newColor === key ? 'ring-2 ring-offset-2 ring-[#8C7851] scale-125' : 'opacity-60 hover:opacity-100'}`,
+                      style: { backgroundColor: style.fill.replace('bg-', '').replace('[', '').replace(']', '') },
+                      title: style.name
+                    })
+                  )
+                )
+              )
+            ),
+            React.createElement("div", { className: "px-6 py-4 bg-[#FDFBF7] border-t border-[#F5F1E9] flex justify-end gap-3" },
+              React.createElement("button", { onClick: handleAddEvent, className: "px-6 py-2 bg-[#C2A385] text-white font-bold rounded-lg shadow-md hover:bg-[#A68664] transition-all text-sm flex items-center gap-2" }, React.createElement(CheckSquare, { size: 16 }), "儲存")
+            )
+          )
+        ),
+
+        // Settings Modal
+        isSettingOpen && React.createElement("div", { className: "fixed inset-0 bg-[#5D4037]/20 backdrop-blur-sm flex items-center justify-center z-50 p-6" },
+          React.createElement("div", { className: "bg-white rounded-[1.5rem] shadow-2xl w-full max-w-sm p-8 border border-[#D2B48C]/30 animate-in fade-in slide-in-from-bottom-4 duration-300" },
+            React.createElement("h3", { className: "text-xl font-bold mb-2 text-[#5D4037]" }, "空間設定"),
+            React.createElement("p", { className: "text-xs text-[#8C7851] mb-6 tracking-wide uppercase" }, "Private Space Management"),
+            React.createElement("div", { className: "space-y-4" },
+              React.createElement("div", { className: "p-4 bg-[#FDFBF7] rounded-xl border border-[#F5F1E9]" },
+                React.createElement("p", { className: "text-[10px] text-[#D2B48C] font-bold mb-1" }, "當前金鑰"),
+                React.createElement("code", { className: "text-[#5D4037] font-mono" }, calendarId)
+              ),
+              React.createElement("input", { type: "text", placeholder: "切換新的空間 ID...", value: tempId, onChange: (e) => setTempId(e.target.value), className: "w-full border-b-2 border-[#F5F1E9] focus:border-[#C2A385] py-2 outline-none bg-transparent text-[#5D4037]" }),
+              React.createElement("div", { className: "flex gap-3 pt-4" },
+                React.createElement("button", { onClick: () => setIsSettingOpen(false), className: "flex-1 py-3 text-[#8C7851] font-bold bg-[#FDFBF7] rounded-xl" }, "關閉"),
+                React.createElement("button", { onClick: changeCalendarId, className: "flex-1 py-3 bg-[#C2A385] text-white font-bold rounded-xl shadow-lg" }, "確認切換")
+              )
+            )
+          )
+        ),
+
+        // Loading
+        loading && React.createElement("div", { className: "fixed bottom-10 right-10 bg-white/90 backdrop-blur px-6 py-3 rounded-2xl border border-[#D2B48C]/30 text-[#8C7851] flex items-center gap-3 shadow-xl animate-in slide-in-from-right-10" },
+          React.createElement(Coffee, { size: 18, className: "text-[#C2A385] animate-bounce" }),
+          React.createElement("span", { className: "text-xs font-bold tracking-widest uppercase" }, "Syncing...")
+        )
+      );
+    }
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
+</body>
+</html>
