@@ -54,7 +54,7 @@
     import { 
       getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc
     } from 'firebase/firestore';
-
+    import { CalendarHeart } from 'lucide-react';
     const firebaseConfig = {
       apiKey: "AIzaSyAaeMl8u3S8Atf5b9Z4MvYRfxNWqyxjvck",
       authDomain: "schdule-f5cda.firebaseapp.com",
@@ -366,11 +366,11 @@
           {/* Header */}
           <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] bg-[#F5F1E9] border-b border-[#D2B48C]/20 z-10">
             <div className="flex items-center gap-3">
-               <div className="bg-white p-2 rounded-xl shadow-sm border border-[#E8E2D6]">
-                 <Sparkles className="w-5 h-5 text-[#C2A385]" />
-               </div>
+                <div className="bg-white p-2 rounded-xl shadow-sm border border-[#E8E2D6]">
+                  <CalendarHeart className="w-5 h-5 text-[#C2A385]" />
+                </div>
                <div>
-                 <h1 className="text-xl font-hand font-bold tracking-tight text-[#5D4037] text-2xl">BiBi-Schedule</h1>
+                 <h1 className="text-xl font-hand font-bold tracking-tight text-[#5D4037] text-2xl">BiBi♥❣</h1>
                  <p className="text-[12px] font-hand font-bold text-[#8C7851] uppercase tracking-widest hidden sm:block">{year} . {month + 1}</p>
                </div>
             </div>
