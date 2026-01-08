@@ -327,8 +327,8 @@
 
       return (
         <div className="h-dvh flex flex-col">
-          {/* Header */}
-          <header className="flex-none flex items-center justify-between px-4 py-3 bg-[#F5F1E9] border-b border-[#D2B48C]/20 z-10">
+          {/* Header with Safe Area Padding */}
+          <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] bg-[#F5F1E9] border-b border-[#D2B48C]/20 z-10">
             <div className="flex items-center gap-3">
                <div className="bg-white p-2 rounded-xl shadow-sm border border-[#E8E2D6]">
                  <Sparkles className="w-5 h-5 text-[#C2A385]" />
