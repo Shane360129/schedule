@@ -8,8 +8,10 @@
   <meta name="theme-color" content="#F5F1E9">
   <title>BiBi-Schedule</title>
   
-  <!-- iOS Icon -->
+  <!-- [修改圖示] 請將下方 href 的內容替換為您的圖片網址 (例如: /icon.png) -->
+  <!-- iOS Icon & Web Thumbnail -->
   <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjEwMCIgZmlsbD0iI0ZERkJGNyIvPgogIDxyZWN0IHg9IjMyIiB5PSIzMiIgd2lkdGg9Ijw0OCIgaGVpZ2h0PSI0NDgiIHJ4PSI4MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzJBMzg1IiBzdHJva2Utd2lkdGg9IjI0Ii8+CiAgPHRleHQgeD0iNTAlIiB5PSI1NSUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSdzZXJpZicgZm9udC13ZWlnaHQ9ImJvbGQiIGZvbnQtc2l6ZT0iMTgwIiBmaWxsPSIjNUQ0MDM3Ij5CaUJpPC90ZXh0Pgo8L3N2Zz4=">
+  <link rel="icon" type="image/png" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjEwMCIgZmlsbD0iI0ZERkJGNyIvPgogIDxyZWN0IHg9IjMyIiB5PSIzMiIgd2lkdGg9Ijw0OCIgaGVpZ2h0PSI0NDgiIHJ4PSI4MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzJBMzg1IiBzdHJva2Utd2lkdGg9IjI0Ii8+CiAgPHRleHQgeD0iNTAlIiB5PSI1NSUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSdzZXJpZicgZm9udC13ZWlnaHQ9ImJvbGQiIGZvbnQtc2l6ZT0iMTgwIiBmaWxsPSIjNUQ0MDM3Ij5CaUJpPC90ZXh0Pgo8L3N2Zz4=">
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -51,7 +53,7 @@
     import { createRoot } from 'react-dom/client';
     import { 
       ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-      Loader2, Save, AlignLeft, Leaf, CheckSquare 
+      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit2
     } from 'lucide-react';
     import { initializeApp } from 'firebase/app';
     import { 
@@ -91,6 +93,7 @@
     };
 
     const FALLBACK_HOLIDAYS = {
+      // 2025
       "2025-01-01": { isHoliday: true, name: "元旦" },
       "2025-01-25": { isHoliday: true, name: "除夕" },
       "2025-01-26": { isHoliday: true, name: "春節" },
@@ -101,9 +104,27 @@
       "2025-05-31": { isHoliday: true, name: "端午節" },
       "2025-10-06": { isHoliday: true, name: "中秋節" },
       "2025-10-10": { isHoliday: true, name: "國慶日" },
+      // 2026
       "2026-01-01": { isHoliday: true, name: "元旦" },
       "2026-02-16": { isHoliday: true, name: "除夕" },
       "2026-02-17": { isHoliday: true, name: "春節" },
+      "2026-04-04": { isHoliday: true, name: "兒童節" },
+      "2026-04-05": { isHoliday: true, name: "清明節" },
+      "2026-06-19": { isHoliday: true, name: "端午節" },
+      "2026-09-25": { isHoliday: true, name: "中秋節" },
+      "2026-10-10": { isHoliday: true, name: "國慶日" },
+      // 2027
+      "2027-01-01": { isHoliday: true, name: "元旦" },
+      "2027-02-05": { isHoliday: true, name: "小年夜" },
+      "2027-02-06": { isHoliday: true, name: "除夕" },
+      "2027-02-07": { isHoliday: true, name: "春節" },
+      "2027-02-28": { isHoliday: true, name: "和平紀念日" },
+      "2027-04-04": { isHoliday: true, name: "兒童節" },
+      "2027-04-05": { isHoliday: true, name: "清明節" },
+      "2027-05-01": { isHoliday: true, name: "勞動節" },
+      "2027-06-09": { isHoliday: true, name: "端午節" },
+      "2027-09-15": { isHoliday: true, name: "中秋節" },
+      "2027-10-10": { isHoliday: true, name: "國慶日" }
     };
 
     // --- Helper Functions ---
@@ -135,7 +156,12 @@
       // UI State
       const [myProfile] = useState({ name: '我', color: 'tea' });
       const [partnerProfile] = useState({ name: '夥伴', color: 'sesame' });
-      const [isModalOpen, setIsModalOpen] = useState(false);
+      
+      // Modals
+      const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+      const [isDayViewModalOpen, setIsDayViewModalOpen] = useState(false); // [NEW] Day View
+      const [viewingDate, setViewingDate] = useState(null); // [NEW] Selected Date
+      
       const [editingId, setEditingId] = useState(null);
 
       // Form State
@@ -151,10 +177,7 @@
 
       // --- Auth ---
       useEffect(() => {
-        signInAnonymously(auth).catch((error) => {
-           console.error("Auth Failed:", error);
-           // Error handling: if auth fails, it's likely domain whitelist
-        });
+        signInAnonymously(auth).catch((error) => console.error("Auth Failed:", error));
         return onAuthStateChanged(auth, setUser);
       }, []);
 
@@ -216,11 +239,15 @@
       const getEventSegments = (dateStr) => {
         if (!dateStr) return [];
         const dayEvents = events.filter(ev => dateStr >= ev.startDate && dateStr <= ev.endDate);
+        // [FIX] Stable Sort: Length desc, then Time, then ID
         dayEvents.sort((a, b) => {
           const lenA = new Date(a.endDate).getTime() - new Date(a.startDate).getTime();
           const lenB = new Date(b.endDate).getTime() - new Date(b.startDate).getTime();
           if (lenA !== lenB) return lenB - lenA; 
-          return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
+          const timeA = a.startTime || '00:00';
+          const timeB = b.startTime || '00:00';
+          if (timeA !== timeB) return timeA.localeCompare(timeB);
+          return a.id.localeCompare(b.id);
         });
         return dayEvents.map(ev => {
           const isStart = dateStr === ev.startDate;
@@ -230,8 +257,14 @@
         });
       };
 
-      // Modal Handlers
-      const openModal = (dateStr, event = null) => {
+      // [NEW] Open Day View
+      const handleDayClick = (dateStr) => {
+        setViewingDate(dateStr);
+        setIsDayViewModalOpen(true);
+      };
+
+      // Open Edit Modal
+      const openEditModal = (dateStr, event = null) => {
          setEditingId(event ? event.id : null);
          setFormTitle(event ? event.title : '');
          setFormDesc(event ? (event.description || '') : '');
@@ -242,7 +275,9 @@
          setFormEndTime(event ? (event.endTime || '10:00') : '10:00');
          setFormColor(event ? event.color : 'latte');
          setFormEventType(event ? event.eventType : 'common');
-         setIsModalOpen(true);
+         
+         setIsDayViewModalOpen(false); // Close day view if opening edit from there
+         setIsEditModalOpen(true);
       };
 
       const saveEvent = async () => {
@@ -264,7 +299,9 @@
           } else {
             await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'bibi_events'), eventData);
           }
-          setIsModalOpen(false);
+          setIsEditModalOpen(false);
+          // If we were viewing a date, reopen day view (optional, but nice)
+          if(viewingDate) setIsDayViewModalOpen(true);
         } catch (e) { console.error("Save Error:", e); }
       };
 
@@ -272,7 +309,8 @@
         if (user && editingId) {
           try {
             await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'bibi_events', editingId));
-            setIsModalOpen(false);
+            setIsEditModalOpen(false);
+            if(viewingDate) setIsDayViewModalOpen(true);
           } catch (e) { console.error("Delete Error:", e); }
         }
       };
@@ -282,6 +320,9 @@
            <Loader2 className="w-8 h-8 text-[#C2A385] animate-spin" />
         </div>
       );
+      
+      // Filter events for day view
+      const dayViewEvents = viewingDate ? events.filter(ev => viewingDate >= ev.startDate && viewingDate <= ev.endDate).sort((a,b) => (a.startTime||'00:00').localeCompare(b.startTime||'00:00')) : [];
 
       return (
         <div className="h-dvh flex flex-col">
@@ -333,22 +374,30 @@
               const dateTextColor = (isHoliday || dayOfWeek === 0) ? 'text-[#9F1239]' : 'text-[#5D4037]';
 
               return (
-                <div key={idx} onClick={() => hasDate && openModal(cell.fullDate)} className={`relative border-b border-r border-[#D2B48C]/10 flex flex-col ${bgClass} active:brightness-95 transition-colors cursor-pointer select-none overflow-hidden`}>
+                <div key={idx} onClick={() => hasDate && handleDayClick(cell.fullDate)} className={`relative border-b border-r border-[#D2B48C]/10 flex flex-col ${bgClass} active:brightness-95 transition-colors cursor-pointer select-none overflow-hidden`}>
                   {hasDate && (
-                    <div className="flex flex-col items-center pt-1 mb-0.5">
+                    <div className="flex flex-col items-center pt-1 mb-0.5 px-0">
                        <span className={`text-lg sm:text-xl font-hand font-bold h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'bg-[#C2A385] text-white shadow-md' : dateTextColor}`}>
                          {cell.day}
                        </span>
                        {isHoliday && <span className="text-[10px] text-[#9F1239] font-medium -mt-1 truncate max-w-full px-1">{holidayInfo.name}</span>}
                     </div>
                   )}
-                  <div className="flex-1 flex flex-col gap-[2px] w-full px-0.5 pb-1">
+                  {/* [FIX] Removed px-0.5 to allow bars to touch edges */}
+                  <div className="flex-1 flex flex-col gap-[2px] w-full pb-1 px-0">
                     {segments.slice(0, 4).map((ev) => {
                       const roundLeft = ev.isStart || ev.isSunday;
                       const roundRight = ev.isEnd || ev.isSaturday;
                       const style = COLORS[ev.color] || COLORS.latte;
                       return (
-                        <div key={ev.id} onClick={(e) => { e.stopPropagation(); openModal(null, ev); }} className={`text-[10px] sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 shadow-sm transition-all hover:brightness-95 ${style.fill} ${style.text === 'text-white' ? 'text-white' : 'text-[#5D4037]'} ${roundLeft ? 'rounded-l-md ml-0.5' : '-ml-[1px]'} ${roundRight ? 'rounded-r-md mr-0.5' : '-mr-[1px]'} ${!roundLeft && !roundRight ? 'z-0' : 'z-10 relative'}`}>
+                        <div key={ev.id} onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }} 
+                             className={`
+                               text-[10px] sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 shadow-sm transition-all hover:brightness-95 
+                               ${style.fill} ${style.text === 'text-white' ? 'text-white' : 'text-[#5D4037]'} 
+                               ${roundLeft ? 'rounded-l-md ml-1' : ''} 
+                               ${roundRight ? 'rounded-r-md mr-1' : ''} 
+                               ${!roundLeft && !roundRight ? 'z-0' : 'z-10 relative'}
+                             `}>
                           {(ev.isStart || ev.isSunday) && (
                             <span className="truncate w-full font-medium leading-none flex items-center gap-1">
                               {!ev.isAllDay && ev.startTime && <span className="text-[9px] opacity-80 font-hand">{ev.startTime}</span>}
@@ -365,15 +414,61 @@
             })}
           </div>
 
-          {/* Modal */}
-          {isModalOpen && (
+          {/* [NEW] Day View Modal */}
+          {isDayViewModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D4037]/20 backdrop-blur-[2px] p-4">
+               <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#D2B48C]/30 flex flex-col max-h-[80vh]">
+                  <div className="px-5 py-4 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center shrink-0">
+                     <div className="flex items-baseline gap-2">
+                       <span className="text-2xl font-hand font-bold text-[#5D4037]">{viewingDate}</span>
+                       <span className="text-xs text-[#8C7851] font-bold uppercase">{new Date(viewingDate).toLocaleDateString('en-US', { weekday: 'long' })}</span>
+                     </div>
+                     <button onClick={() => setIsDayViewModalOpen(false)} className="p-1.5 text-[#D2B48C] hover:bg-[#F5F1E9] rounded-full transition-colors"><X className="w-5 h-5" /></button>
+                  </div>
+                  
+                  <div className="p-4 overflow-y-auto flex-1 space-y-3 bg-[#FDFBF7]">
+                     {dayViewEvents.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 opacity-50 text-[#8C7851]">
+                           <Coffee className="w-10 h-10 mb-2" />
+                           <p className="font-hand text-lg">今天沒有行程，享受生活吧！</p>
+                        </div>
+                     ) : (
+                        dayViewEvents.map(ev => {
+                           const style = COLORS[ev.color] || COLORS.latte;
+                           return (
+                             <div key={ev.id} onClick={() => openEditModal(null, ev)} className="bg-white p-3 rounded-xl border border-[#E8E2D6] shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow">
+                                <div className={`w-3 h-3 rounded-full ${style.fill} shrink-0`}></div>
+                                <div className="flex-1 min-w-0">
+                                   <h4 className="font-bold text-[#5D4037] truncate">{ev.title}</h4>
+                                   <div className="flex items-center gap-2 text-xs text-[#8C7851]">
+                                      {ev.isAllDay ? <span className="bg-[#E8E2D6] px-1.5 rounded text-[#5D4037]">全天</span> : <span className="font-hand text-sm">{ev.startTime} - {ev.endTime}</span>}
+                                   </div>
+                                </div>
+                                <Edit2 className="w-4 h-4 text-[#D2B48C]" />
+                             </div>
+                           )
+                        })
+                     )}
+                  </div>
+
+                  <div className="p-4 border-t border-[#F5F1E9] bg-white shrink-0">
+                     <button onClick={() => openEditModal(viewingDate)} className="w-full bg-[#C2A385] hover:bg-[#A68664] text-white py-3 rounded-xl shadow-md font-bold flex items-center justify-center gap-2 transition-colors">
+                        <Plus className="w-5 h-5" /> 新增行程
+                     </button>
+                  </div>
+               </div>
+            </div>
+          )}
+
+          {/* Edit Modal */}
+          {isEditModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D4037]/20 backdrop-blur-[2px] p-4">
               <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#D2B48C]/30">
                 <div className="px-5 py-4 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center">
                    <h3 className="text-[#5D4037] font-bold flex items-center gap-2"><Leaf className="w-4 h-4 text-[#C2A385]" /> {editingId ? '編輯行程' : '建立行程'}</h3>
                    <div className="flex gap-2">
                      {editingId && <button onClick={deleteEvent} className="p-1.5 text-[#D2B48C] hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"><Trash2 className="w-4 h-4" /></button>}
-                     <button onClick={() => setIsModalOpen(false)} className="p-1.5 text-[#D2B48C] hover:bg-[#F5F1E9] rounded-full transition-colors"><X className="w-4 h-4" /></button>
+                     <button onClick={() => setIsEditModalOpen(false)} className="p-1.5 text-[#D2B48C] hover:bg-[#F5F1E9] rounded-full transition-colors"><X className="w-4 h-4" /></button>
                    </div>
                 </div>
                 <div className="p-6 space-y-5">
