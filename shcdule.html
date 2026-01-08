@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#F5F1E9">
-  <title>Schedule</title>
+  <title>Co-Schedule</title>
   
   <!-- PWA Manifest (Embedded) -->
   <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIuaXpeWSjOihjOS6i+aetCIsCiAgInNob3J0X25hbWUiOiAi5pel5ZCMIiwKICAic3RhcnRfdXJsIjogIi4iLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiNGNUYxRTkiLAogICJ0aGVtZV9jb2xvciI6ICIjRjVGMUU5IiwKICAiaWNvbnMiOiBbCiAgICB7CiAgICAgICJzcmMiOiAiZGF0YTppbWFnZS9zdmcreG1sO2Jhc2U2NCxQSE4yWnlCM2NuVnlkR2x2Ym5NdmRHOXdaVzV6TFhWemMyZ3hMakV3SWo0S1BDOXpkbWNtTjBjbTF2Y21zK0NqNDhMM2R5aXpwek1URXVOVEE3SUdobGJsQnZibTF2ZDJWdVpHOXVaUzF3WlhKdmIzSjBMMlJsWjJWMFpYa3ZkRzlyWlc1a2FYWmxMM04yWnlBK0Nqe3pZWFJ5UGpJd01USXZPekl3TVRJN0lHWnBiR3c5SWk1Mk9DNDVPVFE1SWo0S1BITnZkbWNtY205MWJtUmxjbmt0Y0hKdllXUnpQU0l5T1RndU56a3ZNamswTGpjd0lpQmtZVzF3Ym1GdFpXNTBMV1I1YkdOdlpXNXZjbmt0Y0hKdllXUnpQU0l5TURJdU5UZ3ZNakV6TGpjMk1TSStDZz09IiwKICAgICAgInNpemVzIjogIjE5MngxOTIiLAogICAgICAidHlwZSI6ICJpbWFnZS9zdmcreG1sIgogICAgfQogIF0KfQ==">
@@ -82,20 +82,23 @@
     import { 
       ChevronLeft, ChevronRight, Plus, Trash2, X, Sparkles, Leaf, 
       Moon, Heart, Settings, Share2, Briefcase, Coffee, Calendar as CalendarIcon, 
-      Clock, AlignLeft, CheckSquare
+      Clock, AlignLeft, CheckSquare, User, Users, Palette, Edit3
     } from 'lucide-react';
 
     // --- Firebase Configuration ---
-    // SHANE: 若部署到外部，請將下方 fallbackConfig 替換為你的真實設定
+    // SHANE: 請將下方的 fallbackConfig 替換為你在 Firebase Console 複製的真實設定
+    // 步驟：Project Settings -> General -> Your apps -> 複製 const firebaseConfig = { ... }
     const fallbackConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_PROJECT.firebaseapp.com",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_PROJECT.appspot.com",
-      messagingSenderId: "SENDER_ID",
-      appId: "APP_ID"
+  apiKey: "AIzaSyAaeMl8u3S8Atf5b9Z4MvYRfxNWqyxjvck",
+  authDomain: "schdule-f5cda.firebaseapp.com",
+  projectId: "schdule-f5cda",
+  storageBucket: "schdule-f5cda.firebasestorage.app",
+  messagingSenderId: "318490887020",
+  appId: "1:318490887020:web:115d4b35f544455768e949",
+  measurementId: "G-Q7ZEKV7YEH"
     };
 
+    // 這裡會優先讀取環境變數 (預覽用)，若無則使用你的 fallbackConfig (部署用)
     const firebaseConfig = typeof __firebase_config !== 'undefined' 
       ? JSON.parse(__firebase_config) 
       : fallbackConfig;
@@ -103,13 +106,14 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'shane-webapp-cal';
+    // 使用固定的 App ID 確保多人連線一致性
+    const appId = 'shane-production-cal'; 
 
     // --- Constants ---
     const COLORS = {
       milk: { name: '燕麥奶', bg: 'bg-[#FDFBF7]', text: 'text-[#8C7851]', border: 'border-[#E8E2D6]', fill: 'bg-[#E8E2D6]' },
       tea: { name: '伯爵茶', bg: 'bg-[#F5F1E9]', text: 'text-[#5D4037]', border: 'border-[#D2B48C]', fill: 'bg-[#D2B48C]' }, 
-      latte: { name: '深焙', bg: 'bg-[#C2A385]', text: 'text-white', border: 'border-[#8B4513]', fill: 'bg-[#C2A385]' }, 
+      latte: { name: '深焙(共用)', bg: 'bg-[#C2A385]', text: 'text-white', border: 'border-[#8B4513]', fill: 'bg-[#C2A385]' }, 
       matcha: { name: '抹茶', bg: 'bg-[#F0FDF4]', text: 'text-[#166534]', border: 'border-[#BBF7D0]', fill: 'bg-[#86EFAC]' }, 
       berry: { name: '莓果', bg: 'bg-[#FFF1F2]', text: 'text-[#9F1239]', border: 'border-[#FECDD3]', fill: 'bg-[#FDA4AF]' },
       taro: { name: '芋泥', bg: 'bg-[#FAF5FF]', text: 'text-[#6B21A8]', border: 'border-[#E9D5FF]', fill: 'bg-[#D8B4FE]' },
@@ -169,10 +173,23 @@
       const [loading, setLoading] = useState(false);
       const [holidayData, setHolidayData] = useState({ 2026: FALLBACK_DATA });
       
+      // User Profiles (Local Storage)
+      const [myProfile, setMyProfile] = useState(() => ({
+        name: localStorage.getItem('cal_my_name') || '我',
+        color: localStorage.getItem('cal_my_color') || 'tea'
+      }));
+      const [partnerProfile, setPartnerProfile] = useState(() => ({
+        name: localStorage.getItem('cal_partner_name') || '夥伴',
+        color: localStorage.getItem('cal_partner_color') || 'sesame'
+      }));
+
       // Form States
+      const [editingEventId, setEditingEventId] = useState(null); // NULL = Create, String = Edit
       const [newTitle, setNewTitle] = useState('');
       const [newDesc, setNewDesc] = useState('');
-      const [newColor, setNewColor] = useState('tea');
+      const [newColor, setNewColor] = useState('latte');
+      const [eventType, setEventType] = useState('common'); 
+
       const [isAllDay, setIsAllDay] = useState(false);
       const [newStartDate, setNewStartDate] = useState('');
       const [newEndDate, setNewEndDate] = useState('');
@@ -220,6 +237,7 @@
       useEffect(() => {
         if (!user || !calendarId) return;
         setLoading(true);
+        // Using a fixed path for production consistency: /artifacts/{appId}/public/data/events_{calendarId}
         const collectionName = `events_${calendarId}`;
         const eventsRef = collection(db, 'artifacts', appId, 'public', 'data', collectionName);
         const unsubscribe = onSnapshot(eventsRef, (snapshot) => {
@@ -231,29 +249,69 @@
         return () => unsubscribe();
       }, [user, calendarId]);
 
+      // --- Profile Handlers ---
+      const saveProfiles = () => {
+        localStorage.setItem('cal_my_name', myProfile.name);
+        localStorage.setItem('cal_my_color', myProfile.color);
+        localStorage.setItem('cal_partner_name', partnerProfile.name);
+        localStorage.setItem('cal_partner_color', partnerProfile.color);
+        setIsSettingOpen(false);
+      };
+
       const changeCalendarId = () => {
         const cleanId = tempId.trim().toLowerCase();
         if (!cleanId) return;
         setCalendarId(cleanId);
         localStorage.setItem('shane_calendar_id', cleanId);
-        setIsSettingOpen(false);
         setTempId('');
       };
 
-      const openAddModal = (dateStr) => {
+      const resetForm = (dateStr) => {
         const targetDate = dateStr || getLocalYMD(new Date());
+        setEditingEventId(null); 
         setNewStartDate(targetDate);
         setNewEndDate(targetDate); 
         setNewTitle('');
         setNewDesc('');
-        setNewColor('tea');
+        setEventType('me');
+        setNewColor(myProfile.color);
         setIsAllDay(false);
-        setStartHour('09');
-        setStartMinute('00');
-        setEndHour('10');
-        setEndMinute('00');
+        setStartHour('09'); setStartMinute('00');
+        setEndHour('10'); setEndMinute('00');
+      }
+
+      const openAddModal = (dateStr) => {
+        resetForm(dateStr);
         setIsDayViewOpen(false);
         setIsModalOpen(true);
+      };
+
+      const openEditModal = (event) => {
+        setEditingEventId(event.id);
+        setNewTitle(event.title);
+        setNewDesc(event.description || '');
+        setNewStartDate(event.startDate || event.date);
+        setNewEndDate(event.endDate || event.date);
+        setIsAllDay(event.isAllDay || false);
+        setNewColor(event.color || 'tea');
+        setEventType(event.eventType || 'common');
+
+        if (event.startTime) {
+          const [h, m] = event.startTime.split(':');
+          setStartHour(h); setStartMinute(m);
+        } else {
+          setStartHour('09'); setStartMinute('00');
+        }
+
+        if (event.endTime) {
+          const [h, m] = event.endTime.split(':');
+          setEndHour(h); setEndMinute(m);
+        } else {
+          setEndHour('10'); setEndMinute('00');
+        }
+
+        setIsDayViewOpen(false); // Close list view
+        setIsModalOpen(true);    // Open form
       };
 
       const openDayView = (dateStr) => {
@@ -261,19 +319,40 @@
         setIsDayViewOpen(true);
       };
 
-      const handleAddEvent = async () => {
+      const handleEventTypeChange = (type) => {
+        setEventType(type);
+        if (type === 'me') setNewColor(myProfile.color);
+        else if (type === 'partner') setNewColor(partnerProfile.color);
+        else if (type === 'common') setNewColor('latte');
+      };
+
+      const handleSaveEvent = async () => {
         if (!newTitle || !newStartDate || !newEndDate || !user) return;
         const collectionName = `events_${calendarId}`;
         const startTimeStr = isAllDay ? null : `${startHour}:${startMinute}`;
         const endTimeStr = isAllDay ? null : `${endHour}:${endMinute}`;
 
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', collectionName, crypto.randomUUID()), {
+        const eventData = {
           title: newTitle, description: newDesc,
           startDate: newStartDate, endDate: newEndDate,     
           startTime: startTimeStr, endTime: endTimeStr,
-          isAllDay: isAllDay, color: newColor,
-          createdBy: user.uid, createdAt: new Date().toISOString()
-        });
+          isAllDay: isAllDay, 
+          color: newColor, 
+          eventType: eventType,
+          date: newStartDate // For backward compatibility / simplified querying
+        };
+
+        if (editingEventId) {
+          const eventRef = doc(db, 'artifacts', appId, 'public', 'data', collectionName, editingEventId);
+          await setDoc(eventRef, { ...eventData, updatedAt: new Date().toISOString() }, { merge: true });
+        } else {
+          const newId = crypto.randomUUID();
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', collectionName, newId), {
+            ...eventData,
+            createdBy: user.uid, 
+            createdAt: new Date().toISOString()
+          });
+        }
         setIsModalOpen(false);
       };
 
@@ -323,7 +402,7 @@
             ),
             React.createElement("div", null,
               React.createElement("h1", { className: "text-3xl font-bold tracking-tight" }, `日和 · ${calendarId}`),
-              React.createElement("p", { className: "text-[#8C7851] text-xs uppercase tracking-widest mt-1" }, "Web App Edition")
+              React.createElement("p", { className: "text-[#8C7851] text-xs uppercase tracking-widest mt-1" }, "Editable Shared Space")
             )
           ),
           React.createElement("div", { className: "flex items-center gap-3 bg-white/50 backdrop-blur p-2 rounded-2xl border border-[#D2B48C]/20" },
@@ -408,7 +487,6 @@
         React.createElement("button", { onClick: () => openAddModal(null), className: "fixed bottom-8 right-8 w-16 h-16 bg-[#C2A385] text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 hover:rotate-90 transition-all duration-300 z-40 border-4 border-[#F5F1E9]" }, React.createElement(Plus, { size: 32 })),
 
         // Modals (Using JSX-like structure via createElement for simplicity in this HTML wrapper context)
-        // ... (Modal code omitted for brevity in this preview, but fully functional in the downloadable file)
         isDayViewOpen && React.createElement("div", { className: "fixed inset-0 bg-[#5D4037]/20 backdrop-blur-sm flex items-center justify-center z-50 p-6" },
           React.createElement("div", { className: "bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden border border-[#D2B48C]/30 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[80vh]" },
             React.createElement("div", { className: "px-6 py-5 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center shrink-0" },
@@ -426,7 +504,11 @@
                 ? React.createElement("div", { className: "flex flex-col items-center justify-center h-40 text-[#D2B48C] opacity-60 gap-2" }, React.createElement(Coffee, { size: 40 }), React.createElement("p", null, "今天還沒有安排行程，來喝杯咖啡吧？"))
                 : selectedDayEvents.map(ev => {
                     const style = COLORS[ev.color] || COLORS.tea;
-                    return React.createElement("div", { key: ev.id, className: "bg-white border border-[#F5F1E9] rounded-2xl p-4 shadow-sm flex gap-4 transition-all hover:shadow-md group" },
+                    return React.createElement("div", { 
+                      key: ev.id, 
+                      onClick: () => openEditModal(ev), // Enable click to edit
+                      className: "bg-white border border-[#F5F1E9] rounded-2xl p-4 shadow-sm flex gap-4 transition-all hover:shadow-md cursor-pointer group" 
+                    },
                       React.createElement("div", { className: "flex flex-col items-center justify-center min-w-[60px] border-r border-[#F5F1E9] pr-4" },
                         ev.isAllDay 
                           ? React.createElement("span", { className: "text-xs font-bold text-[#C2A385] bg-[#FDFBF7] px-2 py-1 rounded-lg" }, "全天")
@@ -446,15 +528,35 @@
           )
         ),
 
-        // Add Modal
+        // Add/Edit Modal
         isModalOpen && React.createElement("div", { className: "fixed inset-0 bg-[#5D4037]/20 backdrop-blur-sm flex items-center justify-center z-50 p-6" },
           React.createElement("div", { className: "bg-white rounded-[1.5rem] shadow-2xl w-full max-w-md overflow-hidden border border-[#D2B48C]/30 animate-in fade-in zoom-in duration-200" },
             React.createElement("div", { className: "px-6 py-4 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center" },
-              React.createElement("span", { className: "text-sm font-bold text-[#8C7851] flex items-center gap-2" }, React.createElement(CalendarIcon, { size: 14 }), "建立行程"),
+              React.createElement("span", { className: "text-sm font-bold text-[#8C7851] flex items-center gap-2" }, 
+                React.createElement(Edit3, { size: 14 }), editingEventId ? "編輯行程" : "建立行程"
+              ),
               React.createElement("button", { onClick: () => setIsModalOpen(false), className: "p-1 hover:bg-[#E8E2D6] rounded-full text-[#8C7851]" }, React.createElement(X, { size: 20 }))
             ),
             React.createElement("div", { className: "p-6 space-y-5" },
+              
+              // Identity Selector
+              React.createElement("div", { className: "flex gap-2 p-1 bg-[#F5F1E9] rounded-xl" },
+                React.createElement("button", { 
+                  onClick: () => handleEventTypeChange('me'),
+                  className: `flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${eventType === 'me' ? 'bg-white shadow text-[#5D4037]' : 'text-[#8C7851] opacity-60'}`
+                }, React.createElement("div", { className: `w-2 h-2 rounded-full ${COLORS[myProfile.color]?.fill || 'bg-gray-400'}` }), myProfile.name),
+                React.createElement("button", { 
+                  onClick: () => handleEventTypeChange('partner'),
+                  className: `flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${eventType === 'partner' ? 'bg-white shadow text-[#5D4037]' : 'text-[#8C7851] opacity-60'}`
+                }, React.createElement("div", { className: `w-2 h-2 rounded-full ${COLORS[partnerProfile.color]?.fill || 'bg-gray-400'}` }), partnerProfile.name),
+                React.createElement("button", { 
+                  onClick: () => handleEventTypeChange('common'),
+                  className: `flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${eventType === 'common' ? 'bg-white shadow text-[#5D4037]' : 'text-[#8C7851] opacity-60'}`
+                }, React.createElement("div", { className: `w-2 h-2 rounded-full ${COLORS.latte.fill}` }), "共同")
+              ),
+
               React.createElement("input", { type: "text", placeholder: "行程標題", value: newTitle, onChange: (e) => setNewTitle(e.target.value), className: "w-full text-2xl font-bold text-[#5D4037] placeholder-[#D2B48C] outline-none border-b-2 border-transparent focus:border-[#C2A385] bg-transparent pb-1 transition-all", autoFocus: true }),
+              
               React.createElement("div", { className: "flex flex-col gap-4 bg-[#FDFBF7] p-4 rounded-xl border border-[#F5F1E9]" },
                 React.createElement("div", { className: "flex items-center justify-between mb-1" },
                   React.createElement("div", { className: "flex items-center gap-2" }, React.createElement(Clock, { size: 16, className: "text-[#C2A385]" }), React.createElement("label", { className: "text-sm font-bold text-[#5D4037]" }, "時間設定")),
@@ -501,25 +603,70 @@
               )
             ),
             React.createElement("div", { className: "px-6 py-4 bg-[#FDFBF7] border-t border-[#F5F1E9] flex justify-end gap-3" },
-              React.createElement("button", { onClick: handleAddEvent, className: "px-6 py-2 bg-[#C2A385] text-white font-bold rounded-lg shadow-md hover:bg-[#A68664] transition-all text-sm flex items-center gap-2" }, React.createElement(CheckSquare, { size: 16 }), "儲存")
+              React.createElement("button", { onClick: handleSaveEvent, className: "px-6 py-2 bg-[#C2A385] text-white font-bold rounded-lg shadow-md hover:bg-[#A68664] transition-all text-sm flex items-center gap-2" }, 
+                React.createElement(CheckSquare, { size: 16 }), editingEventId ? "更新" : "儲存"
+              )
             )
           )
         ),
 
         // Settings Modal
         isSettingOpen && React.createElement("div", { className: "fixed inset-0 bg-[#5D4037]/20 backdrop-blur-sm flex items-center justify-center z-50 p-6" },
-          React.createElement("div", { className: "bg-white rounded-[1.5rem] shadow-2xl w-full max-w-sm p-8 border border-[#D2B48C]/30 animate-in fade-in slide-in-from-bottom-4 duration-300" },
-            React.createElement("h3", { className: "text-xl font-bold mb-2 text-[#5D4037]" }, "空間設定"),
-            React.createElement("p", { className: "text-xs text-[#8C7851] mb-6 tracking-wide uppercase" }, "Private Space Management"),
+          React.createElement("div", { className: "bg-white rounded-[1.5rem] shadow-2xl w-full max-w-sm p-8 border border-[#D2B48C]/30 animate-in fade-in slide-in-from-bottom-4 duration-300 max-h-[90vh] overflow-y-auto" },
+            React.createElement("h3", { className: "text-xl font-bold mb-2 text-[#5D4037]" }, "空間與身分設定"),
+            
+            // Profile Settings
+            React.createElement("div", { className: "space-y-6 mt-4" },
+              // My Profile
+              React.createElement("div", { className: "space-y-2" },
+                React.createElement("label", { className: "text-xs font-bold text-[#8C7851] uppercase" }, "我是..."),
+                React.createElement("div", { className: "flex gap-2" },
+                  React.createElement("input", { 
+                    type: "text", value: myProfile.name, 
+                    onChange: (e) => setMyProfile({...myProfile, name: e.target.value}),
+                    className: "flex-1 border-b border-[#E8E2D6] py-1 text-sm bg-transparent outline-none focus:border-[#C2A385]"
+                  }),
+                  React.createElement("select", {
+                    value: myProfile.color,
+                    onChange: (e) => setMyProfile({...myProfile, color: e.target.value}),
+                    className: "bg-[#FDFBF7] border border-[#E8E2D6] rounded-lg px-2 py-1 text-xs"
+                  }, Object.keys(COLORS).map(k => React.createElement("option", { key: k, value: k }, COLORS[k].name)))
+                )
+              ),
+              
+              // Partner Profile
+              React.createElement("div", { className: "space-y-2" },
+                React.createElement("label", { className: "text-xs font-bold text-[#8C7851] uppercase" }, "夥伴是..."),
+                React.createElement("div", { className: "flex gap-2" },
+                  React.createElement("input", { 
+                    type: "text", value: partnerProfile.name, 
+                    onChange: (e) => setPartnerProfile({...partnerProfile, name: e.target.value}),
+                    className: "flex-1 border-b border-[#E8E2D6] py-1 text-sm bg-transparent outline-none focus:border-[#C2A385]"
+                  }),
+                  React.createElement("select", {
+                    value: partnerProfile.color,
+                    onChange: (e) => setPartnerProfile({...partnerProfile, color: e.target.value}),
+                    className: "bg-[#FDFBF7] border border-[#E8E2D6] rounded-lg px-2 py-1 text-xs"
+                  }, Object.keys(COLORS).map(k => React.createElement("option", { key: k, value: k }, COLORS[k].name)))
+                )
+              )
+            ),
+
+            React.createElement("div", { className: "border-t border-[#F5F1E9] my-6" }),
+
+            // Space ID
             React.createElement("div", { className: "space-y-4" },
               React.createElement("div", { className: "p-4 bg-[#FDFBF7] rounded-xl border border-[#F5F1E9]" },
-                React.createElement("p", { className: "text-[10px] text-[#D2B48C] font-bold mb-1" }, "當前金鑰"),
+                React.createElement("p", { className: "text-[10px] text-[#D2B48C] font-bold mb-1" }, "當前空間金鑰"),
                 React.createElement("code", { className: "text-[#5D4037] font-mono" }, calendarId)
               ),
-              React.createElement("input", { type: "text", placeholder: "切換新的空間 ID...", value: tempId, onChange: (e) => setTempId(e.target.value), className: "w-full border-b-2 border-[#F5F1E9] focus:border-[#C2A385] py-2 outline-none bg-transparent text-[#5D4037]" }),
+              React.createElement("input", { 
+                type: "text", placeholder: "切換空間 ID...", value: tempId, 
+                onChange: (e) => setTempId(e.target.value), 
+                className: "w-full border-b-2 border-[#F5F1E9] focus:border-[#C2A385] py-2 outline-none bg-transparent text-[#5D4037]" 
+              }),
               React.createElement("div", { className: "flex gap-3 pt-4" },
-                React.createElement("button", { onClick: () => setIsSettingOpen(false), className: "flex-1 py-3 text-[#8C7851] font-bold bg-[#FDFBF7] rounded-xl" }, "關閉"),
-                React.createElement("button", { onClick: changeCalendarId, className: "flex-1 py-3 bg-[#C2A385] text-white font-bold rounded-xl shadow-lg" }, "確認切換")
+                React.createElement("button", { onClick: saveProfiles, className: "flex-1 py-3 bg-[#C2A385] text-white font-bold rounded-xl shadow-lg" }, "儲存設定")
               )
             )
           )
