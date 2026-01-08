@@ -1,639 +1,430 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-  Loader2, Save, Coffee, AlignLeft, Leaf, CheckSquare, Settings
-} from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  onAuthStateChanged, 
-  signInAnonymously, 
-  signInWithCustomToken,
-  User
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  query, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc 
-} from 'firebase/firestore';
-
-// --- Firebase Configuration ---
-const firebaseConfig = {
-  apiKey: "AIzaSyAaeMl8u3S8Atf5b9Z4MvYRfxNWqyxjvck",
-  authDomain: "schdule-f5cda.firebaseapp.com",
-  projectId: "schdule-f5cda",
-  storageBucket: "schdule-f5cda.firebasestorage.app",
-  messagingSenderId: "318490887020",
-  appId: "1:318490887020:web:115d4b35f544455768e949",
-  measurementId: "G-Q7ZEKV7YEH"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'schdule-f5cda';
-
-// --- BiBi Style Constants ---
-const COLORS = {
-  milk: { name: '燕麥奶', bg: 'bg-[#FDFBF7]', text: 'text-[#8C7851]', border: 'border-[#E8E2D6]', fill: 'bg-[#E8E2D6]', hex: '#E8E2D6' },
-  tea: { name: '伯爵茶', bg: 'bg-[#F5F1E9]', text: 'text-[#5D4037]', border: 'border-[#D2B48C]', fill: 'bg-[#D2B48C]', hex: '#D2B48C' }, 
-  latte: { name: '深焙', bg: 'bg-[#C2A385]', text: 'text-white', border: 'border-[#8B4513]', fill: 'bg-[#C2A385]', hex: '#C2A385' }, 
-  matcha: { name: '抹茶', bg: 'bg-[#F0FDF4]', text: 'text-[#166534]', border: 'border-[#BBF7D0]', fill: 'bg-[#86EFAC]', hex: '#86EFAC' }, 
-  berry: { name: '莓果', bg: 'bg-[#FFF1F2]', text: 'text-[#9F1239]', border: 'border-[#FECDD3]', fill: 'bg-[#FDA4AF]', hex: '#FDA4AF' },
-  taro: { name: '芋泥', bg: 'bg-[#FAF5FF]', text: 'text-[#6B21A8]', border: 'border-[#E9D5FF]', fill: 'bg-[#D8B4FE]', hex: '#D8B4FE' },
-  lemon: { name: '檸檬塔', bg: 'bg-[#FEFCE8]', text: 'text-[#854D0E]', border: 'border-[#FEF08A]', fill: 'bg-[#FDE047]', hex: '#FDE047' },
-  sesame: { name: '芝麻', bg: 'bg-[#F8FAFC]', text: 'text-[#334155]', border: 'border-[#CBD5E1]', fill: 'bg-[#94A3B8]', hex: '#94A3B8' },
-  earl: { name: '伯爵藍', bg: 'bg-[#F0F9FF]', text: 'text-[#0C4A6E]', border: 'border-[#BAE6FD]', fill: 'bg-[#7DD3FC]', hex: '#7DD3FC' },
-};
-
-// --- Fallback Holidays Data (2025-2026) ---
-// 這是備用資料，若 API 請求失敗才會依賴此處
-const FALLBACK_HOLIDAYS: Record<string, { isHoliday: boolean, name: string }> = {
-  // 2025
-  "2025-01-01": { isHoliday: true, name: "元旦" },
-  "2025-01-25": { isHoliday: true, name: "除夕" },
-  "2025-01-26": { isHoliday: true, name: "春節" },
-  "2025-01-27": { isHoliday: true, name: "春節" },
-  "2025-01-28": { isHoliday: true, name: "春節" },
-  "2025-01-29": { isHoliday: true, name: "春節" },
-  "2025-01-30": { isHoliday: true, name: "春節" },
-  "2025-02-28": { isHoliday: true, name: "和平紀念日" },
-  "2025-04-03": { isHoliday: true, name: "兒童節" },
-  "2025-04-04": { isHoliday: true, name: "清明節" },
-  "2025-05-01": { isHoliday: true, name: "勞動節" },
-  "2025-05-31": { isHoliday: true, name: "端午節" },
-  "2025-10-06": { isHoliday: true, name: "中秋節" },
-  "2025-10-10": { isHoliday: true, name: "國慶日" },
-  // 2026
-  "2026-01-01": { isHoliday: true, name: "元旦" },
-  "2026-02-16": { isHoliday: true, name: "除夕" },
-  "2026-02-17": { isHoliday: true, name: "春節" },
-  "2026-02-18": { isHoliday: true, name: "春節" },
-  "2026-02-19": { isHoliday: true, name: "春節" },
-  "2026-02-28": { isHoliday: true, name: "和平紀念日" },
-  "2026-04-04": { isHoliday: true, name: "兒童節" },
-  "2026-04-05": { isHoliday: true, name: "清明節" },
-  "2026-05-01": { isHoliday: true, name: "勞動節" },
-  "2026-06-19": { isHoliday: true, name: "端午節" },
-  "2026-09-25": { isHoliday: true, name: "中秋節" },
-  "2026-10-10": { isHoliday: true, name: "國慶日" },
-};
-
-const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
-const MINUTES = ['00', '10', '20', '30', '40', '50'];
-
-// --- Type Definitions ---
-type EventType = {
-  id: string;
-  title: string;
-  description?: string;
-  startDate: string; // YYYY-MM-DD
-  endDate: string;   // YYYY-MM-DD
-  startTime?: string;
-  endTime?: string;
-  isAllDay: boolean;
-  color: keyof typeof COLORS;
-  eventType: 'me' | 'partner' | 'common';
-};
-
-// --- Helper Functions ---
-const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
-const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay(); // 0 = Sunday
-
-const formatDate = (date: Date) => {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-};
-
-const App = () => {
-  // --- State ---
-  const [user, setUser] = useState<User | null>(null);
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [events, setEvents] = useState<EventType[]>([]);
-  const [loading, setLoading] = useState(true);
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#F5F1E9">
+  <title>BiBi-Schedule</title>
   
-  // Use Fallback Data Initially
-  const [holidayData, setHolidayData] = useState<any>(() => {
-    // Transform flat fallback list to { year: { date: data } } structure
-    const initialData: any = {};
-    Object.entries(FALLBACK_HOLIDAYS).forEach(([date, info]) => {
-        const y = parseInt(date.split('-')[0]);
-        if (!initialData[y]) initialData[y] = {};
-        initialData[y][date] = info;
-    });
-    return initialData;
-  });
-  
-  // Profiles (Local State for UI)
-  const [myProfile] = useState({ name: '我', color: 'tea' });
-  const [partnerProfile] = useState({ name: '夥伴', color: 'sesame' });
+  <!-- iOS Icon -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjEwMCIgZmlsbD0iI0ZERkJGNyIvPgogIDxyZWN0IHg9IjMyIiB5PSIzMiIgd2lkdGg9Ijw0OCIgaGVpZ2h0PSI0NDgiIHJ4PSI4MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzJBMzg1IiBzdHJva2Utd2lkdGg9IjI0Ii8+CiAgPHRleHQgeD0iNTAlIiB5PSI1NSUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSdzZXJpZicgZm9udC13ZWlnaHQ9ImJvbGQiIGZvbnQtc2l6ZT0iMTgwIiBmaWxsPSIjNUQ0MDM3Ij5CaUJpPC90ZXh0Pgo8L3N2Zz4=">
 
-  // UI State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  
-  // Form State
-  const [formTitle, setFormTitle] = useState('');
-  const [formDesc, setFormDesc] = useState('');
-  const [formStartDate, setFormStartDate] = useState('');
-  const [formEndDate, setFormEndDate] = useState('');
-  const [formIsAllDay, setFormIsAllDay] = useState(true);
-  const [formStartTime, setFormStartTime] = useState('09:00');
-  const [formEndTime, setFormEndTime] = useState('10:00');
-  const [formColor, setFormColor] = useState<keyof typeof COLORS>('latte');
-  const [formEventType, setFormEventType] = useState<'me' | 'partner' | 'common'>('common');
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
 
-  // --- Auth & Data ---
-  useEffect(() => {
-    const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        try {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } catch (e) {
-          console.warn("Custom token failed, falling back to anonymous", e);
-          await signInAnonymously(auth);
-        }
-      } else {
-        await signInAnonymously(auth);
-      }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
-  }, []);
+  <!-- Google Fonts: Zen Maru Gothic & Caveat -->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
+    body { font-family: 'Zen Maru Gothic', sans-serif; -webkit-tap-highlight-color: transparent; }
+    .font-hand { font-family: 'Caveat', cursive; }
+    /* Hide scrollbar */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
 
-  // Fetch Holidays (With API: TaiwanCalendar)
-  // Repo: https://github.com/ruyut/TaiwanCalendar
-  useEffect(() => {
-    const currentYear = currentDate.getFullYear();
-    
-    const fetchHolidays = async () => {
-      try {
-        console.log(`[BiBi] Fetching holidays for ${currentYear} from TaiwanCalendar API...`);
-        const response = await fetch(`https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/${currentYear}.json`);
-        
-        if (!response.ok) {
-          console.warn(`[BiBi] Holiday API response not OK: ${response.status}`);
-          return;
-        }
-        
-        const rawData = await response.json();
-        
-        // Transform API format (YYYYMMDD) to App format (YYYY-MM-DD)
-        const formatted = rawData.reduce((acc: any, curr: any) => {
-          const dStr = curr.date; // Original: "20240101"
-          if (dStr && dStr.length === 8) {
-             const ymd = `${dStr.substring(0, 4)}-${dStr.substring(4, 6)}-${dStr.substring(6, 8)}`;
-             acc[ymd] = { isHoliday: curr.isHoliday, name: curr.description };
-          }
-          return acc;
-        }, {});
-        
-        console.log(`[BiBi] Successfully loaded ${Object.keys(formatted).length} holidays for ${currentYear}`);
-
-        // Merge with existing (fallback) data
-        setHolidayData((prev: any) => ({ 
-            ...prev, 
-            [currentYear]: { ...(prev[currentYear] || {}), ...formatted } 
-        }));
-      } catch (err) { 
-          console.error("[BiBi] Holiday API Fetch Error (Using Fallback):", err); 
-      }
-    };
-    
-    fetchHolidays();
-  }, [currentDate.getFullYear()]); // Only re-fetch if year changes
-
-  // Firestore Listener
-  useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'bibi_events'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const loadedEvents: EventType[] = [];
-      snapshot.forEach((doc) => {
-        loadedEvents.push({ id: doc.id, ...doc.data() } as EventType);
-      });
-      setEvents(loadedEvents);
-      setLoading(false);
-    }, (error) => {
-      console.error("Firestore Error:", error);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  // --- Calendar Logic ---
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-  const daysInMonth = getDaysInMonth(year, month);
-  const firstDay = getFirstDayOfMonth(year, month);
-  
-  const days = [];
-  // 1. Prev Month Padding
-  for (let i = firstDay - 1; i >= 0; i--) {
-    days.push({ day: null, fullDate: '' }); 
-  }
-  // 2. Current Month
-  for (let i = 1; i <= daysInMonth; i++) {
-    const dStr = String(i).padStart(2, '0');
-    const mStr = String(month + 1).padStart(2, '0');
-    days.push({ day: i, fullDate: `${year}-${mStr}-${dStr}` });
-  }
-  // 3. Next Month Padding
-  const remainingCells = 42 - days.length;
-  for (let i = 1; i <= remainingCells; i++) {
-    days.push({ day: null, fullDate: '' });
-  }
-
-  // --- Handlers ---
-  const handlePrevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
-  const handleNextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
-  const handleToday = () => setCurrentDate(new Date());
-
-  const resetForm = (dateStr: string) => {
-    setEditingId(null);
-    setFormTitle('');
-    setFormDesc('');
-    setFormStartDate(dateStr);
-    setFormEndDate(dateStr);
-    setFormIsAllDay(true);
-    setFormStartTime('09:00');
-    setFormEndTime('10:00');
-    setFormColor('latte');
-    setFormEventType('common');
-  };
-
-  const handleCellClick = (dateStr: string) => {
-    if (!dateStr) return;
-    resetForm(dateStr);
-    setIsModalOpen(true);
-  };
-
-  const handleEventClick = (e: React.MouseEvent, event: EventType) => {
-    e.stopPropagation();
-    setEditingId(event.id);
-    setFormTitle(event.title);
-    setFormDesc(event.description || '');
-    setFormStartDate(event.startDate);
-    setFormEndDate(event.endDate);
-    setFormIsAllDay(event.isAllDay);
-    setFormStartTime(event.startTime || '09:00');
-    setFormEndTime(event.endTime || '10:00');
-    setFormColor(event.color);
-    setFormEventType(event.eventType);
-    setIsModalOpen(true);
-  };
-
-  const saveEvent = async () => {
-    if (!user || !formTitle || !formStartDate || !formEndDate) return;
-    let start = formStartDate;
-    let end = formEndDate;
-    if (new Date(start) > new Date(end)) [start, end] = [end, start];
-
-    const eventData = {
-      title: formTitle,
-      description: formDesc,
-      startDate: start,
-      endDate: end,
-      isAllDay: formIsAllDay,
-      startTime: formStartTime,
-      endTime: formEndTime,
-      color: formColor,
-      eventType: formEventType
-    };
-
-    try {
-      if (editingId) {
-        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'bibi_events', editingId), eventData);
-      } else {
-        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'bibi_events'), eventData);
-      }
-      setIsModalOpen(false);
-    } catch (e) { console.error("Save Error:", e); }
-  };
-
-  const deleteEvent = async () => {
-    if (user && editingId) {
-      try {
-        await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'bibi_events', editingId));
-        setIsModalOpen(false);
-      } catch (e) { console.error("Delete Error:", e); }
+  <!-- Import Map: 定義模組來源 -->
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.2.0",
+      "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+      "lucide-react": "https://esm.sh/lucide-react@0.309.0",
+      "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
     }
-  };
-
-  // --- Multi-day Rendering Engine ---
-  const getEventSegments = (dateStr: string) => {
-    if (!dateStr) return [];
-    
-    const dayEvents = events.filter(ev => dateStr >= ev.startDate && dateStr <= ev.endDate);
-    
-    dayEvents.sort((a, b) => {
-      const lenA = new Date(a.endDate).getTime() - new Date(a.startDate).getTime();
-      const lenB = new Date(b.endDate).getTime() - new Date(b.startDate).getTime();
-      if (lenA !== lenB) return lenB - lenA; 
-      return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
-    });
-
-    return dayEvents.map(ev => {
-      const isStart = dateStr === ev.startDate;
-      const isEnd = dateStr === ev.endDate;
-      const dayOfWeek = new Date(dateStr).getDay();
-      
-      return { ...ev, isStart, isEnd, isSunday: dayOfWeek === 0, isSaturday: dayOfWeek === 6 };
-    });
-  };
-
-  if (loading) {
-    return (
-      <div className="h-dvh flex items-center justify-center bg-[#F5F1E9]">
-        <div className="flex flex-col items-center gap-2">
-           <Loader2 className="w-8 h-8 text-[#C2A385] animate-spin" />
-           <span className="text-[#8C7851] font-serif text-sm">Loading BiBi...</span>
-        </div>
-      </div>
-    );
   }
+  </script>
 
-  return (
-    <div className="h-dvh flex flex-col bg-[#F5F1E9] text-[#5D4037] overflow-hidden" style={{ fontFamily: '"Zen Maru Gothic", sans-serif' }}>
+  <!-- Babel Standalone: 讓瀏覽器可以執行 JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-[#F5F1E9] text-[#5D4037] overflow-hidden">
+  
+  <div id="root"></div>
+
+  <!-- React Logic -->
+  <script type="text/babel" data-type="module">
+    import React, { useState, useEffect } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { 
+      ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
+      Loader2, Save, AlignLeft, Leaf, CheckSquare 
+    } from 'lucide-react';
+    import { initializeApp } from 'firebase/app';
+    import { 
+      getAuth, onAuthStateChanged, signInAnonymously 
+    } from 'firebase/auth';
+    import { 
+      getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc 
+    } from 'firebase/firestore';
+
+    // --- Firebase Config ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyAaeMl8u3S8Atf5b9Z4MvYRfxNWqyxjvck",
+      authDomain: "schdule-f5cda.firebaseapp.com",
+      projectId: "schdule-f5cda",
+      storageBucket: "schdule-f5cda.firebasestorage.app",
+      messagingSenderId: "318490887020",
+      appId: "1:318490887020:web:115d4b35f544455768e949",
+      measurementId: "G-Q7ZEKV7YEH"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const appId = 'schdule-f5cda'; // Static App ID for GitHub Pages
+
+    // --- BiBi Style Constants ---
+    const COLORS = {
+      milk: { name: '燕麥奶', bg: 'bg-[#FDFBF7]', text: 'text-[#8C7851]', border: 'border-[#E8E2D6]', fill: 'bg-[#E8E2D6]' },
+      tea: { name: '伯爵茶', bg: 'bg-[#F5F1E9]', text: 'text-[#5D4037]', border: 'border-[#D2B48C]', fill: 'bg-[#D2B48C]' }, 
+      latte: { name: '深焙', bg: 'bg-[#C2A385]', text: 'text-white', border: 'border-[#8B4513]', fill: 'bg-[#C2A385]' }, 
+      matcha: { name: '抹茶', bg: 'bg-[#F0FDF4]', text: 'text-[#166534]', border: 'border-[#BBF7D0]', fill: 'bg-[#86EFAC]' }, 
+      berry: { name: '莓果', bg: 'bg-[#FFF1F2]', text: 'text-[#9F1239]', border: 'border-[#FECDD3]', fill: 'bg-[#FDA4AF]' },
+      taro: { name: '芋泥', bg: 'bg-[#FAF5FF]', text: 'text-[#6B21A8]', border: 'border-[#E9D5FF]', fill: 'bg-[#D8B4FE]' },
+      lemon: { name: '檸檬塔', bg: 'bg-[#FEFCE8]', text: 'text-[#854D0E]', border: 'border-[#FEF08A]', fill: 'bg-[#FDE047]' },
+      sesame: { name: '芝麻', bg: 'bg-[#F8FAFC]', text: 'text-[#334155]', border: 'border-[#CBD5E1]', fill: 'bg-[#94A3B8]' },
+      earl: { name: '伯爵藍', bg: 'bg-[#F0F9FF]', text: 'text-[#0C4A6E]', border: 'border-[#BAE6FD]', fill: 'bg-[#7DD3FC]' },
+    };
+
+    const FALLBACK_HOLIDAYS = {
+      "2025-01-01": { isHoliday: true, name: "元旦" },
+      "2025-01-25": { isHoliday: true, name: "除夕" },
+      "2025-01-26": { isHoliday: true, name: "春節" },
+      "2025-02-28": { isHoliday: true, name: "和平紀念日" },
+      "2025-04-04": { isHoliday: true, name: "兒童節" },
+      "2025-04-05": { isHoliday: true, name: "清明節" },
+      "2025-05-01": { isHoliday: true, name: "勞動節" },
+      "2025-05-31": { isHoliday: true, name: "端午節" },
+      "2025-10-06": { isHoliday: true, name: "中秋節" },
+      "2025-10-10": { isHoliday: true, name: "國慶日" },
+      "2026-01-01": { isHoliday: true, name: "元旦" },
+      "2026-02-16": { isHoliday: true, name: "除夕" },
+      "2026-02-17": { isHoliday: true, name: "春節" },
+    };
+
+    // --- Helper Functions ---
+    const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+    const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+    const formatDate = (date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
+    const App = () => {
+      // --- State ---
+      const [user, setUser] = useState(null);
+      const [currentDate, setCurrentDate] = useState(new Date());
+      const [events, setEvents] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [holidayData, setHolidayData] = useState(() => {
+        const initialData = {};
+        Object.entries(FALLBACK_HOLIDAYS).forEach(([date, info]) => {
+            const y = parseInt(date.split('-')[0]);
+            if (!initialData[y]) initialData[y] = {};
+            initialData[y][date] = info;
+        });
+        return initialData;
+      });
+
+      // UI State
+      const [myProfile] = useState({ name: '我', color: 'tea' });
+      const [partnerProfile] = useState({ name: '夥伴', color: 'sesame' });
+      const [isModalOpen, setIsModalOpen] = useState(false);
+      const [editingId, setEditingId] = useState(null);
+
+      // Form State
+      const [formTitle, setFormTitle] = useState('');
+      const [formDesc, setFormDesc] = useState('');
+      const [formStartDate, setFormStartDate] = useState('');
+      const [formEndDate, setFormEndDate] = useState('');
+      const [formIsAllDay, setFormIsAllDay] = useState(true);
+      const [formStartTime, setFormStartTime] = useState('09:00');
+      const [formEndTime, setFormEndTime] = useState('10:00');
+      const [formColor, setFormColor] = useState('latte');
+      const [formEventType, setFormEventType] = useState('common');
+
+      // --- Auth ---
+      useEffect(() => {
+        signInAnonymously(auth).catch((error) => {
+           console.error("Auth Failed:", error);
+           // Error handling: if auth fails, it's likely domain whitelist
+        });
+        return onAuthStateChanged(auth, setUser);
+      }, []);
+
+      // --- Holiday API ---
+      useEffect(() => {
+        const currentYear = currentDate.getFullYear();
+        const fetchHolidays = async () => {
+          try {
+            const response = await fetch(`https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/${currentYear}.json`);
+            if (!response.ok) return;
+            const rawData = await response.json();
+            const formatted = rawData.reduce((acc, curr) => {
+              const dStr = curr.date;
+              if (dStr && dStr.length === 8) {
+                 const ymd = `${dStr.substring(0, 4)}-${dStr.substring(4, 6)}-${dStr.substring(6, 8)}`;
+                 acc[ymd] = { isHoliday: curr.isHoliday, name: curr.description };
+              }
+              return acc;
+            }, {});
+            setHolidayData(prev => ({ ...prev, [currentYear]: { ...(prev[currentYear] || {}), ...formatted } }));
+          } catch (err) { console.error(err); }
+        };
+        fetchHolidays();
+      }, [currentDate.getFullYear()]);
+
+      // --- Firestore ---
+      useEffect(() => {
+        if (!user) return;
+        const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'bibi_events'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const loadedEvents = [];
+          snapshot.forEach((doc) => loadedEvents.push({ id: doc.id, ...doc.data() }));
+          setEvents(loadedEvents);
+          setLoading(false);
+        }, (err) => console.error("Firestore Error:", err));
+        return () => unsubscribe();
+      }, [user]);
+
+      // --- Calendar Logic ---
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const daysInMonth = getDaysInMonth(year, month);
+      const firstDay = getFirstDayOfMonth(year, month);
       
-      {/* Import Hand-written Fonts */}
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
-        .font-hand { font-family: 'Caveat', cursive; }
-      `}</style>
-      
-      {/* Header */}
-      <header className="flex-none flex items-center justify-between px-4 py-3 bg-[#F5F1E9] border-b border-[#D2B48C]/20 z-10">
-        <div className="flex items-center gap-3">
-           <div className="bg-white p-2 rounded-xl shadow-sm border border-[#E8E2D6]">
-             <Sparkles className="w-5 h-5 text-[#C2A385]" />
-           </div>
-           <div>
-             <h1 className="text-xl font-hand font-bold tracking-tight text-[#5D4037] text-2xl">BiBi-Schedule</h1>
-             <p className="text-[12px] font-hand font-bold text-[#8C7851] uppercase tracking-widest hidden sm:block">
-               {year} . {month + 1}
-             </p>
-           </div>
+      const days = [];
+      for (let i = firstDay - 1; i >= 0; i--) days.push({ day: null, fullDate: '' });
+      for (let i = 1; i <= daysInMonth; i++) {
+        const dStr = String(i).padStart(2, '0');
+        const mStr = String(month + 1).padStart(2, '0');
+        days.push({ day: i, fullDate: `${year}-${mStr}-${dStr}` });
+      }
+      const remainingCells = 42 - days.length;
+      for (let i = 1; i <= remainingCells; i++) days.push({ day: null, fullDate: '' });
+
+      const handlePrevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
+      const handleNextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
+      const handleToday = () => setCurrentDate(new Date());
+
+      const getEventSegments = (dateStr) => {
+        if (!dateStr) return [];
+        const dayEvents = events.filter(ev => dateStr >= ev.startDate && dateStr <= ev.endDate);
+        dayEvents.sort((a, b) => {
+          const lenA = new Date(a.endDate).getTime() - new Date(a.startDate).getTime();
+          const lenB = new Date(b.endDate).getTime() - new Date(b.startDate).getTime();
+          if (lenA !== lenB) return lenB - lenA; 
+          return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
+        });
+        return dayEvents.map(ev => {
+          const isStart = dateStr === ev.startDate;
+          const isEnd = dateStr === ev.endDate;
+          const dayOfWeek = new Date(dateStr).getDay();
+          return { ...ev, isStart, isEnd, isSunday: dayOfWeek === 0, isSaturday: dayOfWeek === 6 };
+        });
+      };
+
+      // Modal Handlers
+      const openModal = (dateStr, event = null) => {
+         setEditingId(event ? event.id : null);
+         setFormTitle(event ? event.title : '');
+         setFormDesc(event ? (event.description || '') : '');
+         setFormStartDate(event ? event.startDate : dateStr);
+         setFormEndDate(event ? event.endDate : dateStr);
+         setFormIsAllDay(event ? event.isAllDay : true);
+         setFormStartTime(event ? (event.startTime || '09:00') : '09:00');
+         setFormEndTime(event ? (event.endTime || '10:00') : '10:00');
+         setFormColor(event ? event.color : 'latte');
+         setFormEventType(event ? event.eventType : 'common');
+         setIsModalOpen(true);
+      };
+
+      const saveEvent = async () => {
+        if (!user || !formTitle || !formStartDate || !formEndDate) return;
+        let start = formStartDate;
+        let end = formEndDate;
+        if (new Date(start) > new Date(end)) [start, end] = [end, start];
+
+        const eventData = {
+          title: formTitle, description: formDesc,
+          startDate: start, endDate: end,
+          isAllDay: formIsAllDay, startTime: formStartTime, endTime: formEndTime,
+          color: formColor, eventType: formEventType
+        };
+
+        try {
+          if (editingId) {
+            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'bibi_events', editingId), eventData);
+          } else {
+            await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'bibi_events'), eventData);
+          }
+          setIsModalOpen(false);
+        } catch (e) { console.error("Save Error:", e); }
+      };
+
+      const deleteEvent = async () => {
+        if (user && editingId) {
+          try {
+            await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'bibi_events', editingId));
+            setIsModalOpen(false);
+          } catch (e) { console.error("Delete Error:", e); }
+        }
+      };
+
+      if (loading) return (
+        <div className="h-dvh flex items-center justify-center">
+           <Loader2 className="w-8 h-8 text-[#C2A385] animate-spin" />
         </div>
-        
-        <div className="flex items-center gap-3 bg-white/50 p-1.5 rounded-2xl border border-[#D2B48C]/10 backdrop-blur-sm">
-          <button onClick={handlePrevMonth} className="p-2 hover:bg-[#E8E2D6]/50 rounded-xl transition-colors text-[#8C7851]">
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <span className="text-xl font-hand font-bold min-w-[100px] text-center text-[#5D4037]">
-            {month + 1}月 <span className="text-base font-hand text-[#8C7851]">{year}</span>
-          </span>
-          <button onClick={handleNextMonth} className="p-2 hover:bg-[#E8E2D6]/50 rounded-xl transition-colors text-[#8C7851]">
-            <ChevronRight className="w-5 h-5" />
-          </button>
-        </div>
-        
-        <button onClick={handleToday} className="bg-[#C2A385] text-white px-3 py-1.5 text-xs font-bold rounded-lg shadow-sm hover:bg-[#A68664] transition-colors">
-          今天
-        </button>
-      </header>
+      );
 
-      {/* Weekday Header */}
-      <div className="flex-none grid grid-cols-7 border-b border-[#D2B48C]/20 bg-[#FDFBF7]">
-        {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d, i) => (
-          <div key={i} className={`py-2 text-center text-[12px] font-hand font-bold tracking-widest ${(i === 0 || i === 6) ? 'text-[#9F1239]' : 'text-[#D2B48C]'}`}>
-            {d}
-          </div>
-        ))}
-      </div>
-
-      {/* Main Grid */}
-      <div className="flex-1 grid grid-cols-7 grid-rows-6 w-full h-full">
-        {days.map((cell, idx) => {
-            const hasDate = cell.day !== null;
-            const segments = hasDate ? getEventSegments(cell.fullDate) : [];
-            const isToday = hasDate && cell.fullDate === formatDate(new Date());
-            
-            // KEY FIX: Use standard YYYY-MM-DD key for lookup
-            const holidayInfo = hasDate ? holidayData[year]?.[cell.fullDate] : null;
-            
-            // Logic for Weekends and Holidays Styling
-            const isHoliday = holidayInfo?.isHoliday === true;
-            const dayOfWeek = idx % 7;
-            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-            
-            // Decide background color
-            let bgClass = 'bg-[#FDFBF7]'; // Default Workday (Milk)
-            if (!hasDate) {
-                bgClass = 'bg-[#F5F1E9]/50'; // Empty (Tea Transparent)
-            } else if (isHoliday || isWeekend) {
-                bgClass = 'bg-[#F2E8DA]'; // Holiday/Weekend (Darker Latte)
-            }
-
-            // Decide text color for date number
-            const dateTextColor = (isHoliday || dayOfWeek === 0) ? 'text-[#9F1239]' : 'text-[#5D4037]'; // Red for Sun/Holiday
-
-            return (
-            <div 
-              key={idx}
-              onClick={() => hasDate && handleCellClick(cell.fullDate)}
-              className={`
-                relative border-b border-r border-[#D2B48C]/10 flex flex-col
-                ${bgClass}
-                active:brightness-95 transition-colors cursor-pointer select-none
-                overflow-hidden
-              `}
-            >
-              {/* Date Number & Holiday */}
-              {hasDate && (
-                <div className="flex flex-col items-center pt-1 mb-0.5">
-                   <span className={`
-                      text-lg sm:text-xl font-hand font-bold h-7 w-7 flex items-center justify-center rounded-full transition-all
-                      ${isToday ? 'bg-[#C2A385] text-white shadow-md' : dateTextColor}
-                   `}>
-                     {cell.day}
-                   </span>
-                   {isHoliday && (
-                     <span className="text-[10px] text-[#9F1239] font-medium -mt-1 truncate max-w-full px-1">
-                       {holidayInfo.name}
-                     </span>
-                   )}
-                </div>
-              )}
-
-              {/* Events Container - BiBi Style Bars */}
-              <div className="flex-1 flex flex-col gap-[2px] w-full px-0.5 pb-1">
-                {segments.slice(0, 4).map((ev) => {
-                  const roundLeft = ev.isStart || ev.isSunday;
-                  const roundRight = ev.isEnd || ev.isSaturday;
-                  const style = COLORS[ev.color] || COLORS.latte;
-                  
-                  return (
-                    <div 
-                      key={ev.id}
-                      onClick={(e) => handleEventClick(e, ev)}
-                      className={`
-                        text-[10px] sm:text-xs h-[18px] sm:h-[20px]
-                        flex items-center px-1 shadow-sm transition-all hover:brightness-95
-                        ${style.fill} ${style.text === 'text-white' ? 'text-white' : 'text-[#5D4037]'}
-                        ${roundLeft ? 'rounded-l-md ml-0.5' : '-ml-[1px]'} 
-                        ${roundRight ? 'rounded-r-md mr-0.5' : '-mr-[1px]'}
-                        ${!roundLeft && !roundRight ? 'z-0' : 'z-10 relative'}
-                      `}
-                    >
-                      {(ev.isStart || ev.isSunday) && (
-                        <span className="truncate w-full font-medium leading-none flex items-center gap-1">
-                          {!ev.isAllDay && ev.startTime && <span className="text-[9px] opacity-80 font-hand">{ev.startTime}</span>}
-                          {ev.title}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-                {segments.length > 4 && (
-                   <div className="text-[10px] font-hand text-[#D2B48C] text-center leading-none mt-auto font-bold">
-                     +{segments.length - 4}
-                   </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Add/Edit Modal - BiBi Style */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D4037]/20 backdrop-blur-[2px] p-4">
-          <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#D2B48C]/30">
-            
-            <div className="px-5 py-4 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center">
-               <h3 className="text-[#5D4037] font-bold flex items-center gap-2">
-                 <Leaf className="w-4 h-4 text-[#C2A385]" />
-                 {editingId ? '編輯行程' : '建立行程'}
-               </h3>
-               <div className="flex gap-2">
-                 {editingId && (
-                    <button onClick={deleteEvent} className="p-1.5 text-[#D2B48C] hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                 )}
-                 <button onClick={() => setIsModalOpen(false)} className="p-1.5 text-[#D2B48C] hover:bg-[#F5F1E9] rounded-full transition-colors">
-                   <X className="w-4 h-4" />
-                 </button>
+      return (
+        <div className="h-dvh flex flex-col">
+          {/* Header */}
+          <header className="flex-none flex items-center justify-between px-4 py-3 bg-[#F5F1E9] border-b border-[#D2B48C]/20 z-10">
+            <div className="flex items-center gap-3">
+               <div className="bg-white p-2 rounded-xl shadow-sm border border-[#E8E2D6]">
+                 <Sparkles className="w-5 h-5 text-[#C2A385]" />
+               </div>
+               <div>
+                 <h1 className="text-xl font-hand font-bold tracking-tight text-[#5D4037] text-2xl">BiBi-Schedule</h1>
+                 <p className="text-[12px] font-hand font-bold text-[#8C7851] uppercase tracking-widest hidden sm:block">
+                   {year} . {month + 1}
+                 </p>
                </div>
             </div>
-
-            <div className="p-6 space-y-5">
-              
-              {/* Profile/Type Toggle */}
-              <div className="flex gap-2 p-1 bg-[#F5F1E9] rounded-xl">
-                 {(['me', 'partner', 'common'] as const).map(type => {
-                    const isActive = formEventType === type;
-                    const label = type === 'me' ? myProfile.name : type === 'partner' ? partnerProfile.name : '共同';
-                    return (
-                      <button 
-                        key={type}
-                        onClick={() => {
-                          setFormEventType(type);
-                          if(type === 'me') setFormColor('tea'); 
-                          if(type === 'partner') setFormColor('sesame'); 
-                          if(type === 'common') setFormColor('latte');
-                        }}
-                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${isActive ? 'bg-white shadow text-[#5D4037]' : 'text-[#8C7851] opacity-60'}`}
-                      >
-                        {label}
-                      </button>
-                    )
-                 })}
-              </div>
-
-              {/* Title */}
-              <input 
-                type="text" 
-                value={formTitle}
-                onChange={(e) => setFormTitle(e.target.value)}
-                placeholder="行程標題..."
-                className="w-full text-xl font-bold text-[#5D4037] placeholder-[#D2B48C] outline-none border-b-2 border-[#F5F1E9] focus:border-[#C2A385] bg-transparent py-1 transition-colors"
-                autoFocus
-              />
-
-              {/* Time Section */}
-              <div className="space-y-3 bg-[#FDFBF7] p-3 rounded-xl border border-[#F5F1E9]">
-                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-[#5D4037] font-bold text-sm">
-                      <Clock className="w-4 h-4 text-[#C2A385]" /> 時間
-                    </div>
-                    <label className="flex items-center gap-2 text-xs font-bold text-[#8C7851] cursor-pointer">
-                      <input type="checkbox" checked={formIsAllDay} onChange={e => setFormIsAllDay(e.target.checked)} className="accent-[#C2A385]" />
-                      全天
-                    </label>
-                 </div>
-                 
-                 <div className="grid grid-cols-[auto_1fr] gap-2 items-center text-sm">
-                    <span className="text-[#8C7851] text-xs font-bold">開始</span>
-                    <div className="flex gap-2">
-                       <input type="date" value={formStartDate} onChange={e => setFormStartDate(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-2 py-1 text-[#5D4037] w-full font-hand text-lg" />
-                       {!formIsAllDay && <input type="time" value={formStartTime} onChange={e => setFormStartTime(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-1 py-1 text-[#5D4037] font-hand text-lg" />}
-                    </div>
-                    
-                    <span className="text-[#8C7851] text-xs font-bold">結束</span>
-                    <div className="flex gap-2">
-                       <input type="date" value={formEndDate} onChange={e => setFormEndDate(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-2 py-1 text-[#5D4037] w-full font-hand text-lg" />
-                       {!formIsAllDay && <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-1 py-1 text-[#5D4037] font-hand text-lg" />}
-                    </div>
-                 </div>
-              </div>
-
-              {/* Description */}
-              <div className="flex gap-3">
-                 <AlignLeft className="w-4 h-4 text-[#C2A385] mt-1 shrink-0" />
-                 <textarea 
-                   placeholder="備註說明..." 
-                   value={formDesc}
-                   onChange={e => setFormDesc(e.target.value)}
-                   className="w-full bg-[#FDFBF7] rounded-xl p-3 text-sm text-[#5D4037] h-20 outline-none border border-[#F5F1E9] focus:border-[#C2A385] resize-none"
-                 />
-              </div>
-
-              {/* Colors */}
-              <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-                {Object.entries(COLORS).map(([key, style]) => (
-                  <button
-                    key={key}
-                    onClick={() => setFormColor(key as any)}
-                    title={style.name}
-                    className={`
-                       w-8 h-8 rounded-full shrink-0 transition-transform flex items-center justify-center
-                       ${style.fill} 
-                       ${formColor === key ? 'ring-2 ring-offset-2 ring-[#8C7851] scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}
-                    `}
-                  >
-                    {formColor === key && <CheckSquare className="w-4 h-4 text-white drop-shadow-md" />}
-                  </button>
-                ))}
-              </div>
-
+            <div className="flex items-center gap-3 bg-white/50 p-1.5 rounded-2xl border border-[#D2B48C]/10 backdrop-blur-sm">
+              <button onClick={handlePrevMonth} className="p-2 hover:bg-[#E8E2D6]/50 rounded-xl transition-colors text-[#8C7851]"><ChevronLeft className="w-5 h-5" /></button>
+              <span className="text-xl font-hand font-bold min-w-[100px] text-center text-[#5D4037]">
+                {month + 1}月 <span className="text-base font-hand text-[#8C7851]">{year}</span>
+              </span>
+              <button onClick={handleNextMonth} className="p-2 hover:bg-[#E8E2D6]/50 rounded-xl transition-colors text-[#8C7851]"><ChevronRight className="w-5 h-5" /></button>
             </div>
+            <button onClick={handleToday} className="bg-[#C2A385] text-white px-3 py-1.5 text-xs font-bold rounded-lg shadow-sm hover:bg-[#A68664] transition-colors">今天</button>
+          </header>
 
-            {/* Modal Footer */}
-            <div className="px-5 py-4 border-t border-[#F5F1E9] bg-[#FDFBF7] flex justify-end">
-              <button 
-                onClick={saveEvent}
-                className="bg-[#C2A385] hover:bg-[#A68664] text-white text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-colors flex items-center gap-2"
-              >
-                <Save className="w-4 h-4" />
-                儲存行程
-              </button>
-            </div>
-
+          {/* Weekday */}
+          <div className="flex-none grid grid-cols-7 border-b border-[#D2B48C]/20 bg-[#FDFBF7]">
+            {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d, i) => (
+              <div key={i} className={`py-2 text-center text-[12px] font-hand font-bold tracking-widest ${(i === 0 || i === 6) ? 'text-[#9F1239]' : 'text-[#D2B48C]'}`}>{d}</div>
+            ))}
           </div>
-        </div>
-      )}
-    </div>
-  );
-};
 
-export default App;
+          {/* Grid */}
+          <div className="flex-1 grid grid-cols-7 grid-rows-6 w-full h-full">
+            {days.map((cell, idx) => {
+              const hasDate = cell.day !== null;
+              const segments = hasDate ? getEventSegments(cell.fullDate) : [];
+              const isToday = hasDate && cell.fullDate === formatDate(new Date());
+              const holidayInfo = hasDate ? holidayData[year]?.[cell.fullDate] : null;
+              const isHoliday = holidayInfo?.isHoliday === true;
+              const dayOfWeek = idx % 7;
+              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+              
+              let bgClass = 'bg-[#FDFBF7]';
+              if (!hasDate) bgClass = 'bg-[#F5F1E9]/50';
+              else if (isHoliday || isWeekend) bgClass = 'bg-[#F2E8DA]';
+
+              const dateTextColor = (isHoliday || dayOfWeek === 0) ? 'text-[#9F1239]' : 'text-[#5D4037]';
+
+              return (
+                <div key={idx} onClick={() => hasDate && openModal(cell.fullDate)} className={`relative border-b border-r border-[#D2B48C]/10 flex flex-col ${bgClass} active:brightness-95 transition-colors cursor-pointer select-none overflow-hidden`}>
+                  {hasDate && (
+                    <div className="flex flex-col items-center pt-1 mb-0.5">
+                       <span className={`text-lg sm:text-xl font-hand font-bold h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'bg-[#C2A385] text-white shadow-md' : dateTextColor}`}>
+                         {cell.day}
+                       </span>
+                       {isHoliday && <span className="text-[10px] text-[#9F1239] font-medium -mt-1 truncate max-w-full px-1">{holidayInfo.name}</span>}
+                    </div>
+                  )}
+                  <div className="flex-1 flex flex-col gap-[2px] w-full px-0.5 pb-1">
+                    {segments.slice(0, 4).map((ev) => {
+                      const roundLeft = ev.isStart || ev.isSunday;
+                      const roundRight = ev.isEnd || ev.isSaturday;
+                      const style = COLORS[ev.color] || COLORS.latte;
+                      return (
+                        <div key={ev.id} onClick={(e) => { e.stopPropagation(); openModal(null, ev); }} className={`text-[10px] sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 shadow-sm transition-all hover:brightness-95 ${style.fill} ${style.text === 'text-white' ? 'text-white' : 'text-[#5D4037]'} ${roundLeft ? 'rounded-l-md ml-0.5' : '-ml-[1px]'} ${roundRight ? 'rounded-r-md mr-0.5' : '-mr-[1px]'} ${!roundLeft && !roundRight ? 'z-0' : 'z-10 relative'}`}>
+                          {(ev.isStart || ev.isSunday) && (
+                            <span className="truncate w-full font-medium leading-none flex items-center gap-1">
+                              {!ev.isAllDay && ev.startTime && <span className="text-[9px] opacity-80 font-hand">{ev.startTime}</span>}
+                              {ev.title}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {segments.length > 4 && <div className="text-[10px] font-hand text-[#D2B48C] text-center leading-none mt-auto font-bold">+{segments.length - 4}</div>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Modal */}
+          {isModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D4037]/20 backdrop-blur-[2px] p-4">
+              <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#D2B48C]/30">
+                <div className="px-5 py-4 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center">
+                   <h3 className="text-[#5D4037] font-bold flex items-center gap-2"><Leaf className="w-4 h-4 text-[#C2A385]" /> {editingId ? '編輯行程' : '建立行程'}</h3>
+                   <div className="flex gap-2">
+                     {editingId && <button onClick={deleteEvent} className="p-1.5 text-[#D2B48C] hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"><Trash2 className="w-4 h-4" /></button>}
+                     <button onClick={() => setIsModalOpen(false)} className="p-1.5 text-[#D2B48C] hover:bg-[#F5F1E9] rounded-full transition-colors"><X className="w-4 h-4" /></button>
+                   </div>
+                </div>
+                <div className="p-6 space-y-5">
+                  <div className="flex gap-2 p-1 bg-[#F5F1E9] rounded-xl">
+                     {['me', 'partner', 'common'].map(type => (
+                        <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('tea'); if(type === 'partner') setFormColor('sesame'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'bg-white shadow text-[#5D4037]' : 'text-[#8C7851] opacity-60'}`}>{type === 'me' ? myProfile.name : type === 'partner' ? partnerProfile.name : '共同'}</button>
+                     ))}
+                  </div>
+                  <input type="text" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="行程標題..." className="w-full text-xl font-bold text-[#5D4037] placeholder-[#D2B48C] outline-none border-b-2 border-[#F5F1E9] focus:border-[#C2A385] bg-transparent py-1 transition-colors" autoFocus />
+                  <div className="space-y-3 bg-[#FDFBF7] p-3 rounded-xl border border-[#F5F1E9]">
+                     <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-[#5D4037] font-bold text-sm"><Clock className="w-4 h-4 text-[#C2A385]" /> 時間</div>
+                        <label className="flex items-center gap-2 text-xs font-bold text-[#8C7851] cursor-pointer"><input type="checkbox" checked={formIsAllDay} onChange={e => setFormIsAllDay(e.target.checked)} className="accent-[#C2A385]" /> 全天</label>
+                     </div>
+                     <div className="grid grid-cols-[auto_1fr] gap-2 items-center text-sm">
+                        <span className="text-[#8C7851] text-xs font-bold">開始</span>
+                        <div className="flex gap-2">
+                           <input type="date" value={formStartDate} onChange={e => setFormStartDate(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-2 py-1 text-[#5D4037] w-full font-hand text-lg" />
+                           {!formIsAllDay && <input type="time" value={formStartTime} onChange={e => setFormStartTime(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-1 py-1 text-[#5D4037] font-hand text-lg" />}
+                        </div>
+                        <span className="text-[#8C7851] text-xs font-bold">結束</span>
+                        <div className="flex gap-2">
+                           <input type="date" value={formEndDate} onChange={e => setFormEndDate(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-2 py-1 text-[#5D4037] w-full font-hand text-lg" />
+                           {!formIsAllDay && <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-1 py-1 text-[#5D4037] font-hand text-lg" />}
+                        </div>
+                     </div>
+                  </div>
+                  <div className="flex gap-3">
+                     <AlignLeft className="w-4 h-4 text-[#C2A385] mt-1 shrink-0" />
+                     <textarea placeholder="備註說明..." value={formDesc} onChange={e => setFormDesc(e.target.value)} className="w-full bg-[#FDFBF7] rounded-xl p-3 text-sm text-[#5D4037] h-20 outline-none border border-[#F5F1E9] focus:border-[#C2A385] resize-none" />
+                  </div>
+                  <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+                    {Object.entries(COLORS).map(([key, style]) => (
+                      <button key={key} onClick={() => setFormColor(key)} className={`w-8 h-8 rounded-full shrink-0 transition-transform flex items-center justify-center ${style.fill} ${formColor === key ? 'ring-2 ring-offset-2 ring-[#8C7851] scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}`}>
+                        {formColor === key && <CheckSquare className="w-4 h-4 text-white drop-shadow-md" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="px-5 py-4 border-t border-[#F5F1E9] bg-[#FDFBF7] flex justify-end">
+                  <button onClick={saveEvent} className="bg-[#C2A385] hover:bg-[#A68664] text-white text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-colors flex items-center gap-2"><Save className="w-4 h-4" /> 儲存行程</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
