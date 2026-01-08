@@ -45,14 +45,14 @@
     import { createRoot } from 'react-dom/client';
     import { 
       ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy
+      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users
     } from 'lucide-react';
     import { initializeApp } from 'firebase/app';
     import { 
       getAuth, onAuthStateChanged, signInAnonymously 
     } from 'firebase/auth';
     import { 
-      getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc 
+      getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc
     } from 'firebase/firestore';
 
     const firebaseConfig = {
@@ -83,6 +83,7 @@
     };
 
     const FALLBACK_HOLIDAYS = {
+      // 2025
       "2025-01-01": { isHoliday: true, name: "元旦" },
       "2025-01-25": { isHoliday: true, name: "除夕" },
       "2025-01-26": { isHoliday: true, name: "春節" },
@@ -93,6 +94,7 @@
       "2025-05-31": { isHoliday: true, name: "端午節" },
       "2025-10-06": { isHoliday: true, name: "中秋節" },
       "2025-10-10": { isHoliday: true, name: "國慶日" },
+      // 2026
       "2026-01-01": { isHoliday: true, name: "元旦" },
       "2026-02-16": { isHoliday: true, name: "除夕" },
       "2026-02-17": { isHoliday: true, name: "春節" },
@@ -100,20 +102,10 @@
       "2026-04-05": { isHoliday: true, name: "清明節" },
       "2026-06-19": { isHoliday: true, name: "端午節" },
       "2026-09-25": { isHoliday: true, name: "中秋節" },
-      "2026-10-10": { isHoliday: true, name: "國慶日" },
-      "2027-01-01": { isHoliday: true, name: "元旦" },
-      "2027-02-05": { isHoliday: true, name: "小年夜" },
-      "2027-02-06": { isHoliday: true, name: "除夕" },
-      "2027-02-07": { isHoliday: true, name: "春節" },
-      "2027-02-28": { isHoliday: true, name: "和平紀念日" },
-      "2027-04-04": { isHoliday: true, name: "兒童節" },
-      "2027-04-05": { isHoliday: true, name: "清明節" },
-      "2027-05-01": { isHoliday: true, name: "勞動節" },
-      "2027-06-09": { isHoliday: true, name: "端午節" },
-      "2027-09-15": { isHoliday: true, name: "中秋節" },
-      "2027-10-10": { isHoliday: true, name: "國慶日" }
+      "2026-10-10": { isHoliday: true, name: "國慶日" }
     };
 
+    // --- Helper Functions ---
     const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
     const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
     const formatDate = (date) => {
@@ -129,6 +121,9 @@
       
       const [currentDate, setCurrentDate] = useState(new Date());
       const [events, setEvents] = useState([]);
+      // [NEW] Role Settings: Default to '我' and '夥伴' but sync from DB
+      const [roleSettings, setRoleSettings] = useState({ role1: '我', role2: '夥伴' });
+      
       const [loading, setLoading] = useState(true);
       const [holidayData, setHolidayData] = useState(() => {
         const initialData = {};
@@ -140,9 +135,6 @@
         return initialData;
       });
 
-      const [myProfile] = useState({ name: '我', color: 'tea' });
-      const [partnerProfile] = useState({ name: '夥伴', color: 'sesame' });
-      
       const [isEditModalOpen, setIsEditModalOpen] = useState(false);
       const [isDayViewModalOpen, setIsDayViewModalOpen] = useState(false); 
       const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false); 
@@ -160,6 +152,10 @@
       const [formEndTime, setFormEndTime] = useState('10:00');
       const [formColor, setFormColor] = useState('latte');
       const [formEventType, setFormEventType] = useState('common');
+
+      // Settings Form State
+      const [tempRole1, setTempRole1] = useState('');
+      const [tempRole2, setTempRole2] = useState('');
 
       // --- Auth ---
       useEffect(() => {
@@ -189,20 +185,32 @@
         fetchHolidays();
       }, [currentDate.getFullYear()]);
 
-      // --- Firestore (Using Custom UID Logic) ---
+      // --- Firestore (Data & Settings) ---
       useEffect(() => {
         const targetUid = customUserId || user?.uid;
-        
         if (!targetUid) return;
         
-        const q = query(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_events'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        // 1. Listen to Events
+        const qEvents = query(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_events'));
+        const unsubEvents = onSnapshot(qEvents, (snapshot) => {
           const loadedEvents = [];
           snapshot.forEach((doc) => loadedEvents.push({ id: doc.id, ...doc.data() }));
           setEvents(loadedEvents);
           setLoading(false);
-        }, (err) => console.error("Firestore Error:", err));
-        return () => unsubscribe();
+        }, (err) => console.error("Firestore Events Error:", err));
+
+        // 2. Listen to Role Settings (Sync Names)
+        const settingsDocRef = doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles');
+        const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setRoleSettings(docSnap.data());
+          } else {
+            // If no settings exist yet, keep defaults or save defaults?
+            // Keeping defaults in local state is fine.
+          }
+        });
+
+        return () => { unsubEvents(); unsubSettings(); };
       }, [user, customUserId]);
 
       // --- Handlers ---
@@ -219,7 +227,6 @@
       const handleCopyId = () => {
         const text = user?.uid;
         if (!text) return;
-        
         const textArea = document.createElement("textarea");
         textArea.value = text;
         textArea.style.position = "fixed";
@@ -227,14 +234,31 @@
         document.body.appendChild(textArea);
         textArea.focus();
         textArea.select();
-        
-        try {
-          document.execCommand('copy');
-        } catch (err) {
-          console.error('Fallback: Oops, unable to copy', err);
-        }
-        
+        try { document.execCommand('copy'); } catch (err) { console.error('Copy failed', err); }
         document.body.removeChild(textArea);
+      };
+
+      // [NEW] Save Role Names
+      const handleSaveRoles = async () => {
+        const targetUid = customUserId || user?.uid;
+        if (!targetUid) return;
+        
+        const newRoles = {
+          role1: tempRole1 || roleSettings.role1,
+          role2: tempRole2 || roleSettings.role2
+        };
+
+        try {
+          await setDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles'), newRoles);
+          setRoleSettings(newRoles);
+          setIsSettingsModalOpen(false);
+        } catch (e) { console.error("Save Roles Error:", e); }
+      };
+
+      const openSettings = () => {
+        setTempRole1(roleSettings.role1);
+        setTempRole2(roleSettings.role2);
+        setIsSettingsModalOpen(true);
       };
 
       // --- Calendar Logic ---
@@ -356,7 +380,7 @@
                 <span className="text-xl font-hand font-bold min-w-[80px] text-center text-[#5D4037]">{month + 1}月 <span className="text-base font-hand text-[#8C7851]">{year}</span></span>
                 <button onClick={handleNextMonth} className="p-2 hover:bg-[#E8E2D6]/50 rounded-xl transition-colors text-[#8C7851]"><ChevronRight className="w-5 h-5" /></button>
               </div>
-              <button onClick={() => setIsSettingsModalOpen(true)} className="bg-white text-[#8C7851] p-2.5 rounded-xl shadow-sm border border-[#E8E2D6] hover:bg-[#FDFBF7]"><Settings className="w-5 h-5" /></button>
+              <button onClick={openSettings} className="bg-white text-[#8C7851] p-2.5 rounded-xl shadow-sm border border-[#E8E2D6] hover:bg-[#FDFBF7]"><Settings className="w-5 h-5" /></button>
             </div>
           </header>
 
@@ -396,7 +420,6 @@
                       const roundRight = ev.isEnd || ev.isSaturday;
                       const style = COLORS[ev.color] || COLORS.latte;
                       
-                      // [FIX] Negative margins for seamless connection
                       let marginClass = '';
                       if (!roundLeft) marginClass += ' -ml-[1px] rounded-l-none';
                       else marginClass += ' ml-1 rounded-l-md';
@@ -417,38 +440,67 @@
             })}
           </div>
 
-          {/* Settings Modal (Sync ID) */}
+          {/* Settings Modal (Sync ID + Profile Names) */}
           {isSettingsModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D4037]/20 backdrop-blur-[2px] p-4">
-               <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#D2B48C]/30 p-6 space-y-4">
-                  <div className="flex justify-between items-center pb-2 border-b border-[#F5F1E9]">
-                    <h3 className="font-bold text-[#5D4037]">開發者設定 & 同步</h3>
-                    <button onClick={() => setIsSettingsModalOpen(false)} className="p-1 text-[#8C7851] hover:bg-[#F5F1E9] rounded-full"><X className="w-5 h-5" /></button>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-[#8C7851] uppercase">當前用戶 ID (此裝置)</label>
-                    <div className="flex gap-2 items-center bg-[#FDFBF7] border border-[#E8E2D6] p-2 rounded-lg">
-                      <code className="text-[10px] text-[#5D4037] break-all flex-1">{user?.uid || 'Loading...'}</code>
-                      <button onClick={handleCopyId} className="p-1 text-[#C2A385] hover:bg-white rounded"><Copy className="w-4 h-4" /></button>
+               <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#D2B48C]/30 flex flex-col max-h-[90vh]">
+                  <div className="p-6 space-y-5 overflow-y-auto">
+                    <div className="flex justify-between items-center pb-2 border-b border-[#F5F1E9]">
+                      <h3 className="font-bold text-[#5D4037] flex items-center gap-2"><Settings className="w-5 h-5"/> 設定 & 同步</h3>
+                      <button onClick={() => setIsSettingsModalOpen(false)} className="p-1 text-[#8C7851] hover:bg-[#F5F1E9] rounded-full"><X className="w-5 h-5" /></button>
                     </div>
-                    <p className="text-[10px] text-[#8C7851] leading-tight">若要同步資料，請從 Safari 複製 ID，並貼到下方欄位。</p>
-                  </div>
+                    
+                    {/* ID Sync Section */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-[#8C7851] uppercase">裝置識別碼 (ID)</label>
+                      <div className="flex gap-2 items-center bg-[#FDFBF7] border border-[#E8E2D6] p-2 rounded-lg">
+                        <code className="text-[10px] text-[#5D4037] break-all flex-1">{user?.uid || 'Loading...'}</code>
+                        <button onClick={handleCopyId} className="p-1 text-[#C2A385] hover:bg-white rounded"><Copy className="w-4 h-4" /></button>
+                      </div>
+                      <div className="pt-2">
+                        <input 
+                          type="text" 
+                          value={customUserId} 
+                          onChange={(e) => setCustomUserId(e.target.value)}
+                          placeholder="手動輸入 ID 以同步資料..."
+                          className="w-full text-sm border border-[#E8E2D6] rounded-lg p-2 text-[#5D4037] focus:border-[#C2A385] outline-none placeholder:text-[#D2B48C]"
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={handleResetUid} className="flex-1 py-2 text-xs font-bold text-[#8C7851] bg-[#F5F1E9] rounded-lg">重置</button>
+                        <button onClick={handleSaveCustomUid} className="flex-1 py-2 text-xs font-bold text-white bg-[#C2A385] rounded-lg shadow-sm">切換帳號</button>
+                      </div>
+                    </div>
 
-                  <div className="space-y-2 pt-2">
-                    <label className="text-xs font-bold text-[#8C7851] uppercase">手動同步 ID (覆寫目標)</label>
-                    <input 
-                      type="text" 
-                      value={customUserId} 
-                      onChange={(e) => setCustomUserId(e.target.value)}
-                      placeholder="貼上要同步的 User ID"
-                      className="w-full text-sm border border-[#E8E2D6] rounded-lg p-2 text-[#5D4037] focus:border-[#C2A385] outline-none"
-                    />
-                  </div>
+                    <hr className="border-[#F5F1E9]" />
 
-                  <div className="flex gap-2 pt-2">
-                    <button onClick={handleResetUid} className="flex-1 py-2 text-xs font-bold text-[#8C7851] bg-[#F5F1E9] rounded-lg">重置 (使用原生 ID)</button>
-                    <button onClick={handleSaveCustomUid} className="flex-1 py-2 text-xs font-bold text-white bg-[#C2A385] rounded-lg shadow-sm">切換帳號 & 同步</button>
+                    {/* Role Names Section */}
+                    <div className="space-y-3">
+                      <label className="text-xs font-bold text-[#8C7851] uppercase flex items-center gap-1"><Users className="w-3 h-3"/> 角色名稱設定</label>
+                      <p className="text-[10px] text-[#8C7851] opacity-80">設定的名字將會同步到所有連結此 ID 的裝置。</p>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                           <span className="text-[10px] font-bold text-[#5D4037]">角色 A (我)</span>
+                           <input 
+                             type="text" 
+                             value={tempRole1} 
+                             onChange={(e) => setTempRole1(e.target.value)}
+                             className="w-full text-sm border border-[#E8E2D6] rounded-lg p-2 text-[#5D4037] focus:border-[#C2A385] outline-none text-center"
+                           />
+                        </div>
+                        <div className="space-y-1">
+                           <span className="text-[10px] font-bold text-[#5D4037]">角色 B (夥伴)</span>
+                           <input 
+                             type="text" 
+                             value={tempRole2} 
+                             onChange={(e) => setTempRole2(e.target.value)}
+                             className="w-full text-sm border border-[#E8E2D6] rounded-lg p-2 text-[#5D4037] focus:border-[#C2A385] outline-none text-center"
+                           />
+                        </div>
+                      </div>
+                      <button onClick={handleSaveRoles} className="w-full py-2.5 text-xs font-bold text-white bg-[#8C7851] rounded-lg shadow-sm hover:bg-[#5D4037] transition-colors">儲存名稱設定</button>
+                    </div>
                   </div>
                </div>
             </div>
@@ -473,11 +525,20 @@
                      ) : (
                         dayViewEvents.map(ev => {
                            const style = COLORS[ev.color] || COLORS.latte;
+                           // Identify owner label
+                           let ownerLabel = '';
+                           if (ev.eventType === 'me') ownerLabel = roleSettings.role1;
+                           else if (ev.eventType === 'partner') ownerLabel = roleSettings.role2;
+                           else ownerLabel = '共同';
+
                            return (
                              <div key={ev.id} onClick={() => openEditModal(null, ev)} className="bg-white p-3 rounded-xl border border-[#E8E2D6] shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow">
                                 <div className={`w-3 h-3 rounded-full ${style.fill} shrink-0`}></div>
                                 <div className="flex-1 min-w-0">
-                                   <h4 className="font-bold text-[#5D4037] truncate">{ev.title}</h4>
+                                   <div className="flex justify-between items-start">
+                                      <h4 className="font-bold text-[#5D4037] truncate">{ev.title}</h4>
+                                      <span className="text-[10px] bg-[#F5F1E9] text-[#8C7851] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap">{ownerLabel}</span>
+                                   </div>
                                    <div className="flex items-center gap-2 text-xs text-[#8C7851]">{ev.isAllDay ? <span className="bg-[#E8E2D6] px-1.5 rounded text-[#5D4037]">全天</span> : <span className="font-hand text-sm">{ev.startTime} - {ev.endTime}</span>}</div>
                                 </div>
                                 <Edit className="w-4 h-4 text-[#D2B48C]" />
@@ -507,7 +568,9 @@
                 <div className="p-6 space-y-5">
                   <div className="flex gap-2 p-1 bg-[#F5F1E9] rounded-xl">
                      {['me', 'partner', 'common'].map(type => (
-                        <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('tea'); if(type === 'partner') setFormColor('sesame'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'bg-white shadow text-[#5D4037]' : 'text-[#8C7851] opacity-60'}`}>{type === 'me' ? myProfile.name : type === 'partner' ? partnerProfile.name : '共同'}</button>
+                        <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('tea'); if(type === 'partner') setFormColor('sesame'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'bg-white shadow text-[#5D4037]' : 'text-[#8C7851] opacity-60'}`}>
+                          {type === 'me' ? roleSettings.role1 : type === 'partner' ? roleSettings.role2 : '共同'}
+                        </button>
                      ))}
                   </div>
                   <input type="text" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="行程標題..." className="w-full text-xl font-bold text-[#5D4037] placeholder-[#D2B48C] outline-none border-b-2 border-[#F5F1E9] focus:border-[#C2A385] bg-transparent py-1 transition-colors" autoFocus />
