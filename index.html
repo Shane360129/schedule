@@ -8,10 +8,14 @@
   <meta name="theme-color" content="#F5F1E9">
   <title>BiBi-Schedule</title>
   
-  <!-- [修改圖示] 請將下方 href 的內容替換為您的圖片網址 (例如: /icon.png) -->
-  <!-- iOS Icon & Web Thumbnail -->
-  <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjEwMCIgZmlsbD0iI0ZERkJGNyIvPgogIDxyZWN0IHg9IjMyIiB5PSIzMiIgd2lkdGg9Ijw0OCIgaGVpZ2h0PSI0NDgiIHJ4PSI4MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzJBMzg1IiBzdHJva2Utd2lkdGg9IjI0Ii8+CiAgPHRleHQgeD0iNTAlIiB5PSI1NSUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSdzZXJpZicgZm9udC13ZWlnaHQ9ImJvbGQiIGZvbnQtc2l6ZT0iMTgwIiBmaWxsPSIjNUQ0MDM3Ij5CaUJpPC90ZXh0Pgo8L3N2Zz4=">
-  <link rel="icon" type="image/png" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjEwMCIgZmlsbD0iI0ZERkJGNyIvPgogIDxyZWN0IHg9IjMyIiB5PSIzMiIgd2lkdGg9Ijw0OCIgaGVpZ2h0PSI0NDgiIHJ4PSI4MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzJBMzg1IiBzdHJva2Utd2lkdGg9IjI0Ii8+CiAgPHRleHQgeD0iNTAlIiB5PSI1NSUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSdzZXJpZicgZm9udC13ZWlnaHQ9ImJvbGQiIGZvbnQtc2l6ZT0iMTgwIiBmaWxsPSIjNUQ0MDM3Ij5CaUJpPC90ZXh0Pgo8L3N2Zz4=">
+  <!-- [修改說明] -->
+  <!-- 圖片來源設定為相對路徑，請確保專案目錄下有名為 "icon.png" 的檔案 -->
+  
+  <!-- 1. iOS 桌面圖示 (Apple Touch Icon) -->
+  <link rel="apple-touch-icon" href="icon.png">
+  
+  <!-- 2. 瀏覽器分頁圖示 (Favicon) -->
+  <link rel="icon" type="image/png" href="icon.png">
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -53,7 +57,7 @@
     import { createRoot } from 'react-dom/client';
     import { 
       ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit2
+      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit
     } from 'lucide-react';
     import { initializeApp } from 'firebase/app';
     import { 
@@ -159,8 +163,8 @@
       
       // Modals
       const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-      const [isDayViewModalOpen, setIsDayViewModalOpen] = useState(false); // [NEW] Day View
-      const [viewingDate, setViewingDate] = useState(null); // [NEW] Selected Date
+      const [isDayViewModalOpen, setIsDayViewModalOpen] = useState(false); 
+      const [viewingDate, setViewingDate] = useState(null);
       
       const [editingId, setEditingId] = useState(null);
 
@@ -239,7 +243,6 @@
       const getEventSegments = (dateStr) => {
         if (!dateStr) return [];
         const dayEvents = events.filter(ev => dateStr >= ev.startDate && dateStr <= ev.endDate);
-        // [FIX] Stable Sort: Length desc, then Time, then ID
         dayEvents.sort((a, b) => {
           const lenA = new Date(a.endDate).getTime() - new Date(a.startDate).getTime();
           const lenB = new Date(b.endDate).getTime() - new Date(b.startDate).getTime();
@@ -257,7 +260,7 @@
         });
       };
 
-      // [NEW] Open Day View
+      // Open Day View
       const handleDayClick = (dateStr) => {
         setViewingDate(dateStr);
         setIsDayViewModalOpen(true);
@@ -276,7 +279,7 @@
          setFormColor(event ? event.color : 'latte');
          setFormEventType(event ? event.eventType : 'common');
          
-         setIsDayViewModalOpen(false); // Close day view if opening edit from there
+         setIsDayViewModalOpen(false); 
          setIsEditModalOpen(true);
       };
 
@@ -300,7 +303,6 @@
             await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'bibi_events'), eventData);
           }
           setIsEditModalOpen(false);
-          // If we were viewing a date, reopen day view (optional, but nice)
           if(viewingDate) setIsDayViewModalOpen(true);
         } catch (e) { console.error("Save Error:", e); }
       };
@@ -321,7 +323,6 @@
         </div>
       );
       
-      // Filter events for day view
       const dayViewEvents = viewingDate ? events.filter(ev => viewingDate >= ev.startDate && viewingDate <= ev.endDate).sort((a,b) => (a.startTime||'00:00').localeCompare(b.startTime||'00:00')) : [];
 
       return (
@@ -383,7 +384,6 @@
                        {isHoliday && <span className="text-[10px] text-[#9F1239] font-medium -mt-1 truncate max-w-full px-1">{holidayInfo.name}</span>}
                     </div>
                   )}
-                  {/* [FIX] Removed px-0.5 to allow bars to touch edges */}
                   <div className="flex-1 flex flex-col gap-[2px] w-full pb-1 px-0">
                     {segments.slice(0, 4).map((ev) => {
                       const roundLeft = ev.isStart || ev.isSunday;
@@ -414,14 +414,18 @@
             })}
           </div>
 
-          {/* [NEW] Day View Modal */}
+          {/* Day View Modal */}
           {isDayViewModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D4037]/20 backdrop-blur-[2px] p-4">
                <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#D2B48C]/30 flex flex-col max-h-[80vh]">
                   <div className="px-5 py-4 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center shrink-0">
                      <div className="flex items-baseline gap-2">
                        <span className="text-2xl font-hand font-bold text-[#5D4037]">{viewingDate}</span>
-                       <span className="text-xs text-[#8C7851] font-bold uppercase">{new Date(viewingDate).toLocaleDateString('en-US', { weekday: 'long' })}</span>
+                       <span className="text-xs text-[#8C7851] font-bold uppercase">
+                         {viewingDate && !isNaN(new Date(viewingDate).getTime()) 
+                           ? new Date(viewingDate).toLocaleDateString('en-US', { weekday: 'long' }) 
+                           : ''}
+                       </span>
                      </div>
                      <button onClick={() => setIsDayViewModalOpen(false)} className="p-1.5 text-[#D2B48C] hover:bg-[#F5F1E9] rounded-full transition-colors"><X className="w-5 h-5" /></button>
                   </div>
@@ -444,7 +448,7 @@
                                       {ev.isAllDay ? <span className="bg-[#E8E2D6] px-1.5 rounded text-[#5D4037]">全天</span> : <span className="font-hand text-sm">{ev.startTime} - {ev.endTime}</span>}
                                    </div>
                                 </div>
-                                <Edit2 className="w-4 h-4 text-[#D2B48C]" />
+                                <Edit className="w-4 h-4 text-[#D2B48C]" />
                              </div>
                            )
                         })
