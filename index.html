@@ -385,9 +385,9 @@
               return (
                 <div key={idx} onClick={() => hasDate && handleDayClick(cell.fullDate)} className={`relative border-b border-r border-[#D2B48C]/10 flex flex-col ${bgClass} active:brightness-95 transition-colors cursor-pointer select-none`}>
                   {hasDate && (
-                    <div className="flex flex-col items-center pt-1 mb-0.5 px-0">
+                    <div className="flex flex-col items-center pt-1 mb-0.5 px-0 min-h-[38px] justify-start">
                        <span className={`text-lg sm:text-xl font-hand font-bold h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'bg-[#C2A385] text-white shadow-md' : dateTextColor}`}>{cell.day}</span>
-                       {isHoliday && <span className="text-[10px] text-[#9F1239] font-medium -mt-1 truncate max-w-full px-1">{holidayInfo.name}</span>}
+                       {isHoliday && <span className="text-[10px] text-[#9F1239] font-medium -mt-1 truncate max-w-full px-1 leading-tight">{holidayInfo.name}</span>}
                     </div>
                   )}
                   <div className="flex-1 flex flex-col gap-[2px] w-full pb-1 px-0">
