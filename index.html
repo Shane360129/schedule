@@ -8,29 +8,19 @@
   <meta name="theme-color" content="#F5F1E9">
   <title>BiBi-Schedule</title>
   
-  <!-- [修改說明] -->
-  <!-- 圖片來源設定為相對路徑，請確保專案目錄下有名為 "icon.png" 的檔案 -->
-  
-  <!-- 1. iOS 桌面圖示 (Apple Touch Icon) -->
   <link rel="apple-touch-icon" href="icon.png">
-  
-  <!-- 2. 瀏覽器分頁圖示 (Favicon) -->
   <link rel="icon" type="image/png" href="icon.png">
 
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Google Fonts: Zen Maru Gothic & Caveat -->
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
     body { font-family: 'Zen Maru Gothic', sans-serif; -webkit-tap-highlight-color: transparent; }
     .font-hand { font-family: 'Caveat', cursive; }
-    /* Hide scrollbar */
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   </style>
 
-  <!-- Import Map: 定義模組來源 -->
   <script type="importmap">
   {
     "imports": {
@@ -44,20 +34,18 @@
   }
   </script>
 
-  <!-- Babel Standalone: 讓瀏覽器可以執行 JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="bg-[#F5F1E9] text-[#5D4037] overflow-hidden">
   
   <div id="root"></div>
 
-  <!-- React Logic -->
   <script type="text/babel" data-type="module">
     import React, { useState, useEffect } from 'react';
     import { createRoot } from 'react-dom/client';
     import { 
       ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee
+      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy
     } from 'lucide-react';
     import { initializeApp } from 'firebase/app';
     import { 
@@ -67,7 +55,6 @@
       getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc 
     } from 'firebase/firestore';
 
-    // --- Firebase Config ---
     const firebaseConfig = {
       apiKey: "AIzaSyAaeMl8u3S8Atf5b9Z4MvYRfxNWqyxjvck",
       authDomain: "schdule-f5cda.firebaseapp.com",
@@ -81,9 +68,8 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-    const appId = 'schdule-f5cda'; // Static App ID for GitHub Pages
+    const appId = 'schdule-f5cda';
 
-    // --- BiBi Style Constants ---
     const COLORS = {
       milk: { name: '燕麥奶', bg: 'bg-[#FDFBF7]', text: 'text-[#8C7851]', border: 'border-[#E8E2D6]', fill: 'bg-[#E8E2D6]' },
       tea: { name: '伯爵茶', bg: 'bg-[#F5F1E9]', text: 'text-[#5D4037]', border: 'border-[#D2B48C]', fill: 'bg-[#D2B48C]' }, 
@@ -97,7 +83,6 @@
     };
 
     const FALLBACK_HOLIDAYS = {
-      // 2025
       "2025-01-01": { isHoliday: true, name: "元旦" },
       "2025-01-25": { isHoliday: true, name: "除夕" },
       "2025-01-26": { isHoliday: true, name: "春節" },
@@ -108,7 +93,6 @@
       "2025-05-31": { isHoliday: true, name: "端午節" },
       "2025-10-06": { isHoliday: true, name: "中秋節" },
       "2025-10-10": { isHoliday: true, name: "國慶日" },
-      // 2026
       "2026-01-01": { isHoliday: true, name: "元旦" },
       "2026-02-16": { isHoliday: true, name: "除夕" },
       "2026-02-17": { isHoliday: true, name: "春節" },
@@ -117,7 +101,6 @@
       "2026-06-19": { isHoliday: true, name: "端午節" },
       "2026-09-25": { isHoliday: true, name: "中秋節" },
       "2026-10-10": { isHoliday: true, name: "國慶日" },
-      // 2027
       "2027-01-01": { isHoliday: true, name: "元旦" },
       "2027-02-05": { isHoliday: true, name: "小年夜" },
       "2027-02-06": { isHoliday: true, name: "除夕" },
@@ -131,7 +114,6 @@
       "2027-10-10": { isHoliday: true, name: "國慶日" }
     };
 
-    // --- Helper Functions ---
     const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
     const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
     const formatDate = (date) => {
@@ -142,8 +124,9 @@
     };
 
     const App = () => {
-      // --- State ---
       const [user, setUser] = useState(null);
+      const [customUserId, setCustomUserId] = useState(localStorage.getItem('bibi_custom_uid') || '');
+      
       const [currentDate, setCurrentDate] = useState(new Date());
       const [events, setEvents] = useState([]);
       const [loading, setLoading] = useState(true);
@@ -157,13 +140,12 @@
         return initialData;
       });
 
-      // UI State
       const [myProfile] = useState({ name: '我', color: 'tea' });
       const [partnerProfile] = useState({ name: '夥伴', color: 'sesame' });
       
-      // Modals
       const [isEditModalOpen, setIsEditModalOpen] = useState(false);
       const [isDayViewModalOpen, setIsDayViewModalOpen] = useState(false); 
+      const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false); 
       const [viewingDate, setViewingDate] = useState(null);
       
       const [editingId, setEditingId] = useState(null);
@@ -207,10 +189,13 @@
         fetchHolidays();
       }, [currentDate.getFullYear()]);
 
-      // --- Firestore ---
+      // --- Firestore (Using Custom UID Logic) ---
       useEffect(() => {
-        if (!user) return;
-        const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'bibi_events'));
+        const targetUid = customUserId || user?.uid;
+        
+        if (!targetUid) return;
+        
+        const q = query(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_events'));
         const unsubscribe = onSnapshot(q, (snapshot) => {
           const loadedEvents = [];
           snapshot.forEach((doc) => loadedEvents.push({ id: doc.id, ...doc.data() }));
@@ -218,7 +203,39 @@
           setLoading(false);
         }, (err) => console.error("Firestore Error:", err));
         return () => unsubscribe();
-      }, [user]);
+      }, [user, customUserId]);
+
+      // --- Handlers ---
+      const handleSaveCustomUid = () => {
+        localStorage.setItem('bibi_custom_uid', customUserId);
+        window.location.reload(); 
+      };
+
+      const handleResetUid = () => {
+        localStorage.removeItem('bibi_custom_uid');
+        window.location.reload();
+      };
+
+      const handleCopyId = () => {
+        const text = user?.uid;
+        if (!text) return;
+        
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        try {
+          document.execCommand('copy');
+        } catch (err) {
+          console.error('Fallback: Oops, unable to copy', err);
+        }
+        
+        document.body.removeChild(textArea);
+      };
 
       // --- Calendar Logic ---
       const year = currentDate.getFullYear();
@@ -260,13 +277,11 @@
         });
       };
 
-      // Open Day View
       const handleDayClick = (dateStr) => {
         setViewingDate(dateStr);
         setIsDayViewModalOpen(true);
       };
 
-      // Open Edit Modal
       const openEditModal = (dateStr, event = null) => {
          setEditingId(event ? event.id : null);
          setFormTitle(event ? event.title : '');
@@ -278,13 +293,13 @@
          setFormEndTime(event ? (event.endTime || '10:00') : '10:00');
          setFormColor(event ? event.color : 'latte');
          setFormEventType(event ? event.eventType : 'common');
-         
          setIsDayViewModalOpen(false); 
          setIsEditModalOpen(true);
       };
 
       const saveEvent = async () => {
-        if (!user || !formTitle || !formStartDate || !formEndDate) return;
+        const targetUid = customUserId || user?.uid;
+        if (!targetUid || !formTitle || !formStartDate || !formEndDate) return;
         let start = formStartDate;
         let end = formEndDate;
         if (new Date(start) > new Date(end)) [start, end] = [end, start];
@@ -298,9 +313,9 @@
 
         try {
           if (editingId) {
-            await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'bibi_events', editingId), eventData);
+            await updateDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_events', editingId), eventData);
           } else {
-            await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'bibi_events'), eventData);
+            await addDoc(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_events'), eventData);
           }
           setIsEditModalOpen(false);
           if(viewingDate) setIsDayViewModalOpen(true);
@@ -308,26 +323,23 @@
       };
 
       const deleteEvent = async () => {
-        if (user && editingId) {
+        const targetUid = customUserId || user?.uid;
+        if (targetUid && editingId) {
           try {
-            await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'bibi_events', editingId));
+            await deleteDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_events', editingId));
             setIsEditModalOpen(false);
             if(viewingDate) setIsDayViewModalOpen(true);
           } catch (e) { console.error("Delete Error:", e); }
         }
       };
 
-      if (loading) return (
-        <div className="h-dvh flex items-center justify-center">
-           <Loader2 className="w-8 h-8 text-[#C2A385] animate-spin" />
-        </div>
-      );
+      if (loading) return <div className="h-dvh flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#C2A385] animate-spin" /></div>;
       
       const dayViewEvents = viewingDate ? events.filter(ev => viewingDate >= ev.startDate && viewingDate <= ev.endDate).sort((a,b) => (a.startTime||'00:00').localeCompare(b.startTime||'00:00')) : [];
 
       return (
         <div className="h-dvh flex flex-col">
-          {/* Header with Safe Area Padding */}
+          {/* Header */}
           <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] bg-[#F5F1E9] border-b border-[#D2B48C]/20 z-10">
             <div className="flex items-center gap-3">
                <div className="bg-white p-2 rounded-xl shadow-sm border border-[#E8E2D6]">
@@ -335,19 +347,17 @@
                </div>
                <div>
                  <h1 className="text-xl font-hand font-bold tracking-tight text-[#5D4037] text-2xl">BiBi-Schedule</h1>
-                 <p className="text-[12px] font-hand font-bold text-[#8C7851] uppercase tracking-widest hidden sm:block">
-                   {year} . {month + 1}
-                 </p>
+                 <p className="text-[12px] font-hand font-bold text-[#8C7851] uppercase tracking-widest hidden sm:block">{year} . {month + 1}</p>
                </div>
             </div>
-            <div className="flex items-center gap-3 bg-white/50 p-1.5 rounded-2xl border border-[#D2B48C]/10 backdrop-blur-sm">
-              <button onClick={handlePrevMonth} className="p-2 hover:bg-[#E8E2D6]/50 rounded-xl transition-colors text-[#8C7851]"><ChevronLeft className="w-5 h-5" /></button>
-              <span className="text-xl font-hand font-bold min-w-[100px] text-center text-[#5D4037]">
-                {month + 1}月 <span className="text-base font-hand text-[#8C7851]">{year}</span>
-              </span>
-              <button onClick={handleNextMonth} className="p-2 hover:bg-[#E8E2D6]/50 rounded-xl transition-colors text-[#8C7851]"><ChevronRight className="w-5 h-5" /></button>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-white/50 p-1.5 rounded-2xl border border-[#D2B48C]/10 backdrop-blur-sm mr-2">
+                <button onClick={handlePrevMonth} className="p-2 hover:bg-[#E8E2D6]/50 rounded-xl transition-colors text-[#8C7851]"><ChevronLeft className="w-5 h-5" /></button>
+                <span className="text-xl font-hand font-bold min-w-[80px] text-center text-[#5D4037]">{month + 1}月 <span className="text-base font-hand text-[#8C7851]">{year}</span></span>
+                <button onClick={handleNextMonth} className="p-2 hover:bg-[#E8E2D6]/50 rounded-xl transition-colors text-[#8C7851]"><ChevronRight className="w-5 h-5" /></button>
+              </div>
+              <button onClick={() => setIsSettingsModalOpen(true)} className="bg-white text-[#8C7851] p-2.5 rounded-xl shadow-sm border border-[#E8E2D6] hover:bg-[#FDFBF7]"><Settings className="w-5 h-5" /></button>
             </div>
-            <button onClick={handleToday} className="bg-[#C2A385] text-white px-3 py-1.5 text-xs font-bold rounded-lg shadow-sm hover:bg-[#A68664] transition-colors">今天</button>
           </header>
 
           {/* Weekday */}
@@ -367,20 +377,16 @@
               const isHoliday = holidayInfo?.isHoliday === true;
               const dayOfWeek = idx % 7;
               const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-              
               let bgClass = 'bg-[#FDFBF7]';
               if (!hasDate) bgClass = 'bg-[#F5F1E9]/50';
               else if (isHoliday || isWeekend) bgClass = 'bg-[#F2E8DA]';
-
               const dateTextColor = (isHoliday || dayOfWeek === 0) ? 'text-[#9F1239]' : 'text-[#5D4037]';
 
               return (
-                <div key={idx} onClick={() => hasDate && handleDayClick(cell.fullDate)} className={`relative border-b border-r border-[#D2B48C]/10 flex flex-col ${bgClass} active:brightness-95 transition-colors cursor-pointer select-none overflow-hidden`}>
+                <div key={idx} onClick={() => hasDate && handleDayClick(cell.fullDate)} className={`relative border-b border-r border-[#D2B48C]/10 flex flex-col ${bgClass} active:brightness-95 transition-colors cursor-pointer select-none`}>
                   {hasDate && (
                     <div className="flex flex-col items-center pt-1 mb-0.5 px-0">
-                       <span className={`text-lg sm:text-xl font-hand font-bold h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'bg-[#C2A385] text-white shadow-md' : dateTextColor}`}>
-                         {cell.day}
-                       </span>
+                       <span className={`text-lg sm:text-xl font-hand font-bold h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'bg-[#C2A385] text-white shadow-md' : dateTextColor}`}>{cell.day}</span>
                        {isHoliday && <span className="text-[10px] text-[#9F1239] font-medium -mt-1 truncate max-w-full px-1">{holidayInfo.name}</span>}
                     </div>
                   )}
@@ -389,21 +395,18 @@
                       const roundLeft = ev.isStart || ev.isSunday;
                       const roundRight = ev.isEnd || ev.isSaturday;
                       const style = COLORS[ev.color] || COLORS.latte;
+                      
+                      // [FIX] Negative margins for seamless connection
+                      let marginClass = '';
+                      if (!roundLeft) marginClass += ' -ml-[1px] rounded-l-none';
+                      else marginClass += ' ml-1 rounded-l-md';
+                      
+                      if (!roundRight) marginClass += ' -mr-[1px] rounded-r-none';
+                      else marginClass += ' mr-1 rounded-r-md';
+
                       return (
-                        <div key={ev.id} onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }} 
-                             className={`
-                               text-[10px] sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 shadow-sm transition-all hover:brightness-95 
-                               ${style.fill} ${style.text === 'text-white' ? 'text-white' : 'text-[#5D4037]'} 
-                               ${roundLeft ? 'rounded-l-md ml-1' : ''} 
-                               ${roundRight ? 'rounded-r-md mr-1' : ''} 
-                               ${!roundLeft && !roundRight ? 'z-0' : 'z-10 relative'}
-                             `}>
-                          {(ev.isStart || ev.isSunday) && (
-                            <span className="truncate w-full font-medium leading-none flex items-center gap-1">
-                              {!ev.isAllDay && ev.startTime && <span className="text-[9px] opacity-80 font-hand">{ev.startTime}</span>}
-                              {ev.title}
-                            </span>
-                          )}
+                        <div key={ev.id} onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }} className={`text-[10px] sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 relative z-10 ${style.fill} ${style.text === 'text-white' ? 'text-white' : 'text-[#5D4037]'} ${marginClass}`}>
+                          {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className="text-[9px] opacity-80 font-hand">{ev.startTime}</span>}{ev.title}</span>}
                         </div>
                       );
                     })}
@@ -414,6 +417,43 @@
             })}
           </div>
 
+          {/* Settings Modal (Sync ID) */}
+          {isSettingsModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D4037]/20 backdrop-blur-[2px] p-4">
+               <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#D2B48C]/30 p-6 space-y-4">
+                  <div className="flex justify-between items-center pb-2 border-b border-[#F5F1E9]">
+                    <h3 className="font-bold text-[#5D4037]">開發者設定 & 同步</h3>
+                    <button onClick={() => setIsSettingsModalOpen(false)} className="p-1 text-[#8C7851] hover:bg-[#F5F1E9] rounded-full"><X className="w-5 h-5" /></button>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-[#8C7851] uppercase">當前用戶 ID (此裝置)</label>
+                    <div className="flex gap-2 items-center bg-[#FDFBF7] border border-[#E8E2D6] p-2 rounded-lg">
+                      <code className="text-[10px] text-[#5D4037] break-all flex-1">{user?.uid || 'Loading...'}</code>
+                      <button onClick={handleCopyId} className="p-1 text-[#C2A385] hover:bg-white rounded"><Copy className="w-4 h-4" /></button>
+                    </div>
+                    <p className="text-[10px] text-[#8C7851] leading-tight">若要同步資料，請從 Safari 複製 ID，並貼到下方欄位。</p>
+                  </div>
+
+                  <div className="space-y-2 pt-2">
+                    <label className="text-xs font-bold text-[#8C7851] uppercase">手動同步 ID (覆寫目標)</label>
+                    <input 
+                      type="text" 
+                      value={customUserId} 
+                      onChange={(e) => setCustomUserId(e.target.value)}
+                      placeholder="貼上要同步的 User ID"
+                      className="w-full text-sm border border-[#E8E2D6] rounded-lg p-2 text-[#5D4037] focus:border-[#C2A385] outline-none"
+                    />
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={handleResetUid} className="flex-1 py-2 text-xs font-bold text-[#8C7851] bg-[#F5F1E9] rounded-lg">重置 (使用原生 ID)</button>
+                    <button onClick={handleSaveCustomUid} className="flex-1 py-2 text-xs font-bold text-white bg-[#C2A385] rounded-lg shadow-sm">切換帳號 & 同步</button>
+                  </div>
+               </div>
+            </div>
+          )}
+
           {/* Day View Modal */}
           {isDayViewModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D4037]/20 backdrop-blur-[2px] p-4">
@@ -421,20 +461,14 @@
                   <div className="px-5 py-4 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center shrink-0">
                      <div className="flex items-baseline gap-2">
                        <span className="text-2xl font-hand font-bold text-[#5D4037]">{viewingDate}</span>
-                       <span className="text-xs text-[#8C7851] font-bold uppercase">
-                         {viewingDate && !isNaN(new Date(viewingDate).getTime()) 
-                           ? new Date(viewingDate).toLocaleDateString('en-US', { weekday: 'long' }) 
-                           : ''}
-                       </span>
+                       <span className="text-xs text-[#8C7851] font-bold uppercase">{viewingDate && !isNaN(new Date(viewingDate).getTime()) ? new Date(viewingDate).toLocaleDateString('en-US', { weekday: 'long' }) : ''}</span>
                      </div>
                      <button onClick={() => setIsDayViewModalOpen(false)} className="p-1.5 text-[#D2B48C] hover:bg-[#F5F1E9] rounded-full transition-colors"><X className="w-5 h-5" /></button>
                   </div>
-                  
                   <div className="p-4 overflow-y-auto flex-1 space-y-3 bg-[#FDFBF7]">
                      {dayViewEvents.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-10 opacity-50 text-[#8C7851]">
-                           <Coffee className="w-10 h-10 mb-2" />
-                           <p className="font-hand text-lg">今天沒有行程，享受生活吧！</p>
+                           <Coffee className="w-10 h-10 mb-2" /><p className="font-hand text-lg">今天沒有行程，享受生活吧！</p>
                         </div>
                      ) : (
                         dayViewEvents.map(ev => {
@@ -444,9 +478,7 @@
                                 <div className={`w-3 h-3 rounded-full ${style.fill} shrink-0`}></div>
                                 <div className="flex-1 min-w-0">
                                    <h4 className="font-bold text-[#5D4037] truncate">{ev.title}</h4>
-                                   <div className="flex items-center gap-2 text-xs text-[#8C7851]">
-                                      {ev.isAllDay ? <span className="bg-[#E8E2D6] px-1.5 rounded text-[#5D4037]">全天</span> : <span className="font-hand text-sm">{ev.startTime} - {ev.endTime}</span>}
-                                   </div>
+                                   <div className="flex items-center gap-2 text-xs text-[#8C7851]">{ev.isAllDay ? <span className="bg-[#E8E2D6] px-1.5 rounded text-[#5D4037]">全天</span> : <span className="font-hand text-sm">{ev.startTime} - {ev.endTime}</span>}</div>
                                 </div>
                                 <Edit className="w-4 h-4 text-[#D2B48C]" />
                              </div>
@@ -454,11 +486,8 @@
                         })
                      )}
                   </div>
-
                   <div className="p-4 border-t border-[#F5F1E9] bg-white shrink-0">
-                     <button onClick={() => openEditModal(viewingDate)} className="w-full bg-[#C2A385] hover:bg-[#A68664] text-white py-3 rounded-xl shadow-md font-bold flex items-center justify-center gap-2 transition-colors">
-                        <Plus className="w-5 h-5" /> 新增行程
-                     </button>
+                     <button onClick={() => openEditModal(viewingDate)} className="w-full bg-[#C2A385] hover:bg-[#A68664] text-white py-3 rounded-xl shadow-md font-bold flex items-center justify-center gap-2 transition-colors"><Plus className="w-5 h-5" /> 新增行程</button>
                   </div>
                </div>
             </div>
