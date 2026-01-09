@@ -76,84 +76,95 @@
         id: 'original',
         name: '日和拿鐵',
         colors: {
-          bg: '#F5F1E9',
-          text: '#5D4037',
-          secondaryText: '#8C7851',
-          headerBg: '#F5F1E9',
-          gridHeaderBg: '#FDFBF7',
-          gridBg: '#FDFBF7',
-          gridEmptyBg: '#F5F1E980', 
-          gridWeekendBg: '#F2E8DA',
-          border: '#D2B48C',
-          accent: '#C2A385',
-          weekendText: '#9F1239',
-          weekdayText: '#D2B48C',
+          bg: '#FAF9F6',          
+          text: '#5F524C',        
+          secondaryText: '#998B82', 
+          headerBg: '#F5F0EB',    
+          gridHeaderBg: '#EBE5DF', 
+          gridBg: '#FFFFFF',
+          gridEmptyBg: '#FAF9F6', 
+          gridWeekendBg: '#F7F3F0', 
+          border: '#E0D6CC',      
+          accent: '#BCAAA4',      
+          weekendText: '#C88A8A', 
+          weekdayText: '#A18E84', 
           modalBg: '#FFFFFF',
-          modalHeaderBg: '#FDFBF7',
+          modalHeaderBg: '#F5F0EB',
           inputBg: '#FFFFFF',
-          inputBorder: '#E8E2D6',
-          danger: '#EF4444'
+          inputBorder: '#E0D6CC',
+          danger: '#D48888'       
         }
       },
       kuromi: {
         id: 'kuromi',
-        name: '粉紅戀愛', // Soft Pink Theme
+        name: '櫻花手帳', // Renamed to match the new vibe
         colors: {
-          bg: '#FFF9FB',          // Snow Pink (Very subtle)
-          text: '#5E4048',        // Cocoa Brown (Soft readable text)
-          secondaryText: '#9C8288', // Muted Mauve
-          headerBg: '#FFF0F5',    // Lavender Blush
-          gridHeaderBg: '#FCE4EC', // Pale Pink
-          gridBg: '#FFFFFF',       // White
-          gridEmptyBg: '#FFF9FB80', 
-          gridWeekendBg: '#FFF0F3', // Soft Rose mist
-          border: '#F3D0D9',      // Pastel Pink Border
-          accent: '#D07890',      // Dusty Rose (Elegant, not vivid)
-          weekendText: '#C06C84', // Muted Berry
-          weekdayText: '#D8A7B1', // Soft Pink Text
-          modalBg: '#FFFFFF',
+          bg: '#FFFBFE',          // Washi Paper White (Warm undertone)
+          text: '#5E3A44',        // Deep Sakura Bark (Softer than black)
+          secondaryText: '#A88891', // Muted Pinkish Grey
+          headerBg: '#FFF0F5',    // Misty Rose
+          gridHeaderBg: '#FDEBF3', // Very Pale Pink
+          gridBg: '#FFFFFF',       
+          gridEmptyBg: '#FFFBFE80', 
+          gridWeekendBg: '#FFF5F8', // Blush Tint
+          border: '#F4C2C2',      // Baby Pink (Tea Rose)
+          accent: '#E08D9D',      // Old Rose (Elegant)
+          weekendText: '#D46A7E', // Soft Red
+          weekdayText: '#C5A3AB', // Dusty Pink Text
+          modalBg: '#FFFDFA',
           modalHeaderBg: '#FFF0F5',
           inputBg: '#FFFFFF',
-          inputBorder: '#F3D0D9',
-          danger: '#E57373'       // Soft Red
+          inputBorder: '#F4C2C2',
+          danger: '#D85C5C'       
         }
       },
       minimal: {
         id: 'minimal',
-        name: '極簡純白', // High Contrast Update
+        name: '極簡純白', 
         colors: {
           bg: '#FFFFFF',
-          text: '#000000',        // Pure Black for visibility
-          secondaryText: '#4B5563', // Gray 600 (Darker than before)
+          text: '#000000',        
+          secondaryText: '#4B5563', 
           headerBg: '#FFFFFF',
-          gridHeaderBg: '#F3F4F6', // Gray 100
+          gridHeaderBg: '#F3F4F6', 
           gridBg: '#FFFFFF',
           gridEmptyBg: '#FAFAFA', 
-          gridWeekendBg: '#F9FAFB', // Gray 50
-          border: '#D1D5DB',      // Gray 300 (Darker border)
-          accent: '#000000',      // Black Accent
-          weekendText: '#DC2626', // Red 600
-          weekdayText: '#374151', // Gray 700 (Very visible)
+          gridWeekendBg: '#F9FAFB', 
+          border: '#D1D5DB',      
+          accent: '#000000',      
+          weekendText: '#DC2626', 
+          weekdayText: '#374151', 
           modalBg: '#FFFFFF',
           modalHeaderBg: '#F9FAFB',
           inputBg: '#FFFFFF',
-          inputBorder: '#9CA3AF', // Gray 400
-          danger: '#B91C1C'       // Red 700
+          inputBorder: '#9CA3AF', 
+          danger: '#B91C1C'       
         }
       }
     };
 
-    // Static Default Colors (Hex codes for inline styles)
-    const DEFAULT_COLORS = {
+    // --- Combined Techo Palette (Light + Morandi) ---
+    const TECHO_COLORS = {
+      // Light / Pastel (Washi Tape Style)
       milk: { name: '燕麥奶', hex: '#FDFBF7', text: '#8C7851' },
-      tea: { name: '伯爵茶', hex: '#F5F1E9', text: '#5D4037' }, 
-      latte: { name: '深焙', hex: '#C2A385', text: '#FFFFFF' }, 
-      matcha: { name: '抹茶', hex: '#F0FDF4', text: '#166534' }, 
-      berry: { name: '莓果', hex: '#FFF1F2', text: '#9F1239' },
-      taro: { name: '芋泥', hex: '#FAF5FF', text: '#6B21A8' },
-      lemon: { name: '檸檬塔', hex: '#FEFCE8', text: '#854D0E' },
-      sesame: { name: '芝麻', hex: '#F8FAFC', text: '#334155' },
-      earl: { name: '伯爵藍', hex: '#F0F9FF', text: '#0C4A6E' },
+      tea: { name: '伯爵茶', hex: '#F5F1E9', text: '#5D4037' },
+      linen: { name: '亞麻白', hex: '#F3E5D8', text: '#5D4037' },
+      mist: { name: '晨霧藍', hex: '#E3F2FD', text: '#455A64' },
+      sakura: { name: '櫻花粉', hex: '#FCE4EC', text: '#880E4F' },
+      mint: { name: '薄荷綠', hex: '#E0F2F1', text: '#004D40' },
+      lemon: { name: '檸檬塔', hex: '#FFF9C4', text: '#827717' },
+      lavender: { name: '薰衣草', hex: '#F3E5F5', text: '#4A148C' },
+
+      // Morandi / Deep (Ink Style) - High Contrast
+      latte: { name: '深焙', hex: '#C2A385', text: '#FFFFFF' },
+      celadon: { name: '青瓷灰', hex: '#7C9082', text: '#FFFFFF' }, 
+      smokeyBlue: { name: '煙燻藍', hex: '#64748B', text: '#FFFFFF' },
+      terracotta: { name: '磚紅陶', hex: '#A0522D', text: '#FFFFFF' },
+      mustard: { name: '芥末黃', hex: '#B08D55', text: '#FFFFFF' },
+      taro: { name: '芋泥紫', hex: '#8E6E7B', text: '#FFFFFF' },
+      teal: { name: '松石綠', hex: '#4F7C82', text: '#FFFFFF' },
+      dustyRose: { name: '乾燥玫瑰', hex: '#B5838D', text: '#FFFFFF' },
+      slate: { name: '岩石灰', hex: '#475569', text: '#FFFFFF' },
     };
 
     const FALLBACK_HOLIDAYS = {
@@ -185,16 +196,6 @@
       const d = String(date.getDate()).padStart(2, '0');
       return `${y}-${m}-${d}`;
     };
-    
-    const getContrastYIQ = (hexcolor) => {
-        if (!hexcolor) return '#5D4037';
-        hexcolor = hexcolor.replace("#", "");
-        var r = parseInt(hexcolor.substr(0,2),16);
-        var g = parseInt(hexcolor.substr(2,2),16);
-        var b = parseInt(hexcolor.substr(4,2),16);
-        var yiq = ((r*299)+(g*587)+(b*114))/1000;
-        return (yiq >= 128) ? '#5D4037' : 'white';
-    }
 
     const App = () => {
       const [user, setUser] = useState(null);
@@ -203,8 +204,6 @@
       const [currentDate, setCurrentDate] = useState(new Date());
       const [events, setEvents] = useState([]);
       const [roleSettings, setRoleSettings] = useState({ role1: '我', role2: '夥伴' });
-      
-      const [customColors, setCustomColors] = useState({});
       
       // Theme State
       const [currentThemeId, setCurrentThemeId] = useState(localStorage.getItem('bibi_theme') || 'original');
@@ -237,20 +236,12 @@
       const [formColor, setFormColor] = useState('latte');
       const [formEventType, setFormEventType] = useState('common');
 
-      const [isAddingColor, setIsAddingColor] = useState(false);
-      const [newColorName, setNewColorName] = useState('');
-      const [newColorHex, setNewColorHex] = useState('#E8E2D6');
-
       const [tempRole1, setTempRole1] = useState('');
       const [tempRole2, setTempRole2] = useState('');
 
       const touchStartX = useRef(null);
       const touchEndX = useRef(null);
       const minSwipeDistance = 50;
-
-      const allColors = useMemo(() => {
-        return { ...DEFAULT_COLORS, ...customColors };
-      }, [customColors]);
 
       useEffect(() => {
         signInAnonymously(auth).catch((error) => console.error("Auth Failed:", error));
@@ -303,19 +294,7 @@
           if (docSnap.exists()) setRoleSettings(docSnap.data());
         });
 
-        const colorsDocRef = doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'colors');
-        const unsubColors = onSnapshot(colorsDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (data.list) {
-                const colorsMap = {};
-                data.list.forEach(c => { colorsMap[c.id] = c; });
-                setCustomColors(colorsMap);
-            }
-          }
-        });
-
-        return () => { unsubEvents(); unsubSettings(); unsubColors(); };
+        return () => { unsubEvents(); unsubSettings(); };
       }, [user, customUserId]);
 
       const handleSaveCustomUid = () => { localStorage.setItem('bibi_custom_uid', customUserId); window.location.reload(); };
@@ -339,32 +318,6 @@
         if (!targetUid) return;
         const newRoles = { role1: tempRole1 || roleSettings.role1, role2: tempRole2 || roleSettings.role2 };
         try { await setDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles'), newRoles); setRoleSettings(newRoles); setIsSettingsModalOpen(false); } catch (e) {}
-      };
-
-      const handleAddCustomColor = async () => {
-        const targetUid = customUserId || user?.uid;
-        if (!targetUid || !newColorName) return;
-        
-        const newId = `custom_${Date.now()}`;
-        const newColorObj = {
-            id: newId,
-            name: newColorName,
-            hex: newColorHex,
-            text: getContrastYIQ(newColorHex)
-        };
-
-        try {
-            const colorsRef = doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'colors');
-            await setDoc(colorsRef, {
-                list: arrayUnion(newColorObj)
-            }, { merge: true });
-            
-            setFormColor(newId);
-            setIsAddingColor(false);
-            setNewColorName('');
-        } catch (e) {
-            console.error("Error adding color:", e);
-        }
       };
 
       const changeTheme = (newThemeId) => {
@@ -428,7 +381,6 @@
          setFormEventType(event ? event.eventType : 'common');
          setIsDayViewModalOpen(false); 
          setIsEditModalOpen(true);
-         setIsAddingColor(false);
       };
 
       const saveEvent = async () => {
@@ -549,7 +501,7 @@
                     {segments.slice(0, 4).map((ev) => {
                       const roundLeft = ev.isStart || ev.isSunday;
                       const roundRight = ev.isEnd || ev.isSaturday;
-                      const colorObj = allColors[ev.color] || DEFAULT_COLORS.latte;
+                      const colorObj = TECHO_COLORS[ev.color] || TECHO_COLORS.latte; // [FIX] Updated to TECHO_COLORS
                       
                       let marginClass = '';
                       if (!roundLeft) marginClass += ' -ml-[1px] rounded-l-none'; else marginClass += ' ml-1 rounded-l-md';
@@ -670,7 +622,7 @@
                         </div>
                      ) : (
                         dayViewEvents.map(ev => {
-                           const colorObj = allColors[ev.color] || DEFAULT_COLORS.latte;
+                           const colorObj = TECHO_COLORS[ev.color] || TECHO_COLORS.latte;
                            let ownerLabel = '';
                            if (ev.eventType === 'me') ownerLabel = roleSettings.role1;
                            else if (ev.eventType === 'partner') ownerLabel = roleSettings.role2;
@@ -699,7 +651,7 @@
             </div>
           )}
 
-          {/* Edit Modal (Includes Color Picker) */}
+          {/* Edit Modal (Color Picker Updated to TECHO_COLORS) */}
           {isEditModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
@@ -742,31 +694,14 @@
                      <textarea placeholder="備註說明..." value={formDesc} onChange={e => setFormDesc(e.target.value)} className="w-full rounded-xl p-3 text-sm h-20 outline-none border resize-none" style={{ backgroundColor: theme.colors.modalHeaderBg, color: theme.colors.text, borderColor: theme.colors.border }} />
                   </div>
                   
-                  {/* Color Picker with Dynamic Colors */}
-                  {!isAddingColor ? (
-                    <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar items-center">
-                      {Object.entries(allColors).map(([key, style]) => (
-                        <button key={key} onClick={() => setFormColor(key)} className={`w-8 h-8 rounded-full shrink-0 transition-transform flex items-center justify-center ${formColor === key ? 'ring-2 ring-offset-2 scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}`} style={{ backgroundColor: style.hex, ringColor: theme.colors.secondaryText }}>
-                          {formColor === key && <CheckSquare className="w-4 h-4 drop-shadow-md" style={{ color: style.text }} />}
-                        </button>
-                      ))}
-                      <button onClick={() => setIsAddingColor(true)} className="w-8 h-8 rounded-full border-2 border-dashed flex items-center justify-center transition-colors shrink-0" style={{ borderColor: theme.colors.secondaryText, color: theme.colors.secondaryText }}>
-                        <Plus className="w-4 h-4" />
+                  {/* TECHO Color Picker */}
+                  <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar items-center">
+                    {Object.entries(TECHO_COLORS).map(([key, style]) => (
+                      <button key={key} onClick={() => setFormColor(key)} className={`w-8 h-8 rounded-full shrink-0 transition-transform flex items-center justify-center ${formColor === key ? 'ring-2 ring-offset-2 scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}`} style={{ backgroundColor: style.hex, ringColor: theme.colors.secondaryText }}>
+                        {formColor === key && <CheckSquare className="w-4 h-4 drop-shadow-md" style={{ color: style.text }} />}
                       </button>
-                    </div>
-                  ) : (
-                    <div className="p-3 rounded-xl border space-y-2 animate-in fade-in slide-in-from-bottom-2" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
-                       <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs font-bold" style={{ color: theme.colors.secondaryText }}>新增自訂顏色</span>
-                          <button onClick={() => setIsAddingColor(false)}><X className="w-4 h-4" style={{ color: theme.colors.secondaryText }} /></button>
-                       </div>
-                       <div className="flex gap-2">
-                          <input type="color" value={newColorHex} onChange={(e) => setNewColorHex(e.target.value)} className="w-10 h-10 rounded cursor-pointer border-0 p-0" />
-                          <input type="text" value={newColorName} onChange={(e) => setNewColorName(e.target.value)} placeholder="顏色名稱 (如: 奶茶)" className="flex-1 text-sm border rounded px-2 outline-none" style={{ borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
-                          <button onClick={handleAddCustomColor} disabled={!newColorName} className="text-white px-3 rounded text-xs font-bold disabled:opacity-50" style={{ backgroundColor: theme.colors.accent }}><Check className="w-4 h-4" /></button>
-                       </div>
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
                 <div className="px-5 py-4 border-t flex justify-end" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                   <button onClick={saveEvent} className="text-white text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-colors hover:opacity-90 flex items-center gap-2" style={{ backgroundColor: theme.colors.accent }}><Save className="w-4 h-4" /> 儲存行程</button>
