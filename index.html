@@ -97,25 +97,25 @@
       },
       kuromi: {
         id: 'kuromi',
-        name: '櫻花手帳', // Renamed to match the new vibe
+        name: '粉紅戀愛', 
         colors: {
-          bg: '#FFFBFE',          // Washi Paper White (Warm undertone)
-          text: '#5E3A44',        // Deep Sakura Bark (Softer than black)
-          secondaryText: '#A88891', // Muted Pinkish Grey
-          headerBg: '#FFF0F5',    // Misty Rose
-          gridHeaderBg: '#FDEBF3', // Very Pale Pink
+          bg: '#FFF9FB',          
+          text: '#5E4048',        
+          secondaryText: '#9C8288', 
+          headerBg: '#FFF0F5',    
+          gridHeaderBg: '#FCE4EC', 
           gridBg: '#FFFFFF',       
-          gridEmptyBg: '#FFFBFE80', 
-          gridWeekendBg: '#FFF5F8', // Blush Tint
-          border: '#F4C2C2',      // Baby Pink (Tea Rose)
-          accent: '#E08D9D',      // Old Rose (Elegant)
-          weekendText: '#D46A7E', // Soft Red
-          weekdayText: '#C5A3AB', // Dusty Pink Text
-          modalBg: '#FFFDFA',
+          gridEmptyBg: '#FFF9FB80', 
+          gridWeekendBg: '#FFF0F3', 
+          border: '#F3D0D9',      
+          accent: '#D07890',      
+          weekendText: '#C06C84', 
+          weekdayText: '#D8A7B1', 
+          modalBg: '#FFFFFF',
           modalHeaderBg: '#FFF0F5',
           inputBg: '#FFFFFF',
-          inputBorder: '#F4C2C2',
-          danger: '#D85C5C'       
+          inputBorder: '#F3D0D9',
+          danger: '#E57373'       
         }
       },
       minimal: {
@@ -143,28 +143,23 @@
       }
     };
 
-    // --- Combined Techo Palette (Light + Morandi) ---
+    // --- High Contrast Morandi Palette (Darkened) ---
     const TECHO_COLORS = {
-      // Light / Pastel (Washi Tape Style)
-      milk: { name: '燕麥奶', hex: '#FDFBF7', text: '#8C7851' },
-      tea: { name: '伯爵茶', hex: '#F5F1E9', text: '#5D4037' },
-      linen: { name: '亞麻白', hex: '#F3E5D8', text: '#5D4037' },
-      mist: { name: '晨霧藍', hex: '#E3F2FD', text: '#455A64' },
-      sakura: { name: '櫻花粉', hex: '#FCE4EC', text: '#880E4F' },
-      mint: { name: '薄荷綠', hex: '#E0F2F1', text: '#004D40' },
-      lemon: { name: '檸檬塔', hex: '#FFF9C4', text: '#827717' },
-      lavender: { name: '薰衣草', hex: '#F3E5F5', text: '#4A148C' },
-
-      // Morandi / Deep (Ink Style) - High Contrast
-      latte: { name: '深焙', hex: '#C2A385', text: '#FFFFFF' },
-      celadon: { name: '青瓷灰', hex: '#7C9082', text: '#FFFFFF' }, 
-      smokeyBlue: { name: '煙燻藍', hex: '#64748B', text: '#FFFFFF' },
-      terracotta: { name: '磚紅陶', hex: '#A0522D', text: '#FFFFFF' },
-      mustard: { name: '芥末黃', hex: '#B08D55', text: '#FFFFFF' },
-      taro: { name: '芋泥紫', hex: '#8E6E7B', text: '#FFFFFF' },
-      teal: { name: '松石綠', hex: '#4F7C82', text: '#FFFFFF' },
-      dustyRose: { name: '乾燥玫瑰', hex: '#B5838D', text: '#FFFFFF' },
-      slate: { name: '岩石灰', hex: '#475569', text: '#FFFFFF' },
+      // New Darker Morandi (Front)
+      smokedPlum: { name: '煙燻梅', hex: '#8E4A49', text: '#FFFFFF' },
+      ironBlue: { name: '鐵藍灰', hex: '#546E7A', text: '#FFFFFF' },
+      mossGreen: { name: '苔蘚綠', hex: '#556B2F', text: '#FFFFFF' },
+      ocher: { name: '赭石黃', hex: '#B8860B', text: '#FFFFFF' },
+      
+      // Darkened Originals (High Visibility)
+      milk: { name: '燕麥駝', hex: '#D7CCC8', text: '#5D4037' }, // Darkened from off-white
+      tea: { name: '重焙茶', hex: '#A1887F', text: '#FFFFFF' },
+      latte: { name: '深咖啡', hex: '#6D4C41', text: '#FFFFFF' },
+      mist: { name: '暴風藍', hex: '#78909C', text: '#FFFFFF' },
+      sakura: { name: '乾燥櫻', hex: '#EC407A', text: '#FFFFFF' },
+      mint: { name: '松針綠', hex: '#26A69A', text: '#FFFFFF' },
+      lemon: { name: '蜂蜜黃', hex: '#C0CA33', text: '#FFFFFF' },
+      lavender: { name: '紫羅蘭', hex: '#7E57C2', text: '#FFFFFF' },
     };
 
     const FALLBACK_HOLIDAYS = {
@@ -196,6 +191,16 @@
       const d = String(date.getDate()).padStart(2, '0');
       return `${y}-${m}-${d}`;
     };
+    
+    const getContrastYIQ = (hexcolor) => {
+        if (!hexcolor) return '#5D4037';
+        hexcolor = hexcolor.replace("#", "");
+        var r = parseInt(hexcolor.substr(0,2),16);
+        var g = parseInt(hexcolor.substr(2,2),16);
+        var b = parseInt(hexcolor.substr(4,2),16);
+        var yiq = ((r*299)+(g*587)+(b*114))/1000;
+        return (yiq >= 128) ? '#5D4037' : 'white';
+    }
 
     const App = () => {
       const [user, setUser] = useState(null);
@@ -204,6 +209,9 @@
       const [currentDate, setCurrentDate] = useState(new Date());
       const [events, setEvents] = useState([]);
       const [roleSettings, setRoleSettings] = useState({ role1: '我', role2: '夥伴' });
+      
+      // [Restore] Custom Colors State
+      const [customColors, setCustomColors] = useState({});
       
       // Theme State
       const [currentThemeId, setCurrentThemeId] = useState(localStorage.getItem('bibi_theme') || 'original');
@@ -236,12 +244,22 @@
       const [formColor, setFormColor] = useState('latte');
       const [formEventType, setFormEventType] = useState('common');
 
+      // [Restore] Add Color Mode State
+      const [isAddingColor, setIsAddingColor] = useState(false);
+      const [newColorName, setNewColorName] = useState('');
+      const [newColorHex, setNewColorHex] = useState('#8E4A49');
+
       const [tempRole1, setTempRole1] = useState('');
       const [tempRole2, setTempRole2] = useState('');
 
       const touchStartX = useRef(null);
       const touchEndX = useRef(null);
       const minSwipeDistance = 50;
+
+      // [Restore] Combined Colors Map
+      const allColors = useMemo(() => {
+        return { ...TECHO_COLORS, ...customColors };
+      }, [customColors]);
 
       useEffect(() => {
         signInAnonymously(auth).catch((error) => console.error("Auth Failed:", error));
@@ -293,8 +311,21 @@
         const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => {
           if (docSnap.exists()) setRoleSettings(docSnap.data());
         });
+        
+        // [Restore] Custom Colors
+        const colorsDocRef = doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'colors');
+        const unsubColors = onSnapshot(colorsDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.list) {
+                const colorsMap = {};
+                data.list.forEach(c => { colorsMap[c.id] = c; });
+                setCustomColors(colorsMap);
+            }
+          }
+        });
 
-        return () => { unsubEvents(); unsubSettings(); };
+        return () => { unsubEvents(); unsubSettings(); unsubColors(); };
       }, [user, customUserId]);
 
       const handleSaveCustomUid = () => { localStorage.setItem('bibi_custom_uid', customUserId); window.location.reload(); };
@@ -318,6 +349,33 @@
         if (!targetUid) return;
         const newRoles = { role1: tempRole1 || roleSettings.role1, role2: tempRole2 || roleSettings.role2 };
         try { await setDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles'), newRoles); setRoleSettings(newRoles); setIsSettingsModalOpen(false); } catch (e) {}
+      };
+      
+      // [Restore] Add Custom Color Handler
+      const handleAddCustomColor = async () => {
+        const targetUid = customUserId || user?.uid;
+        if (!targetUid || !newColorName) return;
+        
+        const newId = `custom_${Date.now()}`;
+        const newColorObj = {
+            id: newId,
+            name: newColorName,
+            hex: newColorHex,
+            text: getContrastYIQ(newColorHex)
+        };
+
+        try {
+            const colorsRef = doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'colors');
+            await setDoc(colorsRef, {
+                list: arrayUnion(newColorObj)
+            }, { merge: true });
+            
+            setFormColor(newId);
+            setIsAddingColor(false);
+            setNewColorName('');
+        } catch (e) {
+            console.error("Error adding color:", e);
+        }
       };
 
       const changeTheme = (newThemeId) => {
@@ -376,11 +434,14 @@
          setFormIsAllDay(event ? event.isAllDay : true);
          setFormStartTime(event ? (event.startTime || '09:00') : '09:00');
          setFormEndTime(event ? (event.endTime || '10:00') : '10:00');
-         const colorKey = event ? event.color : 'latte';
+         
+         const colorKey = event ? event.color : 'smokedPlum'; // Default to first color
          setFormColor(colorKey);
+         
          setFormEventType(event ? event.eventType : 'common');
          setIsDayViewModalOpen(false); 
          setIsEditModalOpen(true);
+         setIsAddingColor(false);
       };
 
       const saveEvent = async () => {
@@ -501,7 +562,7 @@
                     {segments.slice(0, 4).map((ev) => {
                       const roundLeft = ev.isStart || ev.isSunday;
                       const roundRight = ev.isEnd || ev.isSaturday;
-                      const colorObj = TECHO_COLORS[ev.color] || TECHO_COLORS.latte; // [FIX] Updated to TECHO_COLORS
+                      const colorObj = allColors[ev.color] || TECHO_COLORS.latte; // Use TECHO_COLORS as fallback base
                       
                       let marginClass = '';
                       if (!roundLeft) marginClass += ' -ml-[1px] rounded-l-none'; else marginClass += ' ml-1 rounded-l-md';
@@ -622,7 +683,7 @@
                         </div>
                      ) : (
                         dayViewEvents.map(ev => {
-                           const colorObj = TECHO_COLORS[ev.color] || TECHO_COLORS.latte;
+                           const colorObj = allColors[ev.color] || TECHO_COLORS.latte;
                            let ownerLabel = '';
                            if (ev.eventType === 'me') ownerLabel = roleSettings.role1;
                            else if (ev.eventType === 'partner') ownerLabel = roleSettings.role2;
@@ -651,7 +712,7 @@
             </div>
           )}
 
-          {/* Edit Modal (Color Picker Updated to TECHO_COLORS) */}
+          {/* Edit Modal (Includes Color Picker with Custom Option Restored) */}
           {isEditModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
@@ -694,14 +755,32 @@
                      <textarea placeholder="備註說明..." value={formDesc} onChange={e => setFormDesc(e.target.value)} className="w-full rounded-xl p-3 text-sm h-20 outline-none border resize-none" style={{ backgroundColor: theme.colors.modalHeaderBg, color: theme.colors.text, borderColor: theme.colors.border }} />
                   </div>
                   
-                  {/* TECHO Color Picker */}
-                  <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar items-center">
-                    {Object.entries(TECHO_COLORS).map(([key, style]) => (
-                      <button key={key} onClick={() => setFormColor(key)} className={`w-8 h-8 rounded-full shrink-0 transition-transform flex items-center justify-center ${formColor === key ? 'ring-2 ring-offset-2 scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}`} style={{ backgroundColor: style.hex, ringColor: theme.colors.secondaryText }}>
-                        {formColor === key && <CheckSquare className="w-4 h-4 drop-shadow-md" style={{ color: style.text }} />}
+                  {/* Color Picker with Dynamic Colors */}
+                  {!isAddingColor ? (
+                    <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar items-center">
+                      {Object.entries(allColors).map(([key, style]) => (
+                        <button key={key} onClick={() => setFormColor(key)} className={`w-8 h-8 rounded-full shrink-0 transition-transform flex items-center justify-center ${formColor === key ? 'ring-2 ring-offset-2 scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}`} style={{ backgroundColor: style.hex, ringColor: theme.colors.secondaryText }}>
+                          {formColor === key && <CheckSquare className="w-4 h-4 drop-shadow-md" style={{ color: style.text }} />}
+                        </button>
+                      ))}
+                      {/* Restored Add Button */}
+                      <button onClick={() => setIsAddingColor(true)} className="w-8 h-8 rounded-full border-2 border-dashed flex items-center justify-center transition-colors shrink-0" style={{ borderColor: theme.colors.secondaryText, color: theme.colors.secondaryText }}>
+                        <Plus className="w-4 h-4" />
                       </button>
-                    ))}
-                  </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl border space-y-2 animate-in fade-in slide-in-from-bottom-2" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+                       <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs font-bold" style={{ color: theme.colors.secondaryText }}>新增自訂顏色</span>
+                          <button onClick={() => setIsAddingColor(false)}><X className="w-4 h-4" style={{ color: theme.colors.secondaryText }} /></button>
+                       </div>
+                       <div className="flex gap-2">
+                          <input type="color" value={newColorHex} onChange={(e) => setNewColorHex(e.target.value)} className="w-10 h-10 rounded cursor-pointer border-0 p-0" />
+                          <input type="text" value={newColorName} onChange={(e) => setNewColorName(e.target.value)} placeholder="顏色名稱 (如: 奶茶)" className="flex-1 text-sm border rounded px-2 outline-none" style={{ borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                          <button onClick={handleAddCustomColor} disabled={!newColorName} className="text-white px-3 rounded text-xs font-bold disabled:opacity-50" style={{ backgroundColor: theme.colors.accent }}><Check className="w-4 h-4" /></button>
+                       </div>
+                    </div>
+                  )}
                 </div>
                 <div className="px-5 py-4 border-t flex justify-end" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                   <button onClick={saveEvent} className="text-white text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-colors hover:opacity-90 flex items-center gap-2" style={{ backgroundColor: theme.colors.accent }}><Save className="w-4 h-4" /> 儲存行程</button>
