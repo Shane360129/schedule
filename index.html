@@ -8,8 +8,8 @@
   <meta name="theme-color" content="#F5F1E9">
   <title>BiBi-Schedule</title>
   
-  <link rel="apple-touch-icon" href="icon3.png">
-  <link rel="icon" type="image/png" href="icon3.png">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" type="image/png" href="icon.png">
 
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -516,10 +516,10 @@
                         <div 
                             key={ev.id} 
                             onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }} 
-                            className={`text-[10px] sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 relative z-10 ${marginClass}`}
+                            className={`text-[10px] font-bold font-hand sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 relative z-10 ${marginClass}`}
                             style={{ backgroundColor: colorObj.hex, color: colorObj.text }}
                         >
-                          {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className="text-[9px] opacity-80 font-hand">{ev.startTime}</span>}{ev.title}</span>}
+                          {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className="text-[10px] font-bold font-hand mr-1">{ev.startTime}</span>}{ev.title}</span>}
                         </div>
                       );
                     })}
