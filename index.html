@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#F5F1E9">
-  <title>Schedule</title>
+  <title>BiBi-Schedule</title>
   
   <link rel="apple-touch-icon" href="icon3.png">
   <link rel="icon" type="image/png" href="icon3.png">
@@ -36,25 +36,25 @@
 
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
-<body class="bg-[#F5F1E9] text-[#5D4037] overflow-hidden">
+<body class="overflow-hidden" style="background-color: #F5F1E9; color: #5D4037;">
   
   <div id="root"></div>
 
   <script type="text/babel" data-type="module">
-    import React, { useState, useEffect } from 'react';
+    import React, { useState, useEffect, useRef, useMemo } from 'react';
     import { createRoot } from 'react-dom/client';
     import { 
       ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users
+      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check
     } from 'lucide-react';
     import { initializeApp } from 'firebase/app';
     import { 
       getAuth, onAuthStateChanged, signInAnonymously 
     } from 'firebase/auth';
     import { 
-      getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc
+      getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, arrayUnion
     } from 'firebase/firestore';
-    import { CalendarHeart } from 'lucide-react';
+
     const firebaseConfig = {
       apiKey: "AIzaSyAaeMl8u3S8Atf5b9Z4MvYRfxNWqyxjvck",
       authDomain: "schdule-f5cda.firebaseapp.com",
@@ -70,20 +70,93 @@
     const db = getFirestore(app);
     const appId = 'schdule-f5cda';
 
-    const COLORS = {
-      milk: { name: '燕麥奶', bg: 'bg-[#FDFBF7]', text: 'text-[#8C7851]', border: 'border-[#E8E2D6]', fill: 'bg-[#E8E2D6]' },
-      tea: { name: '伯爵茶', bg: 'bg-[#F5F1E9]', text: 'text-[#5D4037]', border: 'border-[#D2B48C]', fill: 'bg-[#D2B48C]' }, 
-      latte: { name: '深焙', bg: 'bg-[#C2A385]', text: 'text-white', border: 'border-[#8B4513]', fill: 'bg-[#C2A385]' }, 
-      matcha: { name: '抹茶', bg: 'bg-[#F0FDF4]', text: 'text-[#166534]', border: 'border-[#BBF7D0]', fill: 'bg-[#86EFAC]' }, 
-      berry: { name: '莓果', bg: 'bg-[#FFF1F2]', text: 'text-[#9F1239]', border: 'border-[#FECDD3]', fill: 'bg-[#FDA4AF]' },
-      taro: { name: '芋泥', bg: 'bg-[#FAF5FF]', text: 'text-[#6B21A8]', border: 'border-[#E9D5FF]', fill: 'bg-[#D8B4FE]' },
-      lemon: { name: '檸檬塔', bg: 'bg-[#FEFCE8]', text: 'text-[#854D0E]', border: 'border-[#FEF08A]', fill: 'bg-[#FDE047]' },
-      sesame: { name: '芝麻', bg: 'bg-[#F8FAFC]', text: 'text-[#334155]', border: 'border-[#CBD5E1]', fill: 'bg-[#94A3B8]' },
-      earl: { name: '伯爵藍', bg: 'bg-[#F0F9FF]', text: 'text-[#0C4A6E]', border: 'border-[#BAE6FD]', fill: 'bg-[#7DD3FC]' },
+    // --- Themes Configuration ---
+    const THEMES = {
+      original: {
+        id: 'original',
+        name: '日和拿鐵',
+        colors: {
+          bg: '#F5F1E9',
+          text: '#5D4037',
+          secondaryText: '#8C7851',
+          headerBg: '#F5F1E9',
+          gridHeaderBg: '#FDFBF7',
+          gridBg: '#FDFBF7',
+          gridEmptyBg: '#F5F1E980', 
+          gridWeekendBg: '#F2E8DA',
+          border: '#D2B48C',
+          accent: '#C2A385',
+          weekendText: '#9F1239',
+          weekdayText: '#D2B48C',
+          modalBg: '#FFFFFF',
+          modalHeaderBg: '#FDFBF7',
+          inputBg: '#FFFFFF',
+          inputBorder: '#E8E2D6',
+          danger: '#EF4444'
+        }
+      },
+      kuromi: {
+        id: 'kuromi',
+        name: '粉紅戀愛', // Soft Pink Theme
+        colors: {
+          bg: '#FFF9FB',          // Snow Pink (Very subtle)
+          text: '#5E4048',        // Cocoa Brown (Soft readable text)
+          secondaryText: '#9C8288', // Muted Mauve
+          headerBg: '#FFF0F5',    // Lavender Blush
+          gridHeaderBg: '#FCE4EC', // Pale Pink
+          gridBg: '#FFFFFF',       // White
+          gridEmptyBg: '#FFF9FB80', 
+          gridWeekendBg: '#FFF0F3', // Soft Rose mist
+          border: '#F3D0D9',      // Pastel Pink Border
+          accent: '#D07890',      // Dusty Rose (Elegant, not vivid)
+          weekendText: '#C06C84', // Muted Berry
+          weekdayText: '#D8A7B1', // Soft Pink Text
+          modalBg: '#FFFFFF',
+          modalHeaderBg: '#FFF0F5',
+          inputBg: '#FFFFFF',
+          inputBorder: '#F3D0D9',
+          danger: '#E57373'       // Soft Red
+        }
+      },
+      minimal: {
+        id: 'minimal',
+        name: '極簡純白', // High Contrast Update
+        colors: {
+          bg: '#FFFFFF',
+          text: '#000000',        // Pure Black for visibility
+          secondaryText: '#4B5563', // Gray 600 (Darker than before)
+          headerBg: '#FFFFFF',
+          gridHeaderBg: '#F3F4F6', // Gray 100
+          gridBg: '#FFFFFF',
+          gridEmptyBg: '#FAFAFA', 
+          gridWeekendBg: '#F9FAFB', // Gray 50
+          border: '#D1D5DB',      // Gray 300 (Darker border)
+          accent: '#000000',      // Black Accent
+          weekendText: '#DC2626', // Red 600
+          weekdayText: '#374151', // Gray 700 (Very visible)
+          modalBg: '#FFFFFF',
+          modalHeaderBg: '#F9FAFB',
+          inputBg: '#FFFFFF',
+          inputBorder: '#9CA3AF', // Gray 400
+          danger: '#B91C1C'       // Red 700
+        }
+      }
+    };
+
+    // Static Default Colors (Hex codes for inline styles)
+    const DEFAULT_COLORS = {
+      milk: { name: '燕麥奶', hex: '#FDFBF7', text: '#8C7851' },
+      tea: { name: '伯爵茶', hex: '#F5F1E9', text: '#5D4037' }, 
+      latte: { name: '深焙', hex: '#C2A385', text: '#FFFFFF' }, 
+      matcha: { name: '抹茶', hex: '#F0FDF4', text: '#166534' }, 
+      berry: { name: '莓果', hex: '#FFF1F2', text: '#9F1239' },
+      taro: { name: '芋泥', hex: '#FAF5FF', text: '#6B21A8' },
+      lemon: { name: '檸檬塔', hex: '#FEFCE8', text: '#854D0E' },
+      sesame: { name: '芝麻', hex: '#F8FAFC', text: '#334155' },
+      earl: { name: '伯爵藍', hex: '#F0F9FF', text: '#0C4A6E' },
     };
 
     const FALLBACK_HOLIDAYS = {
-      // 2025
       "2025-01-01": { isHoliday: true, name: "元旦" },
       "2025-01-25": { isHoliday: true, name: "除夕" },
       "2025-01-26": { isHoliday: true, name: "春節" },
@@ -94,7 +167,6 @@
       "2025-05-31": { isHoliday: true, name: "端午節" },
       "2025-10-06": { isHoliday: true, name: "中秋節" },
       "2025-10-10": { isHoliday: true, name: "國慶日" },
-      // 2026
       "2026-01-01": { isHoliday: true, name: "元旦" },
       "2026-02-16": { isHoliday: true, name: "除夕" },
       "2026-02-17": { isHoliday: true, name: "春節" },
@@ -105,7 +177,6 @@
       "2026-10-10": { isHoliday: true, name: "國慶日" }
     };
 
-    // --- Helper Functions ---
     const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
     const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
     const formatDate = (date) => {
@@ -114,6 +185,16 @@
       const d = String(date.getDate()).padStart(2, '0');
       return `${y}-${m}-${d}`;
     };
+    
+    const getContrastYIQ = (hexcolor) => {
+        if (!hexcolor) return '#5D4037';
+        hexcolor = hexcolor.replace("#", "");
+        var r = parseInt(hexcolor.substr(0,2),16);
+        var g = parseInt(hexcolor.substr(2,2),16);
+        var b = parseInt(hexcolor.substr(4,2),16);
+        var yiq = ((r*299)+(g*587)+(b*114))/1000;
+        return (yiq >= 128) ? '#5D4037' : 'white';
+    }
 
     const App = () => {
       const [user, setUser] = useState(null);
@@ -121,9 +202,14 @@
       
       const [currentDate, setCurrentDate] = useState(new Date());
       const [events, setEvents] = useState([]);
-      // [NEW] Role Settings: Default to '我' and '夥伴' but sync from DB
       const [roleSettings, setRoleSettings] = useState({ role1: '我', role2: '夥伴' });
       
+      const [customColors, setCustomColors] = useState({});
+      
+      // Theme State
+      const [currentThemeId, setCurrentThemeId] = useState(localStorage.getItem('bibi_theme') || 'original');
+      const theme = THEMES[currentThemeId] || THEMES.original;
+
       const [loading, setLoading] = useState(true);
       const [holidayData, setHolidayData] = useState(() => {
         const initialData = {};
@@ -139,10 +225,8 @@
       const [isDayViewModalOpen, setIsDayViewModalOpen] = useState(false); 
       const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false); 
       const [viewingDate, setViewingDate] = useState(null);
-      
       const [editingId, setEditingId] = useState(null);
 
-      // Form State
       const [formTitle, setFormTitle] = useState('');
       const [formDesc, setFormDesc] = useState('');
       const [formStartDate, setFormStartDate] = useState('');
@@ -153,17 +237,34 @@
       const [formColor, setFormColor] = useState('latte');
       const [formEventType, setFormEventType] = useState('common');
 
-      // Settings Form State
+      const [isAddingColor, setIsAddingColor] = useState(false);
+      const [newColorName, setNewColorName] = useState('');
+      const [newColorHex, setNewColorHex] = useState('#E8E2D6');
+
       const [tempRole1, setTempRole1] = useState('');
       const [tempRole2, setTempRole2] = useState('');
 
-      // --- Auth ---
+      const touchStartX = useRef(null);
+      const touchEndX = useRef(null);
+      const minSwipeDistance = 50;
+
+      const allColors = useMemo(() => {
+        return { ...DEFAULT_COLORS, ...customColors };
+      }, [customColors]);
+
       useEffect(() => {
         signInAnonymously(auth).catch((error) => console.error("Auth Failed:", error));
         return onAuthStateChanged(auth, setUser);
       }, []);
 
-      // --- Holiday API ---
+      // Update Body Background color based on theme
+      useEffect(() => {
+        document.body.style.backgroundColor = theme.colors.bg;
+        document.body.style.color = theme.colors.text;
+        const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+        if(metaThemeColor) metaThemeColor.setAttribute('content', theme.colors.bg);
+      }, [currentThemeId]);
+
       useEffect(() => {
         const currentYear = currentDate.getFullYear();
         const fetchHolidays = async () => {
@@ -185,45 +286,40 @@
         fetchHolidays();
       }, [currentDate.getFullYear()]);
 
-      // --- Firestore (Data & Settings) ---
       useEffect(() => {
         const targetUid = customUserId || user?.uid;
         if (!targetUid) return;
         
-        // 1. Listen to Events
         const qEvents = query(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_events'));
         const unsubEvents = onSnapshot(qEvents, (snapshot) => {
           const loadedEvents = [];
           snapshot.forEach((doc) => loadedEvents.push({ id: doc.id, ...doc.data() }));
           setEvents(loadedEvents);
           setLoading(false);
-        }, (err) => console.error("Firestore Events Error:", err));
+        });
 
-        // 2. Listen to Role Settings (Sync Names)
         const settingsDocRef = doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles');
         const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => {
+          if (docSnap.exists()) setRoleSettings(docSnap.data());
+        });
+
+        const colorsDocRef = doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'colors');
+        const unsubColors = onSnapshot(colorsDocRef, (docSnap) => {
           if (docSnap.exists()) {
-            setRoleSettings(docSnap.data());
-          } else {
-            // If no settings exist yet, keep defaults or save defaults?
-            // Keeping defaults in local state is fine.
+            const data = docSnap.data();
+            if (data.list) {
+                const colorsMap = {};
+                data.list.forEach(c => { colorsMap[c.id] = c; });
+                setCustomColors(colorsMap);
+            }
           }
         });
 
-        return () => { unsubEvents(); unsubSettings(); };
+        return () => { unsubEvents(); unsubSettings(); unsubColors(); };
       }, [user, customUserId]);
 
-      // --- Handlers ---
-      const handleSaveCustomUid = () => {
-        localStorage.setItem('bibi_custom_uid', customUserId);
-        window.location.reload(); 
-      };
-
-      const handleResetUid = () => {
-        localStorage.removeItem('bibi_custom_uid');
-        window.location.reload();
-      };
-
+      const handleSaveCustomUid = () => { localStorage.setItem('bibi_custom_uid', customUserId); window.location.reload(); };
+      const handleResetUid = () => { localStorage.removeItem('bibi_custom_uid'); window.location.reload(); };
       const handleCopyId = () => {
         const text = user?.uid;
         if (!text) return;
@@ -234,25 +330,46 @@
         document.body.appendChild(textArea);
         textArea.focus();
         textArea.select();
-        try { document.execCommand('copy'); } catch (err) { console.error('Copy failed', err); }
+        try { document.execCommand('copy'); } catch (err) {}
         document.body.removeChild(textArea);
       };
 
-      // [NEW] Save Role Names
       const handleSaveRoles = async () => {
         const targetUid = customUserId || user?.uid;
         if (!targetUid) return;
+        const newRoles = { role1: tempRole1 || roleSettings.role1, role2: tempRole2 || roleSettings.role2 };
+        try { await setDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles'), newRoles); setRoleSettings(newRoles); setIsSettingsModalOpen(false); } catch (e) {}
+      };
+
+      const handleAddCustomColor = async () => {
+        const targetUid = customUserId || user?.uid;
+        if (!targetUid || !newColorName) return;
         
-        const newRoles = {
-          role1: tempRole1 || roleSettings.role1,
-          role2: tempRole2 || roleSettings.role2
+        const newId = `custom_${Date.now()}`;
+        const newColorObj = {
+            id: newId,
+            name: newColorName,
+            hex: newColorHex,
+            text: getContrastYIQ(newColorHex)
         };
 
         try {
-          await setDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles'), newRoles);
-          setRoleSettings(newRoles);
-          setIsSettingsModalOpen(false);
-        } catch (e) { console.error("Save Roles Error:", e); }
+            const colorsRef = doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'colors');
+            await setDoc(colorsRef, {
+                list: arrayUnion(newColorObj)
+            }, { merge: true });
+            
+            setFormColor(newId);
+            setIsAddingColor(false);
+            setNewColorName('');
+        } catch (e) {
+            console.error("Error adding color:", e);
+        }
+      };
+
+      const changeTheme = (newThemeId) => {
+        setCurrentThemeId(newThemeId);
+        localStorage.setItem('bibi_theme', newThemeId);
       };
 
       const openSettings = () => {
@@ -261,25 +378,19 @@
         setIsSettingsModalOpen(true);
       };
 
-      // --- Calendar Logic ---
-      const year = currentDate.getFullYear();
-      const month = currentDate.getMonth();
-      const daysInMonth = getDaysInMonth(year, month);
-      const firstDay = getFirstDayOfMonth(year, month);
-      
-      const days = [];
-      for (let i = firstDay - 1; i >= 0; i--) days.push({ day: null, fullDate: '' });
-      for (let i = 1; i <= daysInMonth; i++) {
-        const dStr = String(i).padStart(2, '0');
-        const mStr = String(month + 1).padStart(2, '0');
-        days.push({ day: i, fullDate: `${year}-${mStr}-${dStr}` });
-      }
-      const remainingCells = 42 - days.length;
-      for (let i = 1; i <= remainingCells; i++) days.push({ day: null, fullDate: '' });
-
       const handlePrevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
       const handleNextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
       const handleToday = () => setCurrentDate(new Date());
+
+      const onTouchStart = (e) => { touchEndX.current = null; touchStartX.current = e.targetTouches[0].clientX; };
+      const onTouchMove = (e) => { touchEndX.current = e.targetTouches[0].clientX; };
+      const onTouchEnd = () => {
+        if (!touchStartX.current || !touchEndX.current) return;
+        const distance = touchStartX.current - touchEndX.current;
+        if (isEditModalOpen || isDayViewModalOpen || isSettingsModalOpen) return;
+        if (distance > minSwipeDistance) handleNextMonth();
+        if (distance < -minSwipeDistance) handlePrevMonth();
+      };
 
       const getEventSegments = (dateStr) => {
         if (!dateStr) return [];
@@ -301,10 +412,7 @@
         });
       };
 
-      const handleDayClick = (dateStr) => {
-        setViewingDate(dateStr);
-        setIsDayViewModalOpen(true);
-      };
+      const handleDayClick = (dateStr) => { setViewingDate(dateStr); setIsDayViewModalOpen(true); };
 
       const openEditModal = (dateStr, event = null) => {
          setEditingId(event ? event.id : null);
@@ -315,10 +423,12 @@
          setFormIsAllDay(event ? event.isAllDay : true);
          setFormStartTime(event ? (event.startTime || '09:00') : '09:00');
          setFormEndTime(event ? (event.endTime || '10:00') : '10:00');
-         setFormColor(event ? event.color : 'latte');
+         const colorKey = event ? event.color : 'latte';
+         setFormColor(colorKey);
          setFormEventType(event ? event.eventType : 'common');
          setIsDayViewModalOpen(false); 
          setIsEditModalOpen(true);
+         setIsAddingColor(false);
       };
 
       const saveEvent = async () => {
@@ -357,37 +467,51 @@
         }
       };
 
-      if (loading) return <div className="h-dvh flex items-center justify-center"><Loader2 className="w-8 h-8 text-[#C2A385] animate-spin" /></div>;
+      if (loading) return <div className="h-dvh flex items-center justify-center" style={{ backgroundColor: theme.colors.bg }}><Loader2 className="w-8 h-8 animate-spin" style={{ color: theme.colors.accent }} /></div>;
       
       const dayViewEvents = viewingDate ? events.filter(ev => viewingDate >= ev.startDate && viewingDate <= ev.endDate).sort((a,b) => (a.startTime||'00:00').localeCompare(b.startTime||'00:00')) : [];
 
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const daysInMonth = getDaysInMonth(year, month);
+      const firstDay = getFirstDayOfMonth(year, month);
+      const days = [];
+      for (let i = firstDay - 1; i >= 0; i--) days.push({ day: null, fullDate: '' });
+      for (let i = 1; i <= daysInMonth; i++) {
+        const dStr = String(i).padStart(2, '0');
+        const mStr = String(month + 1).padStart(2, '0');
+        days.push({ day: i, fullDate: `${year}-${mStr}-${dStr}` });
+      }
+      const remainingCells = 42 - days.length;
+      for (let i = 1; i <= remainingCells; i++) days.push({ day: null, fullDate: '' });
+
       return (
-        <div className="h-dvh flex flex-col">
+        <div className="h-dvh flex flex-col" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ backgroundColor: theme.colors.bg, color: theme.colors.text }}>
           {/* Header */}
-          <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] bg-[#F5F1E9] border-b border-[#D2B48C]/20 z-10">
+          <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] z-10 transition-colors duration-300" style={{ backgroundColor: theme.colors.headerBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
             <div className="flex items-center gap-3">
-                <div className="bg-white p-2 rounded-xl shadow-sm border border-[#E8E2D6]">
-                  <CalendarHeart className="w-5 h-5 text-[#C2A385]" />
-                </div>
+               <div className="p-2 rounded-xl shadow-sm border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                 <CalendarHeart className="w-5 h-5" style={{ color: theme.colors.accent }} />
+               </div>
                <div>
-                 <h1 className="text-xl font-hand font-bold tracking-tight text-[#5D4037] text-2xl">BiBi❣</h1>
-                 <p className="text-[12px] font-hand font-bold text-[#8C7851] uppercase tracking-widest hidden sm:block">{year} . {month + 1}</p>
+                 <h1 className="text-xl font-hand font-bold tracking-tight text-2xl" style={{ color: theme.colors.text }}>BiBi❣</h1>
+                 <p className="text-[12px] font-hand font-bold uppercase tracking-widest hidden sm:block" style={{ color: theme.colors.secondaryText }}>{year} . {month + 1}</p>
                </div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 bg-white/50 p-1.5 rounded-2xl border border-[#D2B48C]/10 backdrop-blur-sm mr-2">
-                <button onClick={handlePrevMonth} className="p-2 hover:bg-[#E8E2D6]/50 rounded-xl transition-colors text-[#8C7851]"><ChevronLeft className="w-5 h-5" /></button>
-                <span className="text-xl font-hand font-bold min-w-[80px] text-center text-[#5D4037]">{month + 1}月 <span className="text-base font-hand text-[#8C7851]">{year}</span></span>
-                <button onClick={handleNextMonth} className="p-2 hover:bg-[#E8E2D6]/50 rounded-xl transition-colors text-[#8C7851]"><ChevronRight className="w-5 h-5" /></button>
+              <div className="flex items-center gap-1 p-1.5 rounded-2xl border backdrop-blur-sm mr-2" style={{ backgroundColor: theme.colors.gridEmptyBg, borderColor: theme.colors.border + '20' }}>
+                <button onClick={handlePrevMonth} className="p-2 rounded-xl transition-colors hover:opacity-70" style={{ color: theme.colors.secondaryText }}><ChevronLeft className="w-5 h-5" /></button>
+                <span className="text-xl font-hand font-bold min-w-[80px] text-center" style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base font-hand" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
+                <button onClick={handleNextMonth} className="p-2 rounded-xl transition-colors hover:opacity-70" style={{ color: theme.colors.secondaryText }}><ChevronRight className="w-5 h-5" /></button>
               </div>
-              <button onClick={openSettings} className="bg-white text-[#8C7851] p-2.5 rounded-xl shadow-sm border border-[#E8E2D6] hover:bg-[#FDFBF7]"><Settings className="w-5 h-5" /></button>
+              <button onClick={openSettings} className="p-2.5 rounded-xl shadow-sm border hover:brightness-95 transition-all" style={{ backgroundColor: theme.colors.modalBg, color: theme.colors.secondaryText, borderColor: theme.colors.border }}><Settings className="w-5 h-5" /></button>
             </div>
           </header>
 
           {/* Weekday */}
-          <div className="flex-none grid grid-cols-7 border-b border-[#D2B48C]/20 bg-[#FDFBF7]">
+          <div className="flex-none grid grid-cols-7" style={{ backgroundColor: theme.colors.gridHeaderBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
             {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d, i) => (
-              <div key={i} className={`py-2 text-center text-[12px] font-hand font-bold tracking-widest ${(i === 0 || i === 6) ? 'text-[#9F1239]' : 'text-[#D2B48C]'}`}>{d}</div>
+              <div key={i} className="py-2 text-center text-[12px] font-hand font-bold tracking-widest" style={{ color: (i === 0 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
             ))}
           </div>
 
@@ -401,61 +525,94 @@
               const isHoliday = holidayInfo?.isHoliday === true;
               const dayOfWeek = idx % 7;
               const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-              let bgClass = 'bg-[#FDFBF7]';
-              if (!hasDate) bgClass = 'bg-[#F5F1E9]/50';
-              else if (isHoliday || isWeekend) bgClass = 'bg-[#F2E8DA]';
-              const dateTextColor = (isHoliday || dayOfWeek === 0) ? 'text-[#9F1239]' : 'text-[#5D4037]';
+              
+              let cellBg = theme.colors.gridBg;
+              if (!hasDate) cellBg = theme.colors.gridEmptyBg;
+              else if (isHoliday || isWeekend) cellBg = theme.colors.gridWeekendBg;
+              
+              const dateTextColor = (isHoliday || dayOfWeek === 0) ? theme.colors.weekendText : theme.colors.text;
 
               return (
-                <div key={idx} onClick={() => hasDate && handleDayClick(cell.fullDate)} className={`relative border-b border-r border-[#D2B48C]/10 flex flex-col ${bgClass} active:brightness-95 transition-colors cursor-pointer select-none`}>
+                <div key={idx} onClick={() => hasDate && handleDayClick(cell.fullDate)} className="relative border-b border-r flex flex-col active:brightness-95 transition-colors cursor-pointer select-none" style={{ backgroundColor: cellBg, borderColor: theme.colors.border + '20' }}>
                   {hasDate && (
                     <div className="flex flex-col items-center pt-1 mb-0.5 px-0 min-h-[38px] justify-start">
-                       <span className={`text-lg sm:text-xl font-hand font-bold h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'bg-[#C2A385] text-white shadow-md' : dateTextColor}`}>{cell.day}</span>
-                       {isHoliday && <span className="text-[10px] text-[#9F1239] font-medium -mt-1 truncate max-w-full px-1 leading-tight">{holidayInfo.name}</span>}
+                       <span 
+                         className={`text-lg sm:text-xl font-hand font-bold h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'shadow-md' : ''}`}
+                         style={{ backgroundColor: isToday ? theme.colors.accent : 'transparent', color: isToday ? '#fff' : dateTextColor }}
+                       >
+                         {cell.day}
+                       </span>
+                       {isHoliday && <span className="text-[10px] font-medium -mt-1 truncate max-w-full px-1 leading-tight" style={{ color: theme.colors.weekendText }}>{holidayInfo.name}</span>}
                     </div>
                   )}
                   <div className="flex-1 flex flex-col gap-[2px] w-full pb-1 px-0">
                     {segments.slice(0, 4).map((ev) => {
                       const roundLeft = ev.isStart || ev.isSunday;
                       const roundRight = ev.isEnd || ev.isSaturday;
-                      const style = COLORS[ev.color] || COLORS.latte;
+                      const colorObj = allColors[ev.color] || DEFAULT_COLORS.latte;
                       
                       let marginClass = '';
-                      if (!roundLeft) marginClass += ' -ml-[1px] rounded-l-none';
-                      else marginClass += ' ml-1 rounded-l-md';
-                      
-                      if (!roundRight) marginClass += ' -mr-[1px] rounded-r-none';
-                      else marginClass += ' mr-1 rounded-r-md';
+                      if (!roundLeft) marginClass += ' -ml-[1px] rounded-l-none'; else marginClass += ' ml-1 rounded-l-md';
+                      if (!roundRight) marginClass += ' -mr-[1px] rounded-r-none'; else marginClass += ' mr-1 rounded-r-md';
 
                       return (
-                        <div key={ev.id} onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }} className={`text-[10px] sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 relative z-10 ${style.fill} ${style.text === 'text-white' ? 'text-white' : 'text-[#5D4037]'} ${marginClass}`}>
+                        <div 
+                            key={ev.id} 
+                            onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }} 
+                            className={`text-[10px] sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 relative z-10 ${marginClass}`}
+                            style={{ backgroundColor: colorObj.hex, color: colorObj.text }}
+                        >
                           {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className="text-[9px] opacity-80 font-hand">{ev.startTime}</span>}{ev.title}</span>}
                         </div>
                       );
                     })}
-                    {segments.length > 4 && <div className="text-[10px] font-hand text-[#D2B48C] text-center leading-none mt-auto font-bold">+{segments.length - 4}</div>}
+                    {segments.length > 4 && <div className="text-[10px] font-hand text-center leading-none mt-auto font-bold" style={{ color: theme.colors.weekdayText }}>+{segments.length - 4}</div>}
                   </div>
                 </div>
               )
             })}
           </div>
 
-          {/* Settings Modal (Sync ID + Profile Names) */}
+          {/* Settings Modal */}
           {isSettingsModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D4037]/20 backdrop-blur-[2px] p-4">
-               <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#D2B48C]/30 flex flex-col max-h-[90vh]">
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                   <div className="p-6 space-y-5 overflow-y-auto">
-                    <div className="flex justify-between items-center pb-2 border-b border-[#F5F1E9]">
-                      <h3 className="font-bold text-[#5D4037] flex items-center gap-2"><Settings className="w-5 h-5"/> 設定 & 同步</h3>
-                      <button onClick={() => setIsSettingsModalOpen(false)} className="p-1 text-[#8C7851] hover:bg-[#F5F1E9] rounded-full"><X className="w-5 h-5" /></button>
+                    <div className="flex justify-between items-center pb-2 border-b" style={{ borderColor: theme.colors.border }}>
+                      <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Settings className="w-5 h-5"/> 設定 & 同步</h3>
+                      <button onClick={() => setIsSettingsModalOpen(false)} className="p-1 rounded-full hover:opacity-70" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
                     </div>
                     
+                    {/* Theme Switcher */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase flex items-center gap-1" style={{ color: theme.colors.secondaryText }}><Palette className="w-3 h-3"/> 主題風格</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {Object.values(THEMES).map(t => (
+                          <button 
+                            key={t.id} 
+                            onClick={() => changeTheme(t.id)}
+                            className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all ${currentThemeId === t.id ? 'ring-2 ring-offset-1' : 'hover:scale-105'}`}
+                            style={{ 
+                              backgroundColor: t.colors.bg, 
+                              borderColor: t.colors.border,
+                              ringColor: theme.colors.accent 
+                            }}
+                          >
+                            <div className="w-6 h-6 rounded-full border shadow-sm" style={{ backgroundColor: t.colors.accent }}></div>
+                            <span className="text-[10px] font-bold" style={{ color: t.colors.text }}>{t.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <hr style={{ borderColor: theme.colors.border }} />
+
                     {/* ID Sync Section */}
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-[#8C7851] uppercase">裝置識別碼 (ID)</label>
-                      <div className="flex gap-2 items-center bg-[#FDFBF7] border border-[#E8E2D6] p-2 rounded-lg">
-                        <code className="text-[10px] text-[#5D4037] break-all flex-1">{user?.uid || 'Loading...'}</code>
-                        <button onClick={handleCopyId} className="p-1 text-[#C2A385] hover:bg-white rounded"><Copy className="w-4 h-4" /></button>
+                      <label className="text-xs font-bold uppercase" style={{ color: theme.colors.secondaryText }}>裝置識別碼 (ID)</label>
+                      <div className="flex gap-2 items-center border p-2 rounded-lg" style={{ backgroundColor: theme.colors.gridHeaderBg, borderColor: theme.colors.border }}>
+                        <code className="text-[10px] break-all flex-1" style={{ color: theme.colors.text }}>{user?.uid || 'Loading...'}</code>
+                        <button onClick={handleCopyId} className="p-1 rounded hover:bg-white" style={{ color: theme.colors.accent }}><Copy className="w-4 h-4" /></button>
                       </div>
                       <div className="pt-2">
                         <input 
@@ -463,43 +620,32 @@
                           value={customUserId} 
                           onChange={(e) => setCustomUserId(e.target.value)}
                           placeholder="手動輸入 ID 以同步資料..."
-                          className="w-full text-sm border border-[#E8E2D6] rounded-lg p-2 text-[#5D4037] focus:border-[#C2A385] outline-none placeholder:text-[#D2B48C]"
+                          className="w-full text-sm border rounded-lg p-2 focus:ring-1 outline-none"
+                          style={{ borderColor: theme.colors.border, backgroundColor: theme.colors.inputBg, color: theme.colors.text }}
                         />
                       </div>
                       <div className="flex gap-2 pt-1">
-                        <button onClick={handleResetUid} className="flex-1 py-2 text-xs font-bold text-[#8C7851] bg-[#F5F1E9] rounded-lg">重置</button>
-                        <button onClick={handleSaveCustomUid} className="flex-1 py-2 text-xs font-bold text-white bg-[#C2A385] rounded-lg shadow-sm">切換帳號</button>
+                        <button onClick={handleResetUid} className="flex-1 py-2 text-xs font-bold rounded-lg" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>重置</button>
+                        <button onClick={handleSaveCustomUid} className="flex-1 py-2 text-xs font-bold text-white rounded-lg shadow-sm" style={{ backgroundColor: theme.colors.accent }}>切換帳號</button>
                       </div>
                     </div>
 
-                    <hr className="border-[#F5F1E9]" />
+                    <hr style={{ borderColor: theme.colors.border }} />
 
                     {/* Role Names Section */}
                     <div className="space-y-3">
-                      <label className="text-xs font-bold text-[#8C7851] uppercase flex items-center gap-1"><Users className="w-3 h-3"/> 角色名稱設定</label>
-                      <p className="text-[10px] text-[#8C7851] opacity-80">設定的名字將會同步到所有連結此 ID 的裝置。</p>
-                      
+                      <label className="text-xs font-bold uppercase flex items-center gap-1" style={{ color: theme.colors.secondaryText }}><Users className="w-3 h-3"/> 角色名稱設定</label>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                           <span className="text-[10px] font-bold text-[#5D4037]">角色 A </span>
-                           <input 
-                             type="text" 
-                             value={tempRole1} 
-                             onChange={(e) => setTempRole1(e.target.value)}
-                             className="w-full text-sm border border-[#E8E2D6] rounded-lg p-2 text-[#5D4037] focus:border-[#C2A385] outline-none text-center"
-                           />
+                           <span className="text-[10px] font-bold" style={{ color: theme.colors.text }}>角色 A (我)</span>
+                           <input type="text" value={tempRole1} onChange={(e) => setTempRole1(e.target.value)} className="w-full text-sm border rounded-lg p-2 outline-none text-center" style={{ borderColor: theme.colors.border, backgroundColor: theme.colors.inputBg, color: theme.colors.text }} />
                         </div>
                         <div className="space-y-1">
-                           <span className="text-[10px] font-bold text-[#5D4037]">角色 B </span>
-                           <input 
-                             type="text" 
-                             value={tempRole2} 
-                             onChange={(e) => setTempRole2(e.target.value)}
-                             className="w-full text-sm border border-[#E8E2D6] rounded-lg p-2 text-[#5D4037] focus:border-[#C2A385] outline-none text-center"
-                           />
+                           <span className="text-[10px] font-bold" style={{ color: theme.colors.text }}>角色 B (夥伴)</span>
+                           <input type="text" value={tempRole2} onChange={(e) => setTempRole2(e.target.value)} className="w-full text-sm border rounded-lg p-2 outline-none text-center" style={{ borderColor: theme.colors.border, backgroundColor: theme.colors.inputBg, color: theme.colors.text }} />
                         </div>
                       </div>
-                      <button onClick={handleSaveRoles} className="w-full py-2.5 text-xs font-bold text-white bg-[#8C7851] rounded-lg shadow-sm hover:bg-[#5D4037] transition-colors">儲存名稱設定</button>
+                      <button onClick={handleSaveRoles} className="w-full py-2.5 text-xs font-bold text-white rounded-lg shadow-sm transition-colors hover:opacity-90" style={{ backgroundColor: theme.colors.secondaryText }}>儲存名稱設定</button>
                     </div>
                   </div>
                </div>
@@ -508,104 +654,122 @@
 
           {/* Day View Modal */}
           {isDayViewModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D4037]/20 backdrop-blur-[2px] p-4">
-               <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#D2B48C]/30 flex flex-col max-h-[80vh]">
-                  <div className="px-5 py-4 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center shrink-0">
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <div className="flex items-baseline gap-2">
-                       <span className="text-2xl font-hand font-bold text-[#5D4037]">{viewingDate}</span>
-                       <span className="text-xs text-[#8C7851] font-bold uppercase">{viewingDate && !isNaN(new Date(viewingDate).getTime()) ? new Date(viewingDate).toLocaleDateString('en-US', { weekday: 'long' }) : ''}</span>
+                       <span className="text-2xl font-hand font-bold" style={{ color: theme.colors.text }}>{viewingDate}</span>
+                       <span className="text-xs font-bold uppercase" style={{ color: theme.colors.secondaryText }}>{viewingDate && !isNaN(new Date(viewingDate).getTime()) ? new Date(viewingDate).toLocaleDateString('en-US', { weekday: 'long' }) : ''}</span>
                      </div>
-                     <button onClick={() => setIsDayViewModalOpen(false)} className="p-1.5 text-[#D2B48C] hover:bg-[#F5F1E9] rounded-full transition-colors"><X className="w-5 h-5" /></button>
+                     <button onClick={() => setIsDayViewModalOpen(false)} className="p-1.5 rounded-full transition-colors hover:opacity-70" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
                   </div>
-                  <div className="p-4 overflow-y-auto flex-1 space-y-3 bg-[#FDFBF7]">
+                  <div className="p-4 overflow-y-auto flex-1 space-y-3" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
                      {dayViewEvents.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-10 opacity-50 text-[#8C7851]">
+                        <div className="flex flex-col items-center justify-center py-10 opacity-50" style={{ color: theme.colors.secondaryText }}>
                            <Coffee className="w-10 h-10 mb-2" /><p className="font-hand text-lg">今天沒有行程，享受生活吧！</p>
                         </div>
                      ) : (
                         dayViewEvents.map(ev => {
-                           const style = COLORS[ev.color] || COLORS.latte;
-                           // Identify owner label
+                           const colorObj = allColors[ev.color] || DEFAULT_COLORS.latte;
                            let ownerLabel = '';
                            if (ev.eventType === 'me') ownerLabel = roleSettings.role1;
                            else if (ev.eventType === 'partner') ownerLabel = roleSettings.role2;
                            else ownerLabel = '共同';
 
                            return (
-                             <div key={ev.id} onClick={() => openEditModal(null, ev)} className="bg-white p-3 rounded-xl border border-[#E8E2D6] shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow">
-                                <div className={`w-3 h-3 rounded-full ${style.fill} shrink-0`}></div>
+                             <div key={ev.id} onClick={() => openEditModal(null, ev)} className="p-3 rounded-xl border shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }}>
+                                <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: colorObj.hex }}></div>
                                 <div className="flex-1 min-w-0">
                                    <div className="flex justify-between items-start">
-                                      <h4 className="font-bold text-[#5D4037] truncate">{ev.title}</h4>
-                                      <span className="text-[10px] bg-[#F5F1E9] text-[#8C7851] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap">{ownerLabel}</span>
+                                      <h4 className="font-bold truncate" style={{ color: theme.colors.text }}>{ev.title}</h4>
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>{ownerLabel}</span>
                                    </div>
-                                   <div className="flex items-center gap-2 text-xs text-[#8C7851]">{ev.isAllDay ? <span className="bg-[#E8E2D6] px-1.5 rounded text-[#5D4037]">全天</span> : <span className="font-hand text-sm">{ev.startTime} - {ev.endTime}</span>}</div>
+                                   <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>{ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="font-hand text-sm">{ev.startTime} - {ev.endTime}</span>}</div>
                                 </div>
-                                <Edit className="w-4 h-4 text-[#D2B48C]" />
+                                <Edit className="w-4 h-4" style={{ color: theme.colors.secondaryText }} />
                              </div>
                            )
                         })
                      )}
                   </div>
-                  <div className="p-4 border-t border-[#F5F1E9] bg-white shrink-0">
-                     <button onClick={() => openEditModal(viewingDate)} className="w-full bg-[#C2A385] hover:bg-[#A68664] text-white py-3 rounded-xl shadow-md font-bold flex items-center justify-center gap-2 transition-colors"><Plus className="w-5 h-5" /> 新增行程</button>
+                  <div className="p-4 border-t shrink-0" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                     <button onClick={() => openEditModal(viewingDate)} className="w-full text-white py-3 rounded-xl shadow-md font-bold flex items-center justify-center gap-2 transition-colors hover:opacity-90" style={{ backgroundColor: theme.colors.accent }}><Plus className="w-5 h-5" /> 新增行程</button>
                   </div>
                </div>
             </div>
           )}
 
-          {/* Edit Modal */}
+          {/* Edit Modal (Includes Color Picker) */}
           {isEditModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5D4037]/20 backdrop-blur-[2px] p-4">
-              <div className="bg-white w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-[#D2B48C]/30">
-                <div className="px-5 py-4 bg-[#FDFBF7] border-b border-[#F5F1E9] flex justify-between items-center">
-                   <h3 className="text-[#5D4037] font-bold flex items-center gap-2"><Leaf className="w-4 h-4 text-[#C2A385]" /> {editingId ? '編輯行程' : '建立行程'}</h3>
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+              <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                <div className="px-5 py-4 border-b flex justify-between items-center" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+                   <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Leaf className="w-4 h-4" style={{ color: theme.colors.accent }} /> {editingId ? '編輯行程' : '建立行程'}</h3>
                    <div className="flex gap-2">
-                     {editingId && <button onClick={deleteEvent} className="p-1.5 text-[#D2B48C] hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"><Trash2 className="w-4 h-4" /></button>}
-                     <button onClick={() => setIsEditModalOpen(false)} className="p-1.5 text-[#D2B48C] hover:bg-[#F5F1E9] rounded-full transition-colors"><X className="w-4 h-4" /></button>
+                     {editingId && <button onClick={deleteEvent} className="p-1.5 hover:opacity-70 rounded-full transition-colors" style={{ color: theme.colors.secondaryText }}><Trash2 className="w-4 h-4" /></button>}
+                     <button onClick={() => setIsEditModalOpen(false)} className="p-1.5 hover:opacity-70 rounded-full transition-colors" style={{ color: theme.colors.secondaryText }}><X className="w-4 h-4" /></button>
                    </div>
                 </div>
                 <div className="p-6 space-y-5">
-                  <div className="flex gap-2 p-1 bg-[#F5F1E9] rounded-xl">
+                  <div className="flex gap-2 p-1 rounded-xl" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
                      {['me', 'partner', 'common'].map(type => (
-                        <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('tea'); if(type === 'partner') setFormColor('sesame'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'bg-white shadow text-[#5D4037]' : 'text-[#8C7851] opacity-60'}`}>
+                        <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('tea'); if(type === 'partner') setFormColor('sesame'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'shadow' : 'opacity-60'}`} style={{ backgroundColor: formEventType === type ? theme.colors.modalBg : 'transparent', color: formEventType === type ? theme.colors.text : theme.colors.secondaryText }}>
                           {type === 'me' ? roleSettings.role1 : type === 'partner' ? roleSettings.role2 : '共同'}
                         </button>
                      ))}
                   </div>
-                  <input type="text" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="行程標題..." className="w-full text-xl font-bold text-[#5D4037] placeholder-[#D2B48C] outline-none border-b-2 border-[#F5F1E9] focus:border-[#C2A385] bg-transparent py-1 transition-colors" autoFocus />
-                  <div className="space-y-3 bg-[#FDFBF7] p-3 rounded-xl border border-[#F5F1E9]">
+                  <input type="text" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="行程標題..." className="w-full text-xl font-bold border-b-2 bg-transparent py-1 transition-colors outline-none" style={{ color: theme.colors.text, borderColor: theme.colors.border, '--tw-ring-color': theme.colors.accent }} autoFocus />
+                  <div className="space-y-3 p-3 rounded-xl border" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-[#5D4037] font-bold text-sm"><Clock className="w-4 h-4 text-[#C2A385]" /> 時間</div>
-                        <label className="flex items-center gap-2 text-xs font-bold text-[#8C7851] cursor-pointer"><input type="checkbox" checked={formIsAllDay} onChange={e => setFormIsAllDay(e.target.checked)} className="accent-[#C2A385]" /> 全天</label>
+                        <div className="flex items-center gap-2 font-bold text-sm" style={{ color: theme.colors.text }}><Clock className="w-4 h-4" style={{ color: theme.colors.accent }} /> 時間</div>
+                        <label className="flex items-center gap-2 text-xs font-bold cursor-pointer" style={{ color: theme.colors.secondaryText }}><input type="checkbox" checked={formIsAllDay} onChange={e => setFormIsAllDay(e.target.checked)} className="accent-current" style={{ color: theme.colors.accent }} /> 全天</label>
                      </div>
                      <div className="grid grid-cols-[auto_1fr] gap-2 items-center text-sm">
-                        <span className="text-[#8C7851] text-xs font-bold">開始</span>
+                        <span className="text-xs font-bold" style={{ color: theme.colors.secondaryText }}>開始</span>
                         <div className="flex gap-2">
-                           <input type="date" value={formStartDate} onChange={e => setFormStartDate(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-2 py-1 text-[#5D4037] w-full font-hand text-lg" />
-                           {!formIsAllDay && <input type="time" value={formStartTime} onChange={e => setFormStartTime(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-1 py-1 text-[#5D4037] font-hand text-lg" />}
+                           <input type="date" value={formStartDate} onChange={e => setFormStartDate(e.target.value)} className="border rounded px-2 py-1 w-full font-hand text-lg" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                           {!formIsAllDay && <input type="time" value={formStartTime} onChange={e => setFormStartTime(e.target.value)} className="border rounded px-1 py-1 font-hand text-lg" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
                         </div>
-                        <span className="text-[#8C7851] text-xs font-bold">結束</span>
+                        <span className="text-xs font-bold" style={{ color: theme.colors.secondaryText }}>結束</span>
                         <div className="flex gap-2">
-                           <input type="date" value={formEndDate} onChange={e => setFormEndDate(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-2 py-1 text-[#5D4037] w-full font-hand text-lg" />
-                           {!formIsAllDay && <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)} className="bg-white border border-[#E8E2D6] rounded px-1 py-1 text-[#5D4037] font-hand text-lg" />}
+                           <input type="date" value={formEndDate} onChange={e => setFormEndDate(e.target.value)} className="border rounded px-2 py-1 w-full font-hand text-lg" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                           {!formIsAllDay && <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)} className="border rounded px-1 py-1 font-hand text-lg" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
                         </div>
                      </div>
                   </div>
                   <div className="flex gap-3">
-                     <AlignLeft className="w-4 h-4 text-[#C2A385] mt-1 shrink-0" />
-                     <textarea placeholder="備註說明..." value={formDesc} onChange={e => setFormDesc(e.target.value)} className="w-full bg-[#FDFBF7] rounded-xl p-3 text-sm text-[#5D4037] h-20 outline-none border border-[#F5F1E9] focus:border-[#C2A385] resize-none" />
+                     <AlignLeft className="w-4 h-4 mt-1 shrink-0" style={{ color: theme.colors.accent }} />
+                     <textarea placeholder="備註說明..." value={formDesc} onChange={e => setFormDesc(e.target.value)} className="w-full rounded-xl p-3 text-sm h-20 outline-none border resize-none" style={{ backgroundColor: theme.colors.modalHeaderBg, color: theme.colors.text, borderColor: theme.colors.border }} />
                   </div>
-                  <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-                    {Object.entries(COLORS).map(([key, style]) => (
-                      <button key={key} onClick={() => setFormColor(key)} className={`w-8 h-8 rounded-full shrink-0 transition-transform flex items-center justify-center ${style.fill} ${formColor === key ? 'ring-2 ring-offset-2 ring-[#8C7851] scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}`}>
-                        {formColor === key && <CheckSquare className="w-4 h-4 text-white drop-shadow-md" />}
+                  
+                  {/* Color Picker with Dynamic Colors */}
+                  {!isAddingColor ? (
+                    <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar items-center">
+                      {Object.entries(allColors).map(([key, style]) => (
+                        <button key={key} onClick={() => setFormColor(key)} className={`w-8 h-8 rounded-full shrink-0 transition-transform flex items-center justify-center ${formColor === key ? 'ring-2 ring-offset-2 scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}`} style={{ backgroundColor: style.hex, ringColor: theme.colors.secondaryText }}>
+                          {formColor === key && <CheckSquare className="w-4 h-4 drop-shadow-md" style={{ color: style.text }} />}
+                        </button>
+                      ))}
+                      <button onClick={() => setIsAddingColor(true)} className="w-8 h-8 rounded-full border-2 border-dashed flex items-center justify-center transition-colors shrink-0" style={{ borderColor: theme.colors.secondaryText, color: theme.colors.secondaryText }}>
+                        <Plus className="w-4 h-4" />
                       </button>
-                    ))}
-                  </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl border space-y-2 animate-in fade-in slide-in-from-bottom-2" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+                       <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs font-bold" style={{ color: theme.colors.secondaryText }}>新增自訂顏色</span>
+                          <button onClick={() => setIsAddingColor(false)}><X className="w-4 h-4" style={{ color: theme.colors.secondaryText }} /></button>
+                       </div>
+                       <div className="flex gap-2">
+                          <input type="color" value={newColorHex} onChange={(e) => setNewColorHex(e.target.value)} className="w-10 h-10 rounded cursor-pointer border-0 p-0" />
+                          <input type="text" value={newColorName} onChange={(e) => setNewColorName(e.target.value)} placeholder="顏色名稱 (如: 奶茶)" className="flex-1 text-sm border rounded px-2 outline-none" style={{ borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                          <button onClick={handleAddCustomColor} disabled={!newColorName} className="text-white px-3 rounded text-xs font-bold disabled:opacity-50" style={{ backgroundColor: theme.colors.accent }}><Check className="w-4 h-4" /></button>
+                       </div>
+                    </div>
+                  )}
                 </div>
-                <div className="px-5 py-4 border-t border-[#F5F1E9] bg-[#FDFBF7] flex justify-end">
-                  <button onClick={saveEvent} className="bg-[#C2A385] hover:bg-[#A68664] text-white text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-colors flex items-center gap-2"><Save className="w-4 h-4" /> 儲存行程</button>
+                <div className="px-5 py-4 border-t flex justify-end" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+                  <button onClick={saveEvent} className="text-white text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-colors hover:opacity-90 flex items-center gap-2" style={{ backgroundColor: theme.colors.accent }}><Save className="w-4 h-4" /> 儲存行程</button>
                 </div>
               </div>
             </div>
