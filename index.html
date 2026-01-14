@@ -8,8 +8,8 @@
   <meta name="theme-color" content="#F5F1E9">
   <title>BiBi-Schedule</title>
   
-  <link rel="apple-touch-icon" href="icon.png">
-  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="apple-touch-icon" href="icon3.png">
+  <link rel="icon" type="image/png" href="icon3.png">
 
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -226,21 +226,18 @@
       const [customUserId, setCustomUserId] = useState(localStorage.getItem('bibi_custom_uid') || '');
       
       const [currentDate, setCurrentDate] = useState(new Date());
-      // [NEW] Direction state for animation
-      const [slideDirection, setSlideDirection] = useState(''); // 'left' or 'right'
-      const [animationKey, setAnimationKey] = useState(0); // Key to trigger re-render/animation
+      const [slideDirection, setSlideDirection] = useState(''); 
+      const [animationKey, setAnimationKey] = useState(0); 
       
       const [events, setEvents] = useState([]);
       const [roleSettings, setRoleSettings] = useState({ role1: '我', role2: '夥伴' });
       
-      // Theme State
       const [currentThemeId, setCurrentThemeId] = useState(localStorage.getItem('bibi_theme') || 'original');
       const theme = THEMES[currentThemeId] || THEMES.original;
 
       const [loading, setLoading] = useState(true);
-      const [isSaving, setIsSaving] = useState(false); // [NEW] Loading state for save button
+      const [isSaving, setIsSaving] = useState(false); 
       
-      // [NEW] Toast State
       const [toasts, setToasts] = useState([]);
 
       const [holidayData, setHolidayData] = useState(() => {
@@ -276,7 +273,6 @@
       const touchEndX = useRef(null);
       const minSwipeDistance = 50;
 
-      // Toast Helper
       const addToast = (message, type = 'success') => {
         const id = Date.now();
         setToasts(prev => [...prev, { id, message, type }]);
@@ -383,7 +379,6 @@
         setIsSettingsModalOpen(true);
       };
 
-      // [Modified] Calendar Navigation with Animation
       const handlePrevMonth = () => {
           setSlideDirection('slide-in-left');
           setAnimationKey(prev => prev + 1);
@@ -467,7 +462,7 @@
         const targetUid = customUserId || user?.uid;
         if (!targetUid || !formTitle || !formStartDate || !formEndDate) return;
         
-        setIsSaving(true); // Start loading
+        setIsSaving(true); 
         let start = formStartDate;
         let end = formEndDate;
         if (new Date(start) > new Date(end)) [start, end] = [end, start];
@@ -485,14 +480,18 @@
           } else {
             await addDoc(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_events'), eventData);
           }
+          
+          // [FIX] Force viewingDate to the event's start date to ensure we land on the correct day view
+          setViewingDate(start);
+
           setIsEditModalOpen(false);
-          if(viewingDate) setIsDayViewModalOpen(true);
+          setIsDayViewModalOpen(true);
           addToast(editingId ? '行程已更新 ✨' : '行程已建立 🎉');
         } catch (e) { 
             console.error("Save Error:", e); 
             addToast('發生錯誤，請重試', 'error');
         } finally {
-            setIsSaving(false); // Stop loading
+            setIsSaving(false); 
         }
       };
 
@@ -703,7 +702,12 @@
                   <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <div className="flex items-baseline gap-2">
                        <span className="text-2xl font-hand font-bold" style={{ color: theme.colors.text }}>{viewingDate}</span>
-                       <span className="text-xs font-bold uppercase" style={{ color: theme.colors.secondaryText }}>{viewingDate && !isNaN(new Date(viewingDate).getTime()) ? new Date(viewingDate).toLocaleDateString('en-US', { weekday: 'long' }) : ''}</span>
+                       <span className="text-xs font-bold uppercase" style={{ color: theme.colors.secondaryText }}>
+                        {/* [FIX] Force local time interpretation by appending T00:00:00 to prevent timezone shift */}
+                        {viewingDate && !isNaN(new Date(viewingDate).getTime()) 
+                           ? new Date(viewingDate + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'long' }) 
+                           : ''}
+                       </span>
                      </div>
                      <button onClick={() => setIsDayViewModalOpen(false)} className="p-1.5 rounded-full transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
                   </div>
