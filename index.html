@@ -72,6 +72,13 @@
       to { transform: translateY(0); opacity: 1; }
     }
 
+    /* Modal Animation: Zoom In + Fade */
+    .modal-enter { animation: modalZoomIn 0.2s ease-out forwards; }
+    @keyframes modalZoomIn {
+      from { opacity: 0; transform: scale(0.95) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
     .initial-loader {
       display: flex; justify-content: center; align-items: center; height: 100dvh;
       background-color: #F5F1E9; color: #C2A385;
@@ -140,7 +147,7 @@
     // --- Helper: Haptic Feedback ---
     const triggerHaptic = () => {
       if (navigator.vibrate) {
-        navigator.vibrate(10); 
+        navigator.vibrate(10); // Short vibration for feedback
       }
     };
 
@@ -187,10 +194,23 @@
         id: 'toystory',
         name: '玩具總動員', 
         colors: {
-          bg: '#E1F5FE', text: '#3E2723', secondaryText: '#5D4037', headerBg: '#FFF9C4',
-          gridHeaderBg: '#C8E6C9', gridBg: '#FFFFFF', gridEmptyBg: '#E1F5FE80', gridWeekendBg: '#FFF3E0',
-          border: '#90CAF9', accent: '#7E57C2', weekendText: '#D32F2F', weekdayText: '#1976D2',
-          modalBg: '#FFFFFF', modalHeaderBg: '#FFF9C4', inputBg: '#FFFFFF', inputBorder: '#90CAF9', danger: '#C62828'
+          bg: '#E1F5FE',          
+          text: '#3E2723',        
+          secondaryText: '#5D4037', 
+          headerBg: '#FFF9C4',    
+          gridHeaderBg: '#C8E6C9', 
+          gridBg: '#FFFFFF',      
+          gridEmptyBg: '#E1F5FE80', 
+          gridWeekendBg: '#FFF3E0', 
+          border: '#90CAF9',      
+          accent: '#7E57C2',      
+          weekendText: '#D32F2F', 
+          weekdayText: '#1976D2', 
+          modalBg: '#FFFFFF',
+          modalHeaderBg: '#FFF9C4', 
+          inputBg: '#FFFFFF',
+          inputBorder: '#90CAF9', 
+          danger: '#C62828'       
         }
       }
     };
@@ -252,7 +272,7 @@
     // --- Toast Component ---
     const ToastContainer = ({ toasts }) => {
       return (
-        <div className="fixed bottom-6 left-0 right-0 flex flex-col items-center gap-2 pointer-events-none z-[100]">
+        <div className="fixed bottom-12 left-0 right-0 flex flex-col items-center gap-2 pointer-events-none z-[100]">
           {toasts.map(toast => (
             <div key={toast.id} className="toast-enter bg-gray-800/90 text-white px-4 py-2 rounded-full shadow-lg text-sm font-bold flex items-center gap-2 backdrop-blur-sm">
                {toast.type === 'success' && <Check className="w-4 h-4 text-green-400" />}
@@ -509,6 +529,12 @@
         setViewingDate(dateStr); 
         setIsDayViewModalOpen(true); 
       };
+      
+      const handleDayContextMenu = (e, dateStr) => {
+        e.preventDefault(); 
+        triggerHaptic();
+        openEditModal(dateStr);
+      };
 
       const openEditModal = (dateStr, event = null) => {
          triggerHaptic();
@@ -695,6 +721,7 @@
                 <div 
                   key={idx} 
                   onClick={() => hasDate && handleDayClick(cell.fullDate)} 
+                  onContextMenu={(e) => hasDate && handleDayContextMenu(e, cell.fullDate)}
                   className="relative border-b border-r flex flex-col active:brightness-95 transition-colors cursor-pointer select-none" 
                   style={{ backgroundColor: cellBg, borderColor: theme.colors.border + '20' }}
                 >
@@ -739,9 +766,9 @@
 
           {/* Settings Modal */}
           {isSettingsModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border flex flex-col max-h-[90vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                  <div className="p-6 space-y-5 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="p-6 space-y-5 overflow-y-auto">
                     <div className="flex justify-between items-center pb-2 border-b" style={{ borderColor: theme.colors.border }}>
                       <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Settings className="w-5 h-5"/> 設定 & 同步</h3>
                       <button onClick={() => setIsSettingsModalOpen(false)} className="p-1 rounded-full hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
@@ -829,8 +856,8 @@
 
           {/* Day View Modal */}
           {isDayViewModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border flex flex-col max-h-[80vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                   <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <div className="flex items-baseline gap-2">
                        <span className={`text-2xl font-bold font-num-huninn`} style={{ color: theme.colors.text }}>{viewingDate}</span>
@@ -842,7 +869,7 @@
                      </div>
                      <button onClick={() => setIsDayViewModalOpen(false)} className="p-1.5 rounded-full transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
                   </div>
-                  <div className="p-4 overflow-y-auto flex-1 space-y-3 pb-[env(safe-area-inset-bottom)]" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
+                  <div className="p-4 overflow-y-auto flex-1 space-y-3" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
                      {dayViewEvents.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-10 opacity-50" style={{ color: theme.colors.secondaryText }}>
                            <Coffee className="w-10 h-10 mb-2" /><p className="font-hand text-lg">今天沒有行程，享受生活吧！</p>
@@ -871,7 +898,7 @@
                         })
                      )}
                   </div>
-                  <div className="p-4 border-t shrink-0 pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="p-4 border-t shrink-0" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                      <button onClick={() => openEditModal(viewingDate)} className="w-full text-white py-3 rounded-xl shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 hover:opacity-90" style={{ backgroundColor: theme.colors.accent }}><Plus className="w-5 h-5" /> 新增行程</button>
                   </div>
                </div>
@@ -880,8 +907,8 @@
 
           {/* Edit Modal (Color Picker Updated) */}
           {isEditModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-              <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+              <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                 <div className="px-5 py-4 border-b flex justify-between items-center" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                    <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Leaf className="w-4 h-4" style={{ color: theme.colors.accent }} /> {editingId ? '編輯行程' : '建立行程'}</h3>
                    <div className="flex gap-2">
@@ -889,7 +916,7 @@
                      <button onClick={() => setIsEditModalOpen(false)} className="p-1.5 hover:opacity-70 rounded-full transition-colors active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-4 h-4" /></button>
                    </div>
                 </div>
-                <div className="p-6 space-y-5 pb-[env(safe-area-inset-bottom)]">
+                <div className="p-6 space-y-5 overflow-y-auto">
                   <div className="flex gap-2 p-1 rounded-xl" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
                      {['me', 'partner', 'common'].map(type => (
                         <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('tea'); if(type === 'partner') setFormColor('sesame'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'shadow' : 'opacity-60'}`} style={{ backgroundColor: formEventType === type ? theme.colors.modalBg : 'transparent', color: formEventType === type ? theme.colors.text : theme.colors.secondaryText }}>
@@ -930,7 +957,7 @@
                     ))}
                   </div>
                 </div>
-                <div className="px-5 py-4 border-t flex justify-end pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+                <div className="px-5 py-4 border-t flex justify-end" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                   <button onClick={saveEvent} disabled={isSaving} className="text-white text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2 disabled:opacity-50" style={{ backgroundColor: theme.colors.accent }}>
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4" />} 
                     {isSaving ? '儲存中...' : '儲存行程'}
@@ -940,10 +967,10 @@
             </div>
           )}
           
-          {/* [NEW] Upcoming Events Modal (Multi-day supported) */}
+          {/* [NEW] Upcoming Events Modal (Multi-day supported & Floating) */}
           {isUpcomingModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border flex flex-col max-h-[80vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                   <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}>
                        <List className="w-5 h-5" style={{ color: theme.colors.accent }} /> 接下來的行程
@@ -951,7 +978,7 @@
                      <button onClick={() => setIsUpcomingModalOpen(false)} className="p-1.5 rounded-full transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
                   </div>
                   
-                  <div className="p-4 overflow-y-auto flex-1 space-y-4 pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
+                  <div className="p-4 overflow-y-auto flex-1 space-y-4" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
                      {Object.keys(groupedUpcoming).length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-10 opacity-50" style={{ color: theme.colors.secondaryText }}>
                            <Coffee className="w-10 h-10 mb-2" /><p className="font-hand text-lg">目前沒有待辦事項，好好休息！</p>
