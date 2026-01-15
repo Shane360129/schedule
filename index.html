@@ -18,19 +18,21 @@
 
   <style>
     /* Google Fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Itim&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
 
-    /* Local Font */
+    /* Local Font: Open Huninn (粉圓體) */
     @font-face {
-      font-family: 'ChenYuluoyan';
-      src: url('ChenYuluoyan-Thin.ttf') format('truetype');
+      font-family: 'OpenHuninn';
+      /* 確保 jf-openhuninn-2.1.ttf 位於專案根目錄 */
+      src: url('jf-openhuninn-2.1.ttf') format('truetype');
       font-weight: normal;
       font-style: normal;
       font-display: swap; 
     }
     
     body { 
-      font-family: 'ChenYuluoyan', 'Zen Maru Gothic', sans-serif; 
+      /* Global default: Open Huninn */
+      font-family: 'OpenHuninn', 'Zen Maru Gothic', sans-serif; 
       -webkit-tap-highlight-color: transparent;
       overscroll-behavior: none;
       user-select: none;
@@ -39,16 +41,11 @@
     
     input, textarea { user-select: text; }
 
-    /* Font Classes */
-    .font-chenyu { font-family: 'ChenYuluoyan', cursive; } 
-    .font-itim { font-family: 'Itim', cursive; }
-    .font-zen { font-family: 'Zen Maru Gothic', sans-serif; }
+    /* Artistic Title */
     .font-title { font-family: 'Caveat', cursive; }
     
-    /* Number Fonts */
-    .font-num-chenyu { font-family: 'ChenYuluoyan', cursive; font-weight: 600; }
-    .font-num-itim { font-family: 'Itim', cursive; }
-    .font-num-zen { font-family: 'Zen Maru Gothic', sans-serif; font-weight: 700; }
+    /* Utility class for forcing Huninn (if needed specific weight override) */
+    .font-huninn { font-family: 'OpenHuninn', cursive; font-weight: 600; }
 
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -112,7 +109,7 @@
     import { createRoot } from 'react-dom/client';
     import { 
       ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download
+      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Download
     } from 'lucide-react';
     import { initializeApp } from 'firebase/app';
     import { 
@@ -140,15 +137,8 @@
     // --- Helper: Haptic Feedback ---
     const triggerHaptic = () => {
       if (navigator.vibrate) {
-        navigator.vibrate(10); // Short vibration for feedback
+        navigator.vibrate(10); 
       }
-    };
-
-    // --- Fonts ---
-    const FONTS = {
-      chenyu: { id: 'chenyu', name: '辰宇落雁 (手寫)', bodyClass: 'font-chenyu', numClass: 'font-num-chenyu' },
-      itim: { id: 'itim', name: '清晰圓體', bodyClass: 'font-itim', numClass: 'font-num-itim' },
-      original: { id: 'original', name: '經典圓體', bodyClass: 'font-zen', numClass: 'font-num-zen' },
     };
 
     // --- Themes ---
@@ -181,6 +171,29 @@
           gridHeaderBg: '#F3F4F6', gridBg: '#FFFFFF', gridEmptyBg: '#FAFAFA', gridWeekendBg: '#F9FAFB',
           border: '#D1D5DB', accent: '#000000', weekendText: '#DC2626', weekdayText: '#374151',
           modalBg: '#FFFFFF', modalHeaderBg: '#F9FAFB', inputBg: '#FFFFFF', inputBorder: '#9CA3AF', danger: '#B91C1C'
+        }
+      },
+      toystory: {
+        id: 'toystory',
+        name: '玩具總動員', 
+        colors: {
+          bg: '#E1F5FE',          
+          text: '#3E2723',        
+          secondaryText: '#5D4037', 
+          headerBg: '#FFF9C4',    
+          gridHeaderBg: '#C8E6C9', 
+          gridBg: '#FFFFFF',      
+          gridEmptyBg: '#E1F5FE80', 
+          gridWeekendBg: '#FFF3E0', 
+          border: '#90CAF9',      
+          accent: '#7E57C2',      
+          weekendText: '#D32F2F', 
+          weekdayText: '#1976D2', 
+          modalBg: '#FFFFFF',
+          modalHeaderBg: '#FFF9C4', 
+          inputBg: '#FFFFFF',
+          inputBorder: '#90CAF9', 
+          danger: '#C62828'       
         }
       }
     };
@@ -239,6 +252,7 @@
       return `${y}-${m}-${d}`;
     };
 
+    // --- Toast Component ---
     const ToastContainer = ({ toasts }) => {
       return (
         <div className="fixed bottom-6 left-0 right-0 flex flex-col items-center gap-2 pointer-events-none z-[100]">
@@ -264,11 +278,9 @@
       const [events, setEvents] = useState([]);
       const [roleSettings, setRoleSettings] = useState({ role1: '我', role2: '夥伴' });
       
+      // Theme State
       const [currentThemeId, setCurrentThemeId] = useState(localStorage.getItem('bibi_theme') || 'original');
       const theme = THEMES[currentThemeId] || THEMES.original;
-
-      const [currentFontId, setCurrentFontId] = useState(localStorage.getItem('bibi_font') || 'chenyu');
-      const currentFont = FONTS[currentFontId] || FONTS.chenyu;
 
       const [loading, setLoading] = useState(true);
       const [isSaving, setIsSaving] = useState(false); 
@@ -304,7 +316,6 @@
       const [tempRole1, setTempRole1] = useState('');
       const [tempRole2, setTempRole2] = useState('');
 
-      // [NEW] PWA Install Prompt State
       const [deferredPrompt, setDeferredPrompt] = useState(null);
 
       const touchStartX = useRef(null);
@@ -324,7 +335,6 @@
         return onAuthStateChanged(auth, setUser);
       }, []);
 
-      // [NEW] Listen for PWA Install Prompt
       useEffect(() => {
         const handler = (e) => {
           e.preventDefault();
@@ -428,12 +438,6 @@
         setCurrentThemeId(newThemeId);
         localStorage.setItem('bibi_theme', newThemeId);
         addToast('主題切換成功 🎨');
-      };
-
-      const changeFont = (newFontId) => {
-        setCurrentFontId(newFontId);
-        localStorage.setItem('bibi_font', newFontId);
-        addToast('字體切換成功 🖋️');
       };
 
       const openSettings = () => {
@@ -598,7 +602,7 @@
       for (let i = 1; i <= remainingCells; i++) days.push({ day: null, fullDate: '' });
 
       return (
-        <div className={`h-dvh flex flex-col ${currentFont.bodyClass}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ backgroundColor: theme.colors.bg, color: theme.colors.text }}>
+        <div className="h-dvh flex flex-col font-huninn" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ backgroundColor: theme.colors.bg, color: theme.colors.text }}>
           {/* Toast Notification */}
           <ToastContainer toasts={toasts} />
           
@@ -616,7 +620,7 @@
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1 p-1.5 rounded-2xl border backdrop-blur-sm mr-2" style={{ backgroundColor: theme.colors.gridEmptyBg, borderColor: theme.colors.border + '20' }}>
                 <button onClick={handlePrevMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronLeft className="w-5 h-5" /></button>
-                <span className={`text-xl font-bold min-w-[80px] text-center ${currentFont.numClass}`} style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
+                <span className="text-xl font-bold font-num-huninn min-w-[80px] text-center" style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
                 <button onClick={handleNextMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronRight className="w-5 h-5" /></button>
               </div>
               <button onClick={openSettings} className="p-2.5 rounded-xl shadow-sm border hover:brightness-95 transition-all active:scale-95" style={{ backgroundColor: theme.colors.modalBg, color: theme.colors.secondaryText, borderColor: theme.colors.border }}><Settings className="w-5 h-5" /></button>
@@ -626,7 +630,7 @@
           {/* Weekday */}
           <div className="flex-none grid grid-cols-7" style={{ backgroundColor: theme.colors.gridHeaderBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
             {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d, i) => (
-              <div key={i} className={`py-2 text-center text-[12px] font-bold tracking-widest ${currentFont.numClass}`} style={{ color: (i === 0 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
+              <div key={i} className="py-2 text-center text-[12px] font-bold font-num-huninn tracking-widest" style={{ color: (i === 0 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
             ))}
           </div>
 
@@ -652,7 +656,7 @@
                   {hasDate && (
                     <div className="flex flex-col items-center pt-1 mb-0.5 px-0 min-h-[38px] justify-start">
                        <span 
-                         className={`text-lg sm:text-xl font-bold h-7 w-7 flex items-center justify-center rounded-full transition-all ${currentFont.numClass} ${isToday ? 'shadow-md' : ''}`}
+                         className={`text-lg sm:text-xl font-bold font-num-huninn h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'shadow-md' : ''}`}
                          style={{ backgroundColor: isToday ? theme.colors.accent : 'transparent', color: isToday ? '#fff' : dateTextColor }}
                        >
                          {cell.day}
@@ -674,14 +678,14 @@
                         <div 
                             key={ev.id} 
                             onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }} 
-                            className={`text-[10px] font-bold sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 active:scale-95 relative z-10 ${marginClass} ${currentFont.numClass}`}
+                            className={`text-[10px] font-bold font-num-huninn sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 active:scale-95 relative z-10 ${marginClass}`}
                             style={{ backgroundColor: colorObj.hex, color: colorObj.text }}
                         >
-                          {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className={`text-[10px] font-bold mr-1 ${currentFont.numClass}`}>{ev.startTime}</span>}{ev.title}</span>}
+                          {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className="text-[10px] font-bold font-num-huninn mr-1">{ev.startTime}</span>}{ev.title}</span>}
                         </div>
                       );
                     })}
-                    {segments.length > 4 && <div className={`text-[10px] text-center leading-none mt-auto font-bold ${currentFont.numClass}`} style={{ color: theme.colors.weekdayText }}>+{segments.length - 4}</div>}
+                    {segments.length > 4 && <div className="text-[10px] font-num-huninn text-center leading-none mt-auto font-bold" style={{ color: theme.colors.weekdayText }}>+{segments.length - 4}</div>}
                   </div>
                 </div>
               )
@@ -701,7 +705,7 @@
                     {/* Theme Switcher */}
                     <div className="space-y-2">
                       <label className="text-xs font-bold uppercase flex items-center gap-1" style={{ color: theme.colors.secondaryText }}><Palette className="w-3 h-3"/> 主題風格</label>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         {Object.values(THEMES).map(t => (
                           <button 
                             key={t.id} 
@@ -715,27 +719,6 @@
                           >
                             <div className="w-6 h-6 rounded-full border shadow-sm" style={{ backgroundColor: t.colors.accent }}></div>
                             <span className="text-[10px] font-bold" style={{ color: t.colors.text }}>{t.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Font Switcher */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase flex items-center gap-1" style={{ color: theme.colors.secondaryText }}><Type className="w-3 h-3"/> 字體風格</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {Object.values(FONTS).map(f => (
-                          <button 
-                            key={f.id} 
-                            onClick={() => changeFont(f.id)}
-                            className={`p-2 rounded-xl border transition-all active:scale-95 ${currentFontId === f.id ? 'ring-2 ring-offset-1' : 'hover:opacity-80'}`}
-                            style={{ 
-                              backgroundColor: theme.colors.inputBg,
-                              borderColor: theme.colors.border,
-                              ringColor: theme.colors.accent 
-                            }}
-                          >
-                            <span className={`text-sm font-bold ${f.bodyClass}`} style={{ color: theme.colors.text }}>{f.name}</span>
                           </button>
                         ))}
                       </div>
@@ -805,7 +788,7 @@
                <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                   <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <div className="flex items-baseline gap-2">
-                       <span className={`text-2xl font-bold ${currentFont.numClass}`} style={{ color: theme.colors.text }}>{viewingDate}</span>
+                       <span className="text-2xl font-bold font-num-huninn" style={{ color: theme.colors.text }}>{viewingDate}</span>
                        <span className="text-xs font-bold uppercase" style={{ color: theme.colors.secondaryText }}>
                         {viewingDate && !isNaN(new Date(viewingDate).getTime()) 
                            ? new Date(viewingDate + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'long' }) 
@@ -835,7 +818,7 @@
                                       <h4 className="font-bold truncate" style={{ color: theme.colors.text }}>{ev.title}</h4>
                                       <span className="text-[10px] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>{ownerLabel}</span>
                                    </div>
-                                   <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>{ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className={`text-sm font-bold ${currentFont.numClass}`}>{ev.startTime} - {ev.endTime}</span>}</div>
+                                   <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>{ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="text-sm font-bold font-num-huninn">{ev.startTime} - {ev.endTime}</span>}</div>
                                 </div>
                                 <Edit className="w-4 h-4" style={{ color: theme.colors.secondaryText }} />
                              </div>
@@ -878,13 +861,13 @@
                      <div className="grid grid-cols-[auto_1fr] gap-2 items-center text-sm">
                         <span className="text-xs font-bold" style={{ color: theme.colors.secondaryText }}>開始</span>
                         <div className="flex gap-2">
-                           <input type="date" value={formStartDate} onChange={e => setFormStartDate(e.target.value)} className={`border rounded px-2 py-1 w-full text-lg font-bold ${currentFont.numClass}`} style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
-                           {!formIsAllDay && <input type="time" value={formStartTime} onChange={handleStartTimeChange} className={`border rounded px-1 py-1 text-lg font-bold ${currentFont.numClass}`} style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
+                           <input type="date" value={formStartDate} onChange={e => setFormStartDate(e.target.value)} className="border rounded px-2 py-1 w-full text-lg font-bold font-num-huninn" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                           {!formIsAllDay && <input type="time" value={formStartTime} onChange={handleStartTimeChange} className="border rounded px-1 py-1 text-lg font-bold font-num-huninn" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
                         </div>
                         <span className="text-xs font-bold" style={{ color: theme.colors.secondaryText }}>結束</span>
                         <div className="flex gap-2">
-                           <input type="date" value={formEndDate} onChange={e => setFormEndDate(e.target.value)} className={`border rounded px-2 py-1 w-full text-lg font-bold ${currentFont.numClass}`} style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
-                           {!formIsAllDay && <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)} className={`border rounded px-1 py-1 text-lg font-bold ${currentFont.numClass}`} style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
+                           <input type="date" value={formEndDate} onChange={e => setFormEndDate(e.target.value)} className="border rounded px-2 py-1 w-full text-lg font-bold font-num-huninn" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                           {!formIsAllDay && <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)} className="border rounded px-1 py-1 text-lg font-bold font-num-huninn" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
                         </div>
                      </div>
                   </div>
