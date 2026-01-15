@@ -17,11 +17,10 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    /* Google Fonts for Fallbacks & Title */
-    @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap');
+    /* Google Fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Itim&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
 
-    /* [Local Font Configuration] */
-    /* jf-openhuninn-2.1.ttf 必須位於專案根目錄 */
+    /* Local Font */
     @font-face {
       font-family: 'OpenHuninn';
       src: url('jf-openhuninn-2.1.ttf') format('truetype');
@@ -31,8 +30,7 @@
     }
     
     body { 
-      /* Global default font set to OpenHuninn */
-      font-family: 'OpenHuninn', sans-serif; 
+      font-family: 'OpenHuninn', 'Zen Maru Gothic', sans-serif; 
       -webkit-tap-highlight-color: transparent;
       overscroll-behavior: none;
       user-select: none;
@@ -41,19 +39,21 @@
     
     input, textarea { user-select: text; }
 
-    /* Artistic Title Font */
+    /* Font Classes */
+    .font-chenyu { font-family: 'OpenHuninn', cursive; } 
+    .font-itim { font-family: 'Itim', cursive; }
+    .font-zen { font-family: 'Zen Maru Gothic', sans-serif; }
     .font-title { font-family: 'Caveat', cursive; }
     
-    /* Number Font Styling (Using OpenHuninn with specific weight) */
-    .font-num { 
-      font-family: 'OpenHuninn', sans-serif; 
-      font-weight: 600; 
-    }
+    /* Number Fonts */
+    .font-num-huninn { font-family: 'OpenHuninn', cursive; font-weight: 600; }
+    .font-num-itim { font-family: 'Itim', cursive; }
+    .font-num-zen { font-family: 'Zen Maru Gothic', sans-serif; font-weight: 700; }
 
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-    /* Page Transitions */
+    /* Animations */
     .slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
     .slide-in-left { animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 
@@ -66,14 +66,12 @@
       to { transform: translateX(0); opacity: 1; }
     }
 
-    /* Toast Animation */
     .toast-enter { animation: toastEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
     @keyframes toastEnter {
       from { transform: translateY(100%); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
     }
 
-    /* Initial Loading Spinner */
     .initial-loader {
       display: flex; justify-content: center; align-items: center; height: 100dvh;
       background-color: #F5F1E9; color: #C2A385;
@@ -114,7 +112,7 @@
     import { createRoot } from 'react-dom/client';
     import { 
       ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Download, List
+      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List
     } from 'lucide-react';
     import { initializeApp } from 'firebase/app';
     import { 
@@ -144,6 +142,13 @@
       if (navigator.vibrate) {
         navigator.vibrate(10); 
       }
+    };
+
+    // --- Fonts ---
+    const FONTS = {
+      huninn: { id: 'huninn', name: '粉圓體 (圓潤)', bodyClass: 'font-huninn', numClass: 'font-num-huninn' },
+      itim: { id: 'itim', name: '清晰圓體', bodyClass: 'font-itim', numClass: 'font-num-itim' },
+      original: { id: 'original', name: '經典圓體', bodyClass: 'font-zen', numClass: 'font-num-zen' },
     };
 
     // --- Themes ---
@@ -182,23 +187,10 @@
         id: 'toystory',
         name: '玩具總動員', 
         colors: {
-          bg: '#E1F5FE',          
-          text: '#3E2723',        
-          secondaryText: '#5D4037', 
-          headerBg: '#FFF9C4',    
-          gridHeaderBg: '#C8E6C9', 
-          gridBg: '#FFFFFF',      
-          gridEmptyBg: '#E1F5FE80', 
-          gridWeekendBg: '#FFF3E0', 
-          border: '#90CAF9',      
-          accent: '#7E57C2',      
-          weekendText: '#D32F2F', 
-          weekdayText: '#1976D2', 
-          modalBg: '#FFFFFF',
-          modalHeaderBg: '#FFF9C4', 
-          inputBg: '#FFFFFF',
-          inputBorder: '#90CAF9', 
-          danger: '#C62828'       
+          bg: '#E1F5FE', text: '#3E2723', secondaryText: '#5D4037', headerBg: '#FFF9C4',
+          gridHeaderBg: '#C8E6C9', gridBg: '#FFFFFF', gridEmptyBg: '#E1F5FE80', gridWeekendBg: '#FFF3E0',
+          border: '#90CAF9', accent: '#7E57C2', weekendText: '#D32F2F', weekdayText: '#1976D2',
+          modalBg: '#FFFFFF', modalHeaderBg: '#FFF9C4', inputBg: '#FFFFFF', inputBorder: '#90CAF9', danger: '#C62828'
         }
       }
     };
@@ -286,6 +278,9 @@
       // Theme State
       const [currentThemeId, setCurrentThemeId] = useState(localStorage.getItem('bibi_theme') || 'original');
       const theme = THEMES[currentThemeId] || THEMES.original;
+
+      // Font State
+      const currentFont = FONTS.huninn; // Force Huninn
 
       const [loading, setLoading] = useState(true);
       const [isSaving, setIsSaving] = useState(false); 
@@ -600,7 +595,6 @@
       
       const dayViewEvents = viewingDate ? events.filter(ev => viewingDate >= ev.startDate && viewingDate <= ev.endDate).sort((a,b) => (a.startTime||'00:00').localeCompare(b.startTime||'00:00')) : [];
       
-      // Logic for Upcoming Events (Corrected for multi-day)
       const todayStr = formatDate(new Date());
       
       const getDatesInRange = (startDate, endDate) => {
@@ -652,15 +646,15 @@
       for (let i = 1; i <= remainingCells; i++) days.push({ day: null, fullDate: '' });
 
       return (
-        <div className="h-dvh flex flex-col font-huninn" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ backgroundColor: theme.colors.bg, color: theme.colors.text }}>
+        <div className={`h-dvh flex flex-col ${currentFont.bodyClass}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ backgroundColor: theme.colors.bg, color: theme.colors.text }}>
           <ToastContainer toasts={toasts} />
           
           <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] z-10 transition-colors duration-300" style={{ backgroundColor: theme.colors.headerBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
             <div className="flex items-center gap-3">
-               <div onClick={openUpcomingList} className="cursor-pointer mr-1">
+               <div onClick={openUpcomingList} className="cursor-pointer mr-1 active:opacity-70 transition-opacity">
                  <img src="icon.png" className="w-8 h-8 object-contain" alt="Logo" />
                </div>
-               <div>
+               <div onClick={handleToday} className="cursor-pointer active:opacity-70 transition-opacity">
                  <h1 className="text-xl font-title font-bold tracking-tight text-2xl" style={{ color: theme.colors.text }}>BiBi❣</h1>
                  <p className="text-[12px] font-title font-bold uppercase tracking-widest hidden sm:block" style={{ color: theme.colors.secondaryText }}>{year} . {month + 1}</p>
                </div>
@@ -668,7 +662,7 @@
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1 p-1.5 rounded-2xl border backdrop-blur-sm mr-2" style={{ backgroundColor: theme.colors.gridEmptyBg, borderColor: theme.colors.border + '20' }}>
                 <button onClick={handlePrevMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronLeft className="w-5 h-5" /></button>
-                <span className="text-xl font-bold font-num-huninn min-w-[80px] text-center" style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
+                <span className={`text-xl font-bold font-num-huninn min-w-[80px] text-center`} style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
                 <button onClick={handleNextMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronRight className="w-5 h-5" /></button>
               </div>
               <button onClick={openSettings} className="p-2.5 rounded-xl shadow-sm border hover:brightness-95 transition-all active:scale-95" style={{ backgroundColor: theme.colors.modalBg, color: theme.colors.secondaryText, borderColor: theme.colors.border }}><Settings className="w-5 h-5" /></button>
@@ -698,7 +692,12 @@
               const dateTextColor = (isHoliday || dayOfWeek === 0) ? theme.colors.weekendText : theme.colors.text;
 
               return (
-                <div key={idx} onClick={() => hasDate && handleDayClick(cell.fullDate)} className="relative border-b border-r flex flex-col active:brightness-95 transition-colors cursor-pointer select-none" style={{ backgroundColor: cellBg, borderColor: theme.colors.border + '20' }}>
+                <div 
+                  key={idx} 
+                  onClick={() => hasDate && handleDayClick(cell.fullDate)} 
+                  className="relative border-b border-r flex flex-col active:brightness-95 transition-colors cursor-pointer select-none" 
+                  style={{ backgroundColor: cellBg, borderColor: theme.colors.border + '20' }}
+                >
                   {hasDate && (
                     <div className="flex flex-col items-center pt-1 mb-0.5 px-0 min-h-[38px] justify-start">
                        <span 
@@ -738,64 +737,11 @@
             })}
           </div>
 
-          {/* Upcoming Events Modal */}
-          {isUpcomingModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                  <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
-                     <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}>
-                       <List className="w-5 h-5" style={{ color: theme.colors.accent }} /> 接下來的行程
-                     </h3>
-                     <button onClick={() => setIsUpcomingModalOpen(false)} className="p-1.5 rounded-full transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
-                  </div>
-                  
-                  <div className="p-4 overflow-y-auto flex-1 space-y-4" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
-                     {Object.keys(groupedUpcoming).length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-10 opacity-50" style={{ color: theme.colors.secondaryText }}>
-                           <Coffee className="w-10 h-10 mb-2" /><p className="font-hand text-lg">目前沒有待辦事項，好好休息！</p>
-                        </div>
-                     ) : (
-                        Object.entries(groupedUpcoming).map(([date, events]) => (
-                          <div key={date} className="space-y-2">
-                             <div className="sticky top-0 z-10 py-1 px-2 text-xs font-bold uppercase rounded-md shadow-sm" style={{ backgroundColor: theme.colors.accent, color: '#FFF' }}>
-                               {date} ({new Date(date + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'short' })})
-                             </div>
-                             {events.map(ev => {
-                                const colorObj = TECHO_COLORS[ev.color] || TECHO_COLORS.latte;
-                                let ownerLabel = '';
-                                if (ev.eventType === 'me') ownerLabel = roleSettings.role1;
-                                else if (ev.eventType === 'partner') ownerLabel = roleSettings.role2;
-                                else ownerLabel = '共同';
-
-                                return (
-                                  <div key={ev.id} onClick={() => openEditModal(null, ev)} className="p-3 rounded-xl border shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }}>
-                                     <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: colorObj.hex }}></div>
-                                     <div className="flex-1 min-w-0">
-                                        <div className="flex justify-between items-start">
-                                           <h4 className="font-bold truncate" style={{ color: theme.colors.text }}>{ev.title}</h4>
-                                           <span className="text-[10px] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>{ownerLabel}</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>
-                                          {ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="text-sm font-bold font-num-huninn">{ev.startTime} - {ev.endTime}</span>}
-                                        </div>
-                                     </div>
-                                     <Edit className="w-4 h-4" style={{ color: theme.colors.secondaryText }} />
-                                  </div>
-                                )
-                             })}
-                          </div>
-                        ))
-                     )}
-                  </div>
-               </div>
-            </div>
-          )}
-
           {/* Settings Modal */}
           {isSettingsModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                  <div className="p-6 space-y-5 overflow-y-auto">
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border flex flex-col max-h-[90vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="p-6 space-y-5 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
                     <div className="flex justify-between items-center pb-2 border-b" style={{ borderColor: theme.colors.border }}>
                       <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Settings className="w-5 h-5"/> 設定 & 同步</h3>
                       <button onClick={() => setIsSettingsModalOpen(false)} className="p-1 rounded-full hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
@@ -804,7 +750,7 @@
                     {/* Theme Switcher */}
                     <div className="space-y-2">
                       <label className="text-xs font-bold uppercase flex items-center gap-1" style={{ color: theme.colors.secondaryText }}><Palette className="w-3 h-3"/> 主題風格</label>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         {Object.values(THEMES).map(t => (
                           <button 
                             key={t.id} 
@@ -883,11 +829,11 @@
 
           {/* Day View Modal */}
           {isDayViewModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border flex flex-col max-h-[80vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                   <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <div className="flex items-baseline gap-2">
-                       <span className="text-2xl font-bold font-num-huninn" style={{ color: theme.colors.text }}>{viewingDate}</span>
+                       <span className={`text-2xl font-bold font-num-huninn`} style={{ color: theme.colors.text }}>{viewingDate}</span>
                        <span className="text-xs font-bold uppercase" style={{ color: theme.colors.secondaryText }}>
                         {viewingDate && !isNaN(new Date(viewingDate).getTime()) 
                            ? new Date(viewingDate + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'long' }) 
@@ -896,7 +842,7 @@
                      </div>
                      <button onClick={() => setIsDayViewModalOpen(false)} className="p-1.5 rounded-full transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
                   </div>
-                  <div className="p-4 overflow-y-auto flex-1 space-y-3" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
+                  <div className="p-4 overflow-y-auto flex-1 space-y-3 pb-[env(safe-area-inset-bottom)]" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
                      {dayViewEvents.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-10 opacity-50" style={{ color: theme.colors.secondaryText }}>
                            <Coffee className="w-10 h-10 mb-2" /><p className="font-hand text-lg">今天沒有行程，享受生活吧！</p>
@@ -925,7 +871,7 @@
                         })
                      )}
                   </div>
-                  <div className="p-4 border-t shrink-0" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="p-4 border-t shrink-0 pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                      <button onClick={() => openEditModal(viewingDate)} className="w-full text-white py-3 rounded-xl shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 hover:opacity-90" style={{ backgroundColor: theme.colors.accent }}><Plus className="w-5 h-5" /> 新增行程</button>
                   </div>
                </div>
@@ -934,8 +880,8 @@
 
           {/* Edit Modal (Color Picker Updated) */}
           {isEditModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-              <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+              <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                 <div className="px-5 py-4 border-b flex justify-between items-center" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                    <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Leaf className="w-4 h-4" style={{ color: theme.colors.accent }} /> {editingId ? '編輯行程' : '建立行程'}</h3>
                    <div className="flex gap-2">
@@ -943,7 +889,7 @@
                      <button onClick={() => setIsEditModalOpen(false)} className="p-1.5 hover:opacity-70 rounded-full transition-colors active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-4 h-4" /></button>
                    </div>
                 </div>
-                <div className="p-6 space-y-5">
+                <div className="p-6 space-y-5 pb-[env(safe-area-inset-bottom)]">
                   <div className="flex gap-2 p-1 rounded-xl" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
                      {['me', 'partner', 'common'].map(type => (
                         <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('tea'); if(type === 'partner') setFormColor('sesame'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'shadow' : 'opacity-60'}`} style={{ backgroundColor: formEventType === type ? theme.colors.modalBg : 'transparent', color: formEventType === type ? theme.colors.text : theme.colors.secondaryText }}>
@@ -984,13 +930,66 @@
                     ))}
                   </div>
                 </div>
-                <div className="px-5 py-4 border-t flex justify-end" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+                <div className="px-5 py-4 border-t flex justify-end pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                   <button onClick={saveEvent} disabled={isSaving} className="text-white text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2 disabled:opacity-50" style={{ backgroundColor: theme.colors.accent }}>
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4" />} 
                     {isSaving ? '儲存中...' : '儲存行程'}
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+          
+          {/* [NEW] Upcoming Events Modal (Multi-day supported) */}
+          {isUpcomingModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border flex flex-col max-h-[80vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+                     <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}>
+                       <List className="w-5 h-5" style={{ color: theme.colors.accent }} /> 接下來的行程
+                     </h3>
+                     <button onClick={() => setIsUpcomingModalOpen(false)} className="p-1.5 rounded-full transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
+                  </div>
+                  
+                  <div className="p-4 overflow-y-auto flex-1 space-y-4 pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
+                     {Object.keys(groupedUpcoming).length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 opacity-50" style={{ color: theme.colors.secondaryText }}>
+                           <Coffee className="w-10 h-10 mb-2" /><p className="font-hand text-lg">目前沒有待辦事項，好好休息！</p>
+                        </div>
+                     ) : (
+                        Object.entries(groupedUpcoming).map(([date, events]) => (
+                          <div key={date} className="space-y-2">
+                             <div className="sticky top-0 z-10 py-1 px-2 text-xs font-bold uppercase rounded-md shadow-sm" style={{ backgroundColor: theme.colors.accent, color: '#FFF' }}>
+                               {date} ({new Date(date + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'short' })})
+                             </div>
+                             {events.map(ev => {
+                                const colorObj = TECHO_COLORS[ev.color] || TECHO_COLORS.latte;
+                                let ownerLabel = '';
+                                if (ev.eventType === 'me') ownerLabel = roleSettings.role1;
+                                else if (ev.eventType === 'partner') ownerLabel = roleSettings.role2;
+                                else ownerLabel = '共同';
+
+                                return (
+                                  <div key={ev.id} onClick={() => openEditModal(null, ev)} className="p-3 rounded-xl border shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }}>
+                                     <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: colorObj.hex }}></div>
+                                     <div className="flex-1 min-w-0">
+                                        <div className="flex justify-between items-start">
+                                           <h4 className="font-bold truncate" style={{ color: theme.colors.text }}>{ev.title}</h4>
+                                           <span className="text-[10px] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>{ownerLabel}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>
+                                          {ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="font-bold font-num-huninn text-sm">{ev.startTime} - {ev.endTime}</span>}
+                                        </div>
+                                     </div>
+                                     <Edit className="w-4 h-4" style={{ color: theme.colors.secondaryText }} />
+                                  </div>
+                                )
+                             })}
+                          </div>
+                        ))
+                     )}
+                  </div>
+               </div>
             </div>
           )}
         </div>
