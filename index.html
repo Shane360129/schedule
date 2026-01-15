@@ -8,16 +8,29 @@
   <meta name="theme-color" content="#F5F1E9">
   <title>BiBi-Schedule</title>
   
-  <link rel="apple-touch-icon" href="icon3.png">
-  <link rel="icon" type="image/png" href="icon3.png">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" type="image/png" href="icon.png">
+
+  <!-- PWA Manifest (Enhanced for better installation experience) -->
+  <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22BiBi-Schedule%22%2C%22short_name%22%3A%22BiBi%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23F5F1E9%22%2C%22theme_color%22%3A%22%23F5F1E9%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22icon3.png%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Mali:wght@400;500;600;700&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
+    /* Google Fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Itim&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
+
+    /* Local Font */
+    @font-face {
+      font-family: 'ChenYuluoyan';
+      src: url('ChenYuluoyan-Thin.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap; 
+    }
     
     body { 
-      font-family: 'Zen Maru Gothic', sans-serif; 
+      font-family: 'ChenYuluoyan', 'Zen Maru Gothic', sans-serif; 
       -webkit-tap-highlight-color: transparent;
       overscroll-behavior: none;
       user-select: none;
@@ -26,13 +39,21 @@
     
     input, textarea { user-select: text; }
 
-    .font-hand { font-family: 'Caveat', cursive; }
-    .font-marker { font-family: 'Mali', cursive; }
+    /* Font Classes */
+    .font-chenyu { font-family: 'ChenYuluoyan', cursive; } 
+    .font-itim { font-family: 'Itim', cursive; }
+    .font-zen { font-family: 'Zen Maru Gothic', sans-serif; }
+    .font-title { font-family: 'Caveat', cursive; }
     
+    /* Number Fonts */
+    .font-num-chenyu { font-family: 'ChenYuluoyan', cursive; font-weight: 600; }
+    .font-num-itim { font-family: 'Itim', cursive; }
+    .font-num-zen { font-family: 'Zen Maru Gothic', sans-serif; font-weight: 700; }
+
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-    /* Page Transitions */
+    /* Animations */
     .slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
     .slide-in-left { animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 
@@ -45,14 +66,12 @@
       to { transform: translateX(0); opacity: 1; }
     }
 
-    /* Toast Animation */
     .toast-enter { animation: toastEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
     @keyframes toastEnter {
       from { transform: translateY(100%); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
     }
 
-    /* Initial Loading Spinner */
     .initial-loader {
       display: flex; justify-content: center; align-items: center; height: 100dvh;
       background-color: #F5F1E9; color: #C2A385;
@@ -93,7 +112,7 @@
     import { createRoot } from 'react-dom/client';
     import { 
       ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle
+      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download
     } from 'lucide-react';
     import { initializeApp } from 'firebase/app';
     import { 
@@ -118,7 +137,21 @@
     const db = getFirestore(app);
     const appId = 'schdule-f5cda';
 
-    // --- Themes Configuration ---
+    // --- Helper: Haptic Feedback ---
+    const triggerHaptic = () => {
+      if (navigator.vibrate) {
+        navigator.vibrate(10); // Short vibration for feedback
+      }
+    };
+
+    // --- Fonts ---
+    const FONTS = {
+      chenyu: { id: 'chenyu', name: '辰宇落雁 (手寫)', bodyClass: 'font-chenyu', numClass: 'font-num-chenyu' },
+      itim: { id: 'itim', name: '清晰圓體', bodyClass: 'font-itim', numClass: 'font-num-itim' },
+      original: { id: 'original', name: '經典圓體', bodyClass: 'font-zen', numClass: 'font-num-zen' },
+    };
+
+    // --- Themes ---
     const THEMES = {
       original: {
         id: 'original',
@@ -152,7 +185,7 @@
       }
     };
 
-    // --- Expanded Techo Palette ---
+    // --- Palette ---
     const TECHO_COLORS = {
       smokedPlum: { name: '煙燻梅', hex: '#8E4A49', text: '#FFFFFF' },
       ironBlue: { name: '鐵藍灰', hex: '#546E7A', text: '#FFFFFF' },
@@ -206,7 +239,6 @@
       return `${y}-${m}-${d}`;
     };
 
-    // --- Toast Component ---
     const ToastContainer = ({ toasts }) => {
       return (
         <div className="fixed bottom-6 left-0 right-0 flex flex-col items-center gap-2 pointer-events-none z-[100]">
@@ -234,6 +266,9 @@
       
       const [currentThemeId, setCurrentThemeId] = useState(localStorage.getItem('bibi_theme') || 'original');
       const theme = THEMES[currentThemeId] || THEMES.original;
+
+      const [currentFontId, setCurrentFontId] = useState(localStorage.getItem('bibi_font') || 'chenyu');
+      const currentFont = FONTS[currentFontId] || FONTS.chenyu;
 
       const [loading, setLoading] = useState(true);
       const [isSaving, setIsSaving] = useState(false); 
@@ -269,6 +304,9 @@
       const [tempRole1, setTempRole1] = useState('');
       const [tempRole2, setTempRole2] = useState('');
 
+      // [NEW] PWA Install Prompt State
+      const [deferredPrompt, setDeferredPrompt] = useState(null);
+
       const touchStartX = useRef(null);
       const touchEndX = useRef(null);
       const minSwipeDistance = 50;
@@ -285,6 +323,25 @@
         signInAnonymously(auth).catch((error) => console.error("Auth Failed:", error));
         return onAuthStateChanged(auth, setUser);
       }, []);
+
+      // [NEW] Listen for PWA Install Prompt
+      useEffect(() => {
+        const handler = (e) => {
+          e.preventDefault();
+          setDeferredPrompt(e);
+        };
+        window.addEventListener('beforeinstallprompt', handler);
+        return () => window.removeEventListener('beforeinstallprompt', handler);
+      }, []);
+
+      const handleInstallApp = async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          setDeferredPrompt(null);
+        }
+      };
 
       useEffect(() => {
         document.body.style.backgroundColor = theme.colors.bg;
@@ -373,6 +430,12 @@
         addToast('主題切換成功 🎨');
       };
 
+      const changeFont = (newFontId) => {
+        setCurrentFontId(newFontId);
+        localStorage.setItem('bibi_font', newFontId);
+        addToast('字體切換成功 🖋️');
+      };
+
       const openSettings = () => {
         setTempRole1(roleSettings.role1);
         setTempRole2(roleSettings.role2);
@@ -380,19 +443,22 @@
       };
 
       const handlePrevMonth = () => {
+          triggerHaptic();
           setSlideDirection('slide-in-left');
           setAnimationKey(prev => prev + 1);
           setCurrentDate(new Date(year, month - 1, 1));
       };
       
       const handleNextMonth = () => {
+          triggerHaptic();
           setSlideDirection('slide-in-right');
           setAnimationKey(prev => prev + 1);
           setCurrentDate(new Date(year, month + 1, 1));
       };
       
       const handleToday = () => {
-          setSlideDirection(''); // No slide for jump
+          triggerHaptic();
+          setSlideDirection(''); 
           setAnimationKey(prev => prev + 1);
           setCurrentDate(new Date());
       };
@@ -427,9 +493,14 @@
         });
       };
 
-      const handleDayClick = (dateStr) => { setViewingDate(dateStr); setIsDayViewModalOpen(true); };
+      const handleDayClick = (dateStr) => { 
+        triggerHaptic();
+        setViewingDate(dateStr); 
+        setIsDayViewModalOpen(true); 
+      };
 
       const openEditModal = (dateStr, event = null) => {
+         triggerHaptic();
          setEditingId(event ? event.id : null);
          setFormTitle(event ? event.title : '');
          setFormDesc(event ? (event.description || '') : '');
@@ -459,6 +530,7 @@
       };
 
       const saveEvent = async () => {
+        triggerHaptic();
         const targetUid = customUserId || user?.uid;
         if (!targetUid || !formTitle || !formStartDate || !formEndDate) return;
         
@@ -481,7 +553,6 @@
             await addDoc(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_events'), eventData);
           }
           
-          // [FIX] Force viewingDate to the event's start date to ensure we land on the correct day view
           setViewingDate(start);
 
           setIsEditModalOpen(false);
@@ -496,6 +567,7 @@
       };
 
       const deleteEvent = async () => {
+        triggerHaptic();
         const targetUid = customUserId || user?.uid;
         if (targetUid && editingId) {
           try {
@@ -526,7 +598,7 @@
       for (let i = 1; i <= remainingCells; i++) days.push({ day: null, fullDate: '' });
 
       return (
-        <div className="h-dvh flex flex-col" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ backgroundColor: theme.colors.bg, color: theme.colors.text }}>
+        <div className={`h-dvh flex flex-col ${currentFont.bodyClass}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ backgroundColor: theme.colors.bg, color: theme.colors.text }}>
           {/* Toast Notification */}
           <ToastContainer toasts={toasts} />
           
@@ -537,14 +609,14 @@
                  <CalendarHeart className="w-5 h-5" style={{ color: theme.colors.accent }} />
                </div>
                <div>
-                 <h1 className="text-xl font-hand font-bold tracking-tight text-2xl" style={{ color: theme.colors.text }}>BiBi❣</h1>
-                 <p className="text-[12px] font-hand font-bold uppercase tracking-widest hidden sm:block" style={{ color: theme.colors.secondaryText }}>{year} . {month + 1}</p>
+                 <h1 className="text-xl font-title font-bold tracking-tight text-2xl" style={{ color: theme.colors.text }}>BiBi❣</h1>
+                 <p className="text-[12px] font-title font-bold uppercase tracking-widest hidden sm:block" style={{ color: theme.colors.secondaryText }}>{year} . {month + 1}</p>
                </div>
             </div>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1 p-1.5 rounded-2xl border backdrop-blur-sm mr-2" style={{ backgroundColor: theme.colors.gridEmptyBg, borderColor: theme.colors.border + '20' }}>
                 <button onClick={handlePrevMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronLeft className="w-5 h-5" /></button>
-                <span className="text-xl font-hand font-bold min-w-[80px] text-center" style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base font-hand" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
+                <span className={`text-xl font-bold min-w-[80px] text-center ${currentFont.numClass}`} style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
                 <button onClick={handleNextMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronRight className="w-5 h-5" /></button>
               </div>
               <button onClick={openSettings} className="p-2.5 rounded-xl shadow-sm border hover:brightness-95 transition-all active:scale-95" style={{ backgroundColor: theme.colors.modalBg, color: theme.colors.secondaryText, borderColor: theme.colors.border }}><Settings className="w-5 h-5" /></button>
@@ -554,7 +626,7 @@
           {/* Weekday */}
           <div className="flex-none grid grid-cols-7" style={{ backgroundColor: theme.colors.gridHeaderBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
             {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d, i) => (
-              <div key={i} className="py-2 text-center text-[12px] font-marker font-bold tracking-widest" style={{ color: (i === 0 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
+              <div key={i} className={`py-2 text-center text-[12px] font-bold tracking-widest ${currentFont.numClass}`} style={{ color: (i === 0 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
             ))}
           </div>
 
@@ -580,7 +652,7 @@
                   {hasDate && (
                     <div className="flex flex-col items-center pt-1 mb-0.5 px-0 min-h-[38px] justify-start">
                        <span 
-                         className={`text-lg sm:text-xl font-marker font-bold h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'shadow-md' : ''}`}
+                         className={`text-lg sm:text-xl font-bold h-7 w-7 flex items-center justify-center rounded-full transition-all ${currentFont.numClass} ${isToday ? 'shadow-md' : ''}`}
                          style={{ backgroundColor: isToday ? theme.colors.accent : 'transparent', color: isToday ? '#fff' : dateTextColor }}
                        >
                          {cell.day}
@@ -602,14 +674,14 @@
                         <div 
                             key={ev.id} 
                             onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }} 
-                            className={`text-[10px] font-marker font-bold sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 active:scale-95 relative z-10 ${marginClass}`}
+                            className={`text-[10px] font-bold sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 active:scale-95 relative z-10 ${marginClass} ${currentFont.numClass}`}
                             style={{ backgroundColor: colorObj.hex, color: colorObj.text }}
                         >
-                          {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className="text-[10px] font-marker font-bold mr-1">{ev.startTime}</span>}{ev.title}</span>}
+                          {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className={`text-[10px] font-bold mr-1 ${currentFont.numClass}`}>{ev.startTime}</span>}{ev.title}</span>}
                         </div>
                       );
                     })}
-                    {segments.length > 4 && <div className="text-[10px] font-marker text-center leading-none mt-auto font-bold" style={{ color: theme.colors.weekdayText }}>+{segments.length - 4}</div>}
+                    {segments.length > 4 && <div className={`text-[10px] text-center leading-none mt-auto font-bold ${currentFont.numClass}`} style={{ color: theme.colors.weekdayText }}>+{segments.length - 4}</div>}
                   </div>
                 </div>
               )
@@ -648,7 +720,39 @@
                       </div>
                     </div>
 
+                    {/* Font Switcher */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase flex items-center gap-1" style={{ color: theme.colors.secondaryText }}><Type className="w-3 h-3"/> 字體風格</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {Object.values(FONTS).map(f => (
+                          <button 
+                            key={f.id} 
+                            onClick={() => changeFont(f.id)}
+                            className={`p-2 rounded-xl border transition-all active:scale-95 ${currentFontId === f.id ? 'ring-2 ring-offset-1' : 'hover:opacity-80'}`}
+                            style={{ 
+                              backgroundColor: theme.colors.inputBg,
+                              borderColor: theme.colors.border,
+                              ringColor: theme.colors.accent 
+                            }}
+                          >
+                            <span className={`text-sm font-bold ${f.bodyClass}`} style={{ color: theme.colors.text }}>{f.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <hr style={{ borderColor: theme.colors.border }} />
+
+                    {/* Install PWA Button (Android/Chrome) */}
+                    {deferredPrompt && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold uppercase flex items-center gap-1" style={{ color: theme.colors.secondaryText }}><Download className="w-3 h-3"/> 安裝應用程式</label>
+                        <button onClick={handleInstallApp} className="w-full py-2.5 text-xs font-bold text-white rounded-lg shadow-sm transition-transform active:scale-95 hover:opacity-90 flex items-center justify-center gap-2" style={{ backgroundColor: theme.colors.accent }}>
+                          <Download className="w-4 h-4" /> 安裝到主畫面
+                        </button>
+                        <hr style={{ borderColor: theme.colors.border }} />
+                      </div>
+                    )}
 
                     {/* ID Sync Section */}
                     <div className="space-y-2">
@@ -701,9 +805,8 @@
                <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                   <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <div className="flex items-baseline gap-2">
-                       <span className="text-2xl font-hand font-bold" style={{ color: theme.colors.text }}>{viewingDate}</span>
+                       <span className={`text-2xl font-bold ${currentFont.numClass}`} style={{ color: theme.colors.text }}>{viewingDate}</span>
                        <span className="text-xs font-bold uppercase" style={{ color: theme.colors.secondaryText }}>
-                        {/* [FIX] Force local time interpretation by appending T00:00:00 to prevent timezone shift */}
                         {viewingDate && !isNaN(new Date(viewingDate).getTime()) 
                            ? new Date(viewingDate + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'long' }) 
                            : ''}
@@ -732,7 +835,7 @@
                                       <h4 className="font-bold truncate" style={{ color: theme.colors.text }}>{ev.title}</h4>
                                       <span className="text-[10px] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>{ownerLabel}</span>
                                    </div>
-                                   <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>{ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="font-hand text-sm font-bold">{ev.startTime} - {ev.endTime}</span>}</div>
+                                   <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>{ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className={`text-sm font-bold ${currentFont.numClass}`}>{ev.startTime} - {ev.endTime}</span>}</div>
                                 </div>
                                 <Edit className="w-4 h-4" style={{ color: theme.colors.secondaryText }} />
                              </div>
@@ -747,7 +850,7 @@
             </div>
           )}
 
-          {/* Edit Modal */}
+          {/* Edit Modal (Color Picker Updated) */}
           {isEditModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
@@ -775,13 +878,13 @@
                      <div className="grid grid-cols-[auto_1fr] gap-2 items-center text-sm">
                         <span className="text-xs font-bold" style={{ color: theme.colors.secondaryText }}>開始</span>
                         <div className="flex gap-2">
-                           <input type="date" value={formStartDate} onChange={e => setFormStartDate(e.target.value)} className="border rounded px-2 py-1 w-full font-hand text-lg font-bold" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
-                           {!formIsAllDay && <input type="time" value={formStartTime} onChange={handleStartTimeChange} className="border rounded px-1 py-1 font-hand text-lg font-bold" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
+                           <input type="date" value={formStartDate} onChange={e => setFormStartDate(e.target.value)} className={`border rounded px-2 py-1 w-full text-lg font-bold ${currentFont.numClass}`} style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                           {!formIsAllDay && <input type="time" value={formStartTime} onChange={handleStartTimeChange} className={`border rounded px-1 py-1 text-lg font-bold ${currentFont.numClass}`} style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
                         </div>
                         <span className="text-xs font-bold" style={{ color: theme.colors.secondaryText }}>結束</span>
                         <div className="flex gap-2">
-                           <input type="date" value={formEndDate} onChange={e => setFormEndDate(e.target.value)} className="border rounded px-2 py-1 w-full font-hand text-lg font-bold" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
-                           {!formIsAllDay && <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)} className="border rounded px-1 py-1 font-hand text-lg font-bold" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
+                           <input type="date" value={formEndDate} onChange={e => setFormEndDate(e.target.value)} className={`border rounded px-2 py-1 w-full text-lg font-bold ${currentFont.numClass}`} style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                           {!formIsAllDay && <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)} className={`border rounded px-1 py-1 text-lg font-bold ${currentFont.numClass}`} style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
                         </div>
                      </div>
                   </div>
