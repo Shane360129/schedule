@@ -586,6 +586,7 @@
             await addDoc(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_events'), eventData);
           }
           
+          // Force viewingDate to the event's start date
           setViewingDate(start);
 
           setIsEditModalOpen(false);
@@ -616,17 +617,44 @@
       
       const dayViewEvents = viewingDate ? events.filter(ev => viewingDate >= ev.startDate && viewingDate <= ev.endDate).sort((a,b) => (a.startTime||'00:00').localeCompare(b.startTime||'00:00')) : [];
       
-      // [NEW] Logic for Upcoming Events
+      // [NEW] Logic for Upcoming Events (Corrected for multi-day)
       const todayStr = formatDate(new Date());
-      const upcomingEvents = events
-        .filter(ev => ev.startDate >= todayStr)
-        .sort((a, b) => a.startDate.localeCompare(b.startDate) || (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
+      
+      // Helper to generate dates in range
+      const getDatesInRange = (startDate, endDate) => {
+        const date = new Date(startDate);
+        const end = new Date(endDate);
+        const dates = [];
+        while (date <= end) {
+          dates.push(formatDate(new Date(date)));
+          date.setDate(date.getDate() + 1);
+        }
+        return dates;
+      };
 
-      // Helper to group upcoming events by date
-      const groupedUpcoming = upcomingEvents.reduce((acc, ev) => {
-        const date = ev.startDate;
-        if (!acc[date]) acc[date] = [];
-        acc[date].push(ev);
+      // 1. Filter events that end today or later (active events)
+      const activeEvents = events.filter(ev => ev.endDate >= todayStr);
+
+      // 2. Group by date (expanding multi-day events)
+      const groupedUpcomingRaw = activeEvents.reduce((acc, ev) => {
+        const dates = getDatesInRange(ev.startDate, ev.endDate);
+        dates.forEach(date => {
+          if (date >= todayStr) { // Only show today and future
+            if (!acc[date]) acc[date] = [];
+            acc[date].push(ev);
+          }
+        });
+        return acc;
+      }, {});
+
+      // 3. Sort dates and events within dates
+      const sortedDates = Object.keys(groupedUpcomingRaw).sort();
+      const groupedUpcoming = sortedDates.reduce((acc, date) => {
+        acc[date] = groupedUpcomingRaw[date].sort((a, b) => {
+             if (a.isAllDay && !b.isAllDay) return -1;
+             if (!a.isAllDay && b.isAllDay) return 1;
+             return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
+        });
         return acc;
       }, {});
 
@@ -652,9 +680,9 @@
           {/* Header */}
           <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] z-10 transition-colors duration-300" style={{ backgroundColor: theme.colors.headerBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
             <div className="flex items-center gap-3">
-               {/* [NEW] Clickable Logo to Open Upcoming List */}
-               <div onClick={openUpcomingList} className="p-2 rounded-xl shadow-sm border active:scale-95 transition-transform cursor-pointer" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                 <img src="icon.png" className="w-5 h-5 object-contain" alt="Logo" />
+               {/* [NEW] Clickable Logo (No border/shadow) */}
+               <div onClick={openUpcomingList} className="cursor-pointer mr-1">
+                 <img src="icon.png" className="w-8 h-8 object-contain" alt="Logo" />
                </div>
                <div>
                  <h1 className="text-xl font-title font-bold tracking-tight text-2xl" style={{ color: theme.colors.text }}>BiBi❣</h1>
@@ -756,6 +784,7 @@
                         Object.entries(groupedUpcoming).map(([date, events]) => (
                           <div key={date} className="space-y-2">
                              <div className="sticky top-0 z-10 py-1 px-2 text-xs font-bold uppercase rounded-md shadow-sm" style={{ backgroundColor: theme.colors.accent, color: '#FFF' }}>
+                               {/* [FIX] T00:00:00 for local time string */}
                                {date} ({new Date(date + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'short' })})
                              </div>
                              {events.map(ev => {
@@ -952,7 +981,7 @@
             </div>
           )}
 
-          {/* Edit Modal (Color Picker Updated) */}
+          {/* Edit Modal */}
           {isEditModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
