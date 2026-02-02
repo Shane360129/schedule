@@ -72,6 +72,7 @@
       to { transform: translateY(0); opacity: 1; }
     }
 
+    /* Modal Animation: Zoom In + Fade */
     .modal-enter { animation: modalZoomIn 0.2s ease-out forwards; }
     @keyframes modalZoomIn {
       from { opacity: 0; transform: scale(0.95) translateY(10px); }
@@ -152,7 +153,7 @@
     import { createRoot } from 'react-dom/client';
     import { 
       ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List
+      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle
     } from 'lucide-react';
     import { initializeApp } from 'firebase/app';
     import { 
@@ -287,6 +288,52 @@
       return `${y}-${m}-${d}`;
     };
 
+    // --- Error Boundary ---
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+      }
+
+      static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+      }
+
+      componentDidCatch(error, errorInfo) {
+        console.error("UI Crash:", error, errorInfo);
+      }
+
+      handleReset = () => {
+         localStorage.clear();
+         window.location.reload();
+      }
+
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div className="h-dvh flex flex-col items-center justify-center bg-[#F5F1E9] text-[#5D4037] p-6 text-center font-sans">
+              <div className="bg-red-100 p-4 rounded-full mb-4">
+                <AlertTriangle className="w-10 h-10 text-red-500" />
+              </div>
+              <h1 className="text-xl font-bold mb-2">哎呀，應用程式出錯了</h1>
+              <p className="mb-6 text-sm opacity-70">可能是資料讀取錯誤或快取衝突。</p>
+              <div className="bg-white p-3 rounded-lg border border-red-200 mb-6 w-full max-w-xs overflow-auto text-left">
+                 <code className="text-[10px] text-red-500 font-mono break-all">{this.state.error && this.state.error.toString()}</code>
+              </div>
+              <button 
+                onClick={this.handleReset}
+                className="bg-[#5D4037] text-white px-6 py-3 rounded-xl shadow-md font-bold hover:opacity-90 transition-opacity active:scale-95"
+              >
+                重置並重新整理
+              </button>
+            </div>
+          );
+        }
+
+        return this.props.children;
+      }
+    }
+
     // --- Toast Component ---
     const ToastContainer = ({ toasts }) => {
       return (
@@ -305,74 +352,34 @@
     // --- Holiday Animation Component ---
     const HolidayAnimation = ({ type, onDismiss }) => {
        if (!type) return null;
-       
        let content = null;
        let bgColor = 'bg-black/80';
        
        switch(type) {
-         case 'cny': // Chinese New Year
-           content = (
-             <div className="text-center animate-bounce">
-               <div className="text-9xl mb-4 animate-shake-crazy">🧨</div>
-               <div className="text-6xl animate-pulse">🧧</div>
-               <h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">新年快樂!</h2>
-             </div>
-           );
+         case 'cny': 
+           content = (<div className="text-center animate-bounce"><div className="text-9xl mb-4 animate-shake-crazy">🧨</div><div className="text-6xl animate-pulse">🧧</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">新年快樂!</h2></div>);
            bgColor = 'bg-red-900/90';
            break;
-         case 'dragon': // Dragon Boat
-           content = (
-             <div className="text-center">
-               <div className="text-9xl animate-float-slow">🐲</div>
-               <div className="text-6xl mt-4 animate-float-fast delay-100">🛶</div>
-               <h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">端午安康</h2>
-             </div>
-           );
+         case 'dragon':
+           content = (<div className="text-center"><div className="text-9xl animate-float-slow">🐲</div><div className="text-6xl mt-4 animate-float-fast delay-100">🛶</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">端午安康</h2></div>);
            bgColor = 'bg-emerald-900/90';
            break;
-         case 'moon': // Mid-Autumn
-           content = (
-             <div className="text-center">
-               <div className="text-9xl animate-spin-slow">🌕</div>
-               <div className="text-6xl mt-4 animate-bounce">🐇</div>
-               <h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">中秋團圓</h2>
-             </div>
-           );
+         case 'moon':
+           content = (<div className="text-center"><div className="text-9xl animate-spin-slow">🌕</div><div className="text-6xl mt-4 animate-bounce">🐇</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">中秋團圓</h2></div>);
            bgColor = 'bg-slate-900/90';
            break;
-         case 'xmas': // Christmas
-           content = (
-             <div className="text-center relative">
-               <div className="absolute inset-0 pointer-events-none">
-                 {[...Array(10)].map((_, i) => (
-                   <div key={i} className="text-2xl absolute animate-snow-fall" style={{ left: `${Math.random()*100}%`, animationDelay: `${Math.random()*5}s` }}>❄️</div>
-                 ))}
-               </div>
-               <div className="text-9xl animate-sway">🎄</div>
-               <div className="text-6xl mt-2">🎅</div>
-               <h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">Merry Christmas</h2>
-             </div>
-           );
+         case 'xmas':
+           content = (<div className="text-center relative"><div className="absolute inset-0 pointer-events-none">{[...Array(10)].map((_, i) => (<div key={i} className="text-2xl absolute animate-snow-fall" style={{ left: `${Math.random()*100}%`, animationDelay: `${Math.random()*5}s` }}>❄️</div>))}</div><div className="text-9xl animate-sway">🎄</div><div className="text-6xl mt-2">🎅</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">Merry Christmas</h2></div>);
            bgColor = 'bg-green-900/90';
            break;
-         case 'love': // Valentine
-           content = (
-             <div className="text-center">
-               <div className="text-9xl animate-heartbeat text-red-500">💖</div>
-               <div className="text-6xl mt-4 animate-float-slow">💌</div>
-               <h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">Happy Valentine's</h2>
-             </div>
-           );
+         case 'love':
+           content = (<div className="text-center"><div className="text-9xl animate-heartbeat text-red-500">💖</div><div className="text-6xl mt-4 animate-float-slow">💌</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">Happy Valentine's</h2></div>);
            bgColor = 'bg-pink-900/90';
            break;
          default: return null;
        }
-
        return (
-         <div 
-           className={`fixed inset-0 z-[100] flex items-center justify-center ${bgColor} backdrop-blur-md transition-all duration-500 cursor-pointer`}
-           onClick={onDismiss}
-         >
+         <div className={`fixed inset-0 z-[100] flex items-center justify-center ${bgColor} backdrop-blur-md transition-all duration-500 cursor-pointer`} onClick={onDismiss}>
            {content}
            <div className="absolute bottom-10 text-white/50 text-sm">點擊螢幕關閉特效</div>
          </div>
@@ -399,12 +406,8 @@
 
       const [loading, setLoading] = useState(true);
       const [isSaving, setIsSaving] = useState(false); 
-      
       const [toasts, setToasts] = useState([]);
-      
-      // Holiday Animation State
       const [holidayType, setHolidayType] = useState(null);
-
       const [holidayData, setHolidayData] = useState(() => {
         const initialData = {};
         Object.entries(FALLBACK_HOLIDAYS).forEach(([date, info]) => {
@@ -415,6 +418,7 @@
         return initialData;
       });
 
+      // Modals
       const [isEditModalOpen, setIsEditModalOpen] = useState(false);
       const [isDayViewModalOpen, setIsDayViewModalOpen] = useState(false); 
       const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false); 
@@ -445,45 +449,25 @@
       const addToast = (message, type = 'success') => {
         const id = Date.now();
         setToasts(prev => [...prev, { id, message, type }]);
-        setTimeout(() => {
-          setToasts(prev => prev.filter(t => t.id !== id));
-        }, 3000);
+        setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 3000);
       };
 
       useEffect(() => {
-        // Error Handling for Auth - Stop spinner on fail
         const initAuth = async () => {
-          try {
-             await signInAnonymously(auth);
-          } catch (e) {
-             console.error("Auth Failed:", e);
-             setLoading(false); // Stop loading so app doesn't hang
-             addToast('登入失敗，請檢查網路連線', 'error');
-          }
+          try { await signInAnonymously(auth); } 
+          catch (e) { console.error("Auth Failed:", e); setLoading(false); addToast('登入失敗，請檢查網路連線', 'error'); }
         };
         initAuth();
-        return onAuthStateChanged(auth, (u) => {
-            setUser(u);
-            if(u) setLoading(false); // Ensure loading stops when user arrives
-        });
+        return onAuthStateChanged(auth, (u) => { setUser(u); if(u) setLoading(false); });
       }, []);
       
-      // Safety Timeout - If still loading after 8s, force stop
       useEffect(() => {
-        const timer = setTimeout(() => {
-            if(loading) {
-                console.warn("Forced loading stop due to timeout");
-                setLoading(false);
-            }
-        }, 8000);
+        const timer = setTimeout(() => { if(loading) { console.warn("Forced loading stop due to timeout"); setLoading(false); } }, 8000);
         return () => clearTimeout(timer);
       }, [loading]);
 
       useEffect(() => {
-        const handler = (e) => {
-          e.preventDefault();
-          setDeferredPrompt(e);
-        };
+        const handler = (e) => { e.preventDefault(); setDeferredPrompt(e); };
         window.addEventListener('beforeinstallprompt', handler);
         return () => window.removeEventListener('beforeinstallprompt', handler);
       }, []);
@@ -492,9 +476,7 @@
         if (!deferredPrompt) return;
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
-        if (outcome === 'accepted') {
-          setDeferredPrompt(null);
-        }
+        if (outcome === 'accepted') setDeferredPrompt(null);
       };
 
       useEffect(() => {
@@ -504,19 +486,14 @@
         if(metaThemeColor) metaThemeColor.setAttribute('content', theme.colors.bg);
       }, [currentThemeId]);
 
-      // Check for Holidays on Load
       useEffect(() => {
         const checkHoliday = () => {
            const today = new Date();
            const y = today.getFullYear();
-           const todayStr = formatDate(today); // YYYY-MM-DD
-           const md = todayStr.substring(5); // MM-DD
-           
-           // Check Fixed Holidays
+           const todayStr = formatDate(today);
+           const md = todayStr.substring(5);
            if (md === '12-25') { setHolidayType('xmas'); return; }
            if (md === '02-14') { setHolidayType('love'); return; }
-           
-           // Check Lunar/Variable Holidays from API data
            const hInfo = holidayData[y]?.[todayStr];
            if (hInfo) {
               const name = hInfo.name;
@@ -525,8 +502,6 @@
               if (name.includes('中秋')) { setHolidayType('moon'); return; }
            }
         };
-        
-        // Wait a bit for data to load if using API, or check fallback immediately
         setTimeout(checkHoliday, 1000);
       }, [holidayData]);
 
@@ -554,23 +529,16 @@
       useEffect(() => {
         const targetUid = customUserId || user?.uid;
         if (!targetUid) return;
-        
         const qEvents = query(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_events'));
         const unsubEvents = onSnapshot(qEvents, (snapshot) => {
           const loadedEvents = [];
           snapshot.forEach((doc) => loadedEvents.push({ id: doc.id, ...doc.data() }));
           setEvents(loadedEvents);
           setLoading(false);
-        }, (err) => {
-            console.error("Firestore Events Error:", err);
-            setLoading(false); // Stop loading on error
-            addToast('資料讀取失敗，請重試', 'error');
-        });
+        }, (err) => { console.error("Firestore Events Error:", err); setLoading(false); addToast('資料讀取失敗，請重試', 'error'); });
 
         const settingsDocRef = doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles');
-        const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => {
-          if (docSnap.exists()) setRoleSettings(docSnap.data());
-        });
+        const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => { if (docSnap.exists()) setRoleSettings(docSnap.data()); });
 
         return () => { unsubEvents(); unsubSettings(); };
       }, [user, customUserId]);
@@ -587,10 +555,7 @@
         document.body.appendChild(textArea);
         textArea.focus();
         textArea.select();
-        try { 
-            document.execCommand('copy'); 
-            addToast('ID 已複製！');
-        } catch (err) {}
+        try { document.execCommand('copy'); addToast('ID 已複製！'); } catch (err) {}
         document.body.removeChild(textArea);
       };
 
@@ -598,14 +563,7 @@
         const targetUid = customUserId || user?.uid;
         if (!targetUid) return;
         const newRoles = { role1: tempRole1 || roleSettings.role1, role2: tempRole2 || roleSettings.role2 };
-        try { 
-            await setDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles'), newRoles); 
-            setRoleSettings(newRoles); 
-            setIsSettingsModalOpen(false);
-            addToast('角色名稱已儲存 ✨');
-        } catch (e) {
-            addToast('儲存失敗', 'error');
-        }
+        try { await setDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles'), newRoles); setRoleSettings(newRoles); setIsSettingsModalOpen(false); addToast('角色名稱已儲存 ✨'); } catch (e) { addToast('儲存失敗', 'error'); }
       };
 
       const changeTheme = (newThemeId) => {
@@ -743,7 +701,6 @@
             await addDoc(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_events'), eventData);
           }
           
-          // Force viewingDate to the event's start date
           setViewingDate(start);
 
           setIsEditModalOpen(false);
@@ -826,9 +783,7 @@
 
       return (
         <div className={`h-dvh flex flex-col ${currentFont.bodyClass}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ backgroundColor: theme.colors.bg, color: theme.colors.text }}>
-          {/* Holiday Overlay */}
           <HolidayAnimation type={holidayType} onDismiss={() => setHolidayType(null)} />
-          
           <ToastContainer toasts={toasts} />
           
           <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] z-10 transition-colors duration-300" style={{ backgroundColor: theme.colors.headerBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
@@ -926,9 +881,9 @@
 
           {/* Settings Modal */}
           {isSettingsModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border flex flex-col max-h-[90vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                  <div className="p-6 space-y-5 overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="p-6 space-y-5 overflow-y-auto">
                     <div className="flex justify-between items-center pb-2 border-b" style={{ borderColor: theme.colors.border }}>
                       <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Settings className="w-5 h-5"/> 設定 & 同步</h3>
                       <button onClick={() => setIsSettingsModalOpen(false)} className="p-1 rounded-full hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
@@ -1016,8 +971,8 @@
 
           {/* Day View Modal */}
           {isDayViewModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border flex flex-col max-h-[80vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                   <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <div className="flex items-baseline gap-2">
                        <span className={`text-2xl font-bold font-num-huninn`} style={{ color: theme.colors.text }}>{viewingDate}</span>
@@ -1029,7 +984,7 @@
                      </div>
                      <button onClick={() => setIsDayViewModalOpen(false)} className="p-1.5 rounded-full transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
                   </div>
-                  <div className="p-4 overflow-y-auto flex-1 space-y-3 pb-[env(safe-area-inset-bottom)]" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
+                  <div className="p-4 overflow-y-auto flex-1 space-y-3" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
                      {dayViewEvents.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-10 opacity-50" style={{ color: theme.colors.secondaryText }}>
                            <Coffee className="w-10 h-10 mb-2" /><p className="font-hand text-lg">今天沒有行程，享受生活吧！</p>
@@ -1058,17 +1013,17 @@
                         })
                      )}
                   </div>
-                  <div className="p-4 border-t shrink-0 pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="p-4 border-t shrink-0" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                      <button onClick={() => openEditModal(viewingDate)} className="w-full text-white py-3 rounded-xl shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 hover:opacity-90" style={{ backgroundColor: theme.colors.accent }}><Plus className="w-5 h-5" /> 新增行程</button>
                   </div>
                </div>
             </div>
           )}
 
-          {/* Edit Modal (Color Picker Updated) */}
+          {/* Edit Modal */}
           {isEditModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-              <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+              <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                 <div className="px-5 py-4 border-b flex justify-between items-center" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                    <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Leaf className="w-4 h-4" style={{ color: theme.colors.accent }} /> {editingId ? '編輯行程' : '建立行程'}</h3>
                    <div className="flex gap-2">
@@ -1076,7 +1031,7 @@
                      <button onClick={() => setIsEditModalOpen(false)} className="p-1.5 hover:opacity-70 rounded-full transition-colors active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-4 h-4" /></button>
                    </div>
                 </div>
-                <div className="p-6 space-y-5 overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <div className="p-6 space-y-5 overflow-y-auto">
                   <div className="flex gap-2 p-1 rounded-xl" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
                      {['me', 'partner', 'common'].map(type => (
                         <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('tea'); if(type === 'partner') setFormColor('sesame'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'shadow' : 'opacity-60'}`} style={{ backgroundColor: formEventType === type ? theme.colors.modalBg : 'transparent', color: formEventType === type ? theme.colors.text : theme.colors.secondaryText }}>
@@ -1117,7 +1072,7 @@
                     ))}
                   </div>
                 </div>
-                <div className="px-5 py-4 border-t flex justify-end pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+                <div className="px-5 py-4 border-t flex justify-end" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                   <button onClick={saveEvent} disabled={isSaving} className="text-white text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2 disabled:opacity-50" style={{ backgroundColor: theme.colors.accent }}>
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4" />} 
                     {isSaving ? '儲存中...' : '儲存行程'}
@@ -1127,10 +1082,10 @@
             </div>
           )}
           
-          {/* [NEW] Upcoming Events Modal (Multi-day supported & Floating) */}
+          {/* [NEW] Upcoming Events Modal (Floating) */}
           {isUpcomingModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center backdrop-blur-[2px] p-0 sm:p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-t-2xl sm:rounded-[1.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-200 border flex flex-col max-h-[80vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                   <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}>
                        <List className="w-5 h-5" style={{ color: theme.colors.accent }} /> 接下來的行程
@@ -1138,7 +1093,7 @@
                      <button onClick={() => setIsUpcomingModalOpen(false)} className="p-1.5 rounded-full transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
                   </div>
                   
-                  <div className="p-4 overflow-y-auto flex-1 space-y-4 pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
+                  <div className="p-4 overflow-y-auto flex-1 space-y-4" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
                      {Object.keys(groupedUpcoming).length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-10 opacity-50" style={{ color: theme.colors.secondaryText }}>
                            <Coffee className="w-10 h-10 mb-2" /><p className="font-hand text-lg">目前沒有待辦事項，好好休息！</p>
@@ -1184,7 +1139,11 @@
     };
 
     const root = createRoot(document.getElementById('root'));
-    root.render(<App />);
+    root.render(
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    );
   </script>
 </body>
 </html>
