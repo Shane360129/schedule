@@ -11,19 +11,18 @@
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" type="image/png" href="icon.png">
 
-  <!-- PWA Manifest (Enhanced for better installation experience) -->
-  <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22BiBi-Schedule%22%2C%22short_name%22%3A%22BiBi%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23F5F1E9%22%2C%22theme_color%22%3A%22%23F5F1E9%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22icon3.png%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22BiBi-Schedule%22%2C%22short_name%22%3A%22BiBi%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23F5F1E9%22%2C%22theme_color%22%3A%22%23F5F1E9%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22icon.png%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fpng%22%7D%5D%7D">
 
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
     /* Google Fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Itim&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
 
-    /* Local Font: Open Huninn (粉圓體) */
+    /* Local Font */
     @font-face {
       font-family: 'OpenHuninn';
-      /* 確保 jf-openhuninn-2.1.ttf 位於專案根目錄 */
       src: url('jf-openhuninn-2.1.ttf') format('truetype');
       font-weight: normal;
       font-style: normal;
@@ -31,7 +30,6 @@
     }
     
     body { 
-      /* Global default: Open Huninn */
       font-family: 'OpenHuninn', 'Zen Maru Gothic', sans-serif; 
       -webkit-tap-highlight-color: transparent;
       overscroll-behavior: none;
@@ -41,11 +39,16 @@
     
     input, textarea { user-select: text; }
 
-    /* Artistic Title */
+    /* Font Classes */
+    .font-chenyu { font-family: 'OpenHuninn', cursive; } 
+    .font-itim { font-family: 'Itim', cursive; }
+    .font-zen { font-family: 'Zen Maru Gothic', sans-serif; }
     .font-title { font-family: 'Caveat', cursive; }
     
-    /* Utility class for forcing Huninn (if needed specific weight override) */
-    .font-huninn { font-family: 'OpenHuninn', cursive; font-weight: 600; }
+    /* Number Fonts */
+    .font-num-huninn { font-family: 'OpenHuninn', cursive; font-weight: 600; }
+    .font-num-itim { font-family: 'Itim', cursive; }
+    .font-num-zen { font-family: 'Zen Maru Gothic', sans-serif; font-weight: 700; }
 
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -67,6 +70,46 @@
     @keyframes toastEnter {
       from { transform: translateY(100%); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* Modal Animation: Zoom In + Fade */
+    .modal-enter { animation: modalZoomIn 0.2s ease-out forwards; }
+    @keyframes modalZoomIn {
+      from { opacity: 0; transform: scale(0.95) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    /* Holiday Fullscreen Animations */
+    .animate-float-slow { animation: float 3s ease-in-out infinite; }
+    .animate-float-fast { animation: float 1.5s ease-in-out infinite; }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-20px); }
+    }
+
+    .animate-shake-crazy { animation: shakeCrazy 0.5s ease-in-out infinite; }
+    @keyframes shakeCrazy {
+      0%, 100% { transform: rotate(-5deg); }
+      50% { transform: rotate(5deg); }
+    }
+
+    .animate-spin-slow { animation: spin 8s linear infinite; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+
+    .animate-heartbeat { animation: heartbeat 1.2s ease-in-out infinite; }
+    @keyframes heartbeat {
+      0% { transform: scale(1); }
+      14% { transform: scale(1.3); }
+      28% { transform: scale(1); }
+      42% { transform: scale(1.3); }
+      70% { transform: scale(1); }
+    }
+
+    .animate-snow-fall { animation: snowFall 5s linear infinite; }
+    @keyframes snowFall {
+      0% { transform: translateY(-10vh) translateX(0); opacity: 0; }
+      10% { opacity: 1; }
+      100% { transform: translateY(110vh) translateX(20px); opacity: 0; }
     }
 
     .initial-loader {
@@ -94,7 +137,8 @@
   }
   </script>
 
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- [Fixed] Use a stable version of Babel Standalone to prevent .targets error -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 </head>
 <body class="overflow-hidden" style="background-color: #F5F1E9; color: #5D4037;">
   
@@ -104,12 +148,12 @@
     </div>
   </div>
 
-  <script type="text/babel" data-type="module">
+  <script type="text/babel" data-type="module" data-presets="react">
     import React, { useState, useEffect, useRef, useMemo } from 'react';
     import { createRoot } from 'react-dom/client';
     import { 
       ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Download
+      Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle
     } from 'lucide-react';
     import { initializeApp } from 'firebase/app';
     import { 
@@ -139,6 +183,11 @@
       if (navigator.vibrate) {
         navigator.vibrate(10); 
       }
+    };
+
+    // --- Fonts ---
+    const FONTS = {
+      huninn: { id: 'huninn', name: '粉圓體 (圓潤)', bodyClass: 'font-huninn', numClass: 'font-num-huninn' },
     };
 
     // --- Themes ---
@@ -177,23 +226,10 @@
         id: 'toystory',
         name: '玩具總動員', 
         colors: {
-          bg: '#E1F5FE',          
-          text: '#3E2723',        
-          secondaryText: '#5D4037', 
-          headerBg: '#FFF9C4',    
-          gridHeaderBg: '#C8E6C9', 
-          gridBg: '#FFFFFF',      
-          gridEmptyBg: '#E1F5FE80', 
-          gridWeekendBg: '#FFF3E0', 
-          border: '#90CAF9',      
-          accent: '#7E57C2',      
-          weekendText: '#D32F2F', 
-          weekdayText: '#1976D2', 
-          modalBg: '#FFFFFF',
-          modalHeaderBg: '#FFF9C4', 
-          inputBg: '#FFFFFF',
-          inputBorder: '#90CAF9', 
-          danger: '#C62828'       
+          bg: '#E1F5FE', text: '#3E2723', secondaryText: '#5D4037', headerBg: '#FFF9C4',
+          gridHeaderBg: '#C8E6C9', gridBg: '#FFFFFF', gridEmptyBg: '#E1F5FE80', gridWeekendBg: '#FFF3E0',
+          border: '#90CAF9', accent: '#7E57C2', weekendText: '#D32F2F', weekdayText: '#1976D2',
+          modalBg: '#FFFFFF', modalHeaderBg: '#FFF9C4', inputBg: '#FFFFFF', inputBorder: '#90CAF9', danger: '#C62828'
         }
       }
     };
@@ -252,6 +288,52 @@
       return `${y}-${m}-${d}`;
     };
 
+    // --- Error Boundary ---
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+      }
+
+      static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+      }
+
+      componentDidCatch(error, errorInfo) {
+        console.error("UI Crash:", error, errorInfo);
+      }
+
+      handleReset = () => {
+         localStorage.clear();
+         window.location.reload();
+      }
+
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div className="h-dvh flex flex-col items-center justify-center bg-[#F5F1E9] text-[#5D4037] p-6 text-center font-sans">
+              <div className="bg-red-100 p-4 rounded-full mb-4">
+                <AlertTriangle className="w-10 h-10 text-red-500" />
+              </div>
+              <h1 className="text-xl font-bold mb-2">哎呀，應用程式出錯了</h1>
+              <p className="mb-6 text-sm opacity-70">可能是資料讀取錯誤或快取衝突。</p>
+              <div className="bg-white p-3 rounded-lg border border-red-200 mb-6 w-full max-w-xs overflow-auto text-left">
+                 <code className="text-[10px] text-red-500 font-mono break-all">{this.state.error && this.state.error.toString()}</code>
+              </div>
+              <button 
+                onClick={this.handleReset}
+                className="bg-[#5D4037] text-white px-6 py-3 rounded-xl shadow-md font-bold hover:opacity-90 transition-opacity active:scale-95"
+              >
+                重置並重新整理
+              </button>
+            </div>
+          );
+        }
+
+        return this.props.children;
+      }
+    }
+
     // --- Toast Component ---
     const ToastContainer = ({ toasts }) => {
       return (
@@ -265,6 +347,43 @@
           ))}
         </div>
       );
+    };
+
+    // --- Holiday Animation Component ---
+    const HolidayAnimation = ({ type, onDismiss }) => {
+       if (!type) return null;
+       let content = null;
+       let bgColor = 'bg-black/80';
+       
+       switch(type) {
+         case 'cny': 
+           content = (<div className="text-center animate-bounce"><div className="text-9xl mb-4 animate-shake-crazy">🧨</div><div className="text-6xl animate-pulse">🧧</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">新年快樂!</h2></div>);
+           bgColor = 'bg-red-900/90';
+           break;
+         case 'dragon':
+           content = (<div className="text-center"><div className="text-9xl animate-float-slow">🐲</div><div className="text-6xl mt-4 animate-float-fast delay-100">🛶</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">端午安康</h2></div>);
+           bgColor = 'bg-emerald-900/90';
+           break;
+         case 'moon':
+           content = (<div className="text-center"><div className="text-9xl animate-spin-slow">🌕</div><div className="text-6xl mt-4 animate-bounce">🐇</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">中秋團圓</h2></div>);
+           bgColor = 'bg-slate-900/90';
+           break;
+         case 'xmas':
+           content = (<div className="text-center relative"><div className="absolute inset-0 pointer-events-none">{[...Array(10)].map((_, i) => (<div key={i} className="text-2xl absolute animate-snow-fall" style={{ left: `${Math.random()*100}%`, animationDelay: `${Math.random()*5}s` }}>❄️</div>))}</div><div className="text-9xl animate-sway">🎄</div><div className="text-6xl mt-2">🎅</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">Merry Christmas</h2></div>);
+           bgColor = 'bg-green-900/90';
+           break;
+         case 'love':
+           content = (<div className="text-center"><div className="text-9xl animate-heartbeat text-red-500">💖</div><div className="text-6xl mt-4 animate-float-slow">💌</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">Happy Valentine's</h2></div>);
+           bgColor = 'bg-pink-900/90';
+           break;
+         default: return null;
+       }
+       return (
+         <div className={`fixed inset-0 z-[100] flex items-center justify-center ${bgColor} backdrop-blur-md transition-all duration-500 cursor-pointer`} onClick={onDismiss}>
+           {content}
+           <div className="absolute bottom-10 text-white/50 text-sm">點擊螢幕關閉特效</div>
+         </div>
+       );
     };
 
     const App = () => {
@@ -282,11 +401,13 @@
       const [currentThemeId, setCurrentThemeId] = useState(localStorage.getItem('bibi_theme') || 'original');
       const theme = THEMES[currentThemeId] || THEMES.original;
 
+      // Font State (Locked to Huninn)
+      const currentFont = FONTS.huninn;
+
       const [loading, setLoading] = useState(true);
       const [isSaving, setIsSaving] = useState(false); 
-      
       const [toasts, setToasts] = useState([]);
-
+      const [holidayType, setHolidayType] = useState(null);
       const [holidayData, setHolidayData] = useState(() => {
         const initialData = {};
         Object.entries(FALLBACK_HOLIDAYS).forEach(([date, info]) => {
@@ -297,9 +418,12 @@
         return initialData;
       });
 
+      // Modals
       const [isEditModalOpen, setIsEditModalOpen] = useState(false);
       const [isDayViewModalOpen, setIsDayViewModalOpen] = useState(false); 
       const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false); 
+      const [isUpcomingModalOpen, setIsUpcomingModalOpen] = useState(false);
+
       const [viewingDate, setViewingDate] = useState(null);
       const [editingId, setEditingId] = useState(null);
 
@@ -325,21 +449,25 @@
       const addToast = (message, type = 'success') => {
         const id = Date.now();
         setToasts(prev => [...prev, { id, message, type }]);
-        setTimeout(() => {
-          setToasts(prev => prev.filter(t => t.id !== id));
-        }, 3000);
+        setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 3000);
       };
 
       useEffect(() => {
-        signInAnonymously(auth).catch((error) => console.error("Auth Failed:", error));
-        return onAuthStateChanged(auth, setUser);
+        const initAuth = async () => {
+          try { await signInAnonymously(auth); } 
+          catch (e) { console.error("Auth Failed:", e); setLoading(false); addToast('登入失敗，請檢查網路連線', 'error'); }
+        };
+        initAuth();
+        return onAuthStateChanged(auth, (u) => { setUser(u); if(u) setLoading(false); });
       }, []);
+      
+      useEffect(() => {
+        const timer = setTimeout(() => { if(loading) { console.warn("Forced loading stop due to timeout"); setLoading(false); } }, 8000);
+        return () => clearTimeout(timer);
+      }, [loading]);
 
       useEffect(() => {
-        const handler = (e) => {
-          e.preventDefault();
-          setDeferredPrompt(e);
-        };
+        const handler = (e) => { e.preventDefault(); setDeferredPrompt(e); };
         window.addEventListener('beforeinstallprompt', handler);
         return () => window.removeEventListener('beforeinstallprompt', handler);
       }, []);
@@ -348,9 +476,7 @@
         if (!deferredPrompt) return;
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
-        if (outcome === 'accepted') {
-          setDeferredPrompt(null);
-        }
+        if (outcome === 'accepted') setDeferredPrompt(null);
       };
 
       useEffect(() => {
@@ -359,6 +485,25 @@
         const metaThemeColor = document.querySelector('meta[name="theme-color"]');
         if(metaThemeColor) metaThemeColor.setAttribute('content', theme.colors.bg);
       }, [currentThemeId]);
+
+      useEffect(() => {
+        const checkHoliday = () => {
+           const today = new Date();
+           const y = today.getFullYear();
+           const todayStr = formatDate(today);
+           const md = todayStr.substring(5);
+           if (md === '12-25') { setHolidayType('xmas'); return; }
+           if (md === '02-14') { setHolidayType('love'); return; }
+           const hInfo = holidayData[y]?.[todayStr];
+           if (hInfo) {
+              const name = hInfo.name;
+              if (name.includes('春節') || name.includes('除夕') || name.includes('過年')) { setHolidayType('cny'); return; }
+              if (name.includes('端午')) { setHolidayType('dragon'); return; }
+              if (name.includes('中秋')) { setHolidayType('moon'); return; }
+           }
+        };
+        setTimeout(checkHoliday, 1000);
+      }, [holidayData]);
 
       useEffect(() => {
         const currentYear = currentDate.getFullYear();
@@ -384,19 +529,16 @@
       useEffect(() => {
         const targetUid = customUserId || user?.uid;
         if (!targetUid) return;
-        
         const qEvents = query(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_events'));
         const unsubEvents = onSnapshot(qEvents, (snapshot) => {
           const loadedEvents = [];
           snapshot.forEach((doc) => loadedEvents.push({ id: doc.id, ...doc.data() }));
           setEvents(loadedEvents);
           setLoading(false);
-        });
+        }, (err) => { console.error("Firestore Events Error:", err); setLoading(false); addToast('資料讀取失敗，請重試', 'error'); });
 
         const settingsDocRef = doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles');
-        const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => {
-          if (docSnap.exists()) setRoleSettings(docSnap.data());
-        });
+        const unsubSettings = onSnapshot(settingsDocRef, (docSnap) => { if (docSnap.exists()) setRoleSettings(docSnap.data()); });
 
         return () => { unsubEvents(); unsubSettings(); };
       }, [user, customUserId]);
@@ -413,10 +555,7 @@
         document.body.appendChild(textArea);
         textArea.focus();
         textArea.select();
-        try { 
-            document.execCommand('copy'); 
-            addToast('ID 已複製！');
-        } catch (err) {}
+        try { document.execCommand('copy'); addToast('ID 已複製！'); } catch (err) {}
         document.body.removeChild(textArea);
       };
 
@@ -424,14 +563,7 @@
         const targetUid = customUserId || user?.uid;
         if (!targetUid) return;
         const newRoles = { role1: tempRole1 || roleSettings.role1, role2: tempRole2 || roleSettings.role2 };
-        try { 
-            await setDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles'), newRoles); 
-            setRoleSettings(newRoles); 
-            setIsSettingsModalOpen(false);
-            addToast('角色名稱已儲存 ✨');
-        } catch (e) {
-            addToast('儲存失敗', 'error');
-        }
+        try { await setDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_settings', 'roles'), newRoles); setRoleSettings(newRoles); setIsSettingsModalOpen(false); addToast('角色名稱已儲存 ✨'); } catch (e) { addToast('儲存失敗', 'error'); }
       };
 
       const changeTheme = (newThemeId) => {
@@ -444,6 +576,11 @@
         setTempRole1(roleSettings.role1);
         setTempRole2(roleSettings.role2);
         setIsSettingsModalOpen(true);
+      };
+      
+      const openUpcomingList = () => {
+        triggerHaptic();
+        setIsUpcomingModalOpen(true);
       };
 
       const handlePrevMonth = () => {
@@ -472,7 +609,7 @@
       const onTouchEnd = () => {
         if (!touchStartX.current || !touchEndX.current) return;
         const distance = touchStartX.current - touchEndX.current;
-        if (isEditModalOpen || isDayViewModalOpen || isSettingsModalOpen) return;
+        if (isEditModalOpen || isDayViewModalOpen || isSettingsModalOpen || isUpcomingModalOpen) return;
         if (distance > minSwipeDistance) handleNextMonth();
         if (distance < -minSwipeDistance) handlePrevMonth();
       };
@@ -502,6 +639,12 @@
         setViewingDate(dateStr); 
         setIsDayViewModalOpen(true); 
       };
+      
+      const handleDayContextMenu = (e, dateStr) => {
+        e.preventDefault(); 
+        triggerHaptic();
+        openEditModal(dateStr);
+      };
 
       const openEditModal = (dateStr, event = null) => {
          triggerHaptic();
@@ -520,6 +663,7 @@
          setFormEventType(event ? event.eventType : 'common');
          setIsDayViewModalOpen(false); 
          setIsEditModalOpen(true);
+         setIsUpcomingModalOpen(false); 
       };
 
       const handleStartTimeChange = (e) => {
@@ -586,6 +730,42 @@
       if (loading) return <div className="h-dvh flex items-center justify-center" style={{ backgroundColor: theme.colors.bg }}><Loader2 className="w-8 h-8 animate-spin" style={{ color: theme.colors.accent }} /></div>;
       
       const dayViewEvents = viewingDate ? events.filter(ev => viewingDate >= ev.startDate && viewingDate <= ev.endDate).sort((a,b) => (a.startTime||'00:00').localeCompare(b.startTime||'00:00')) : [];
+      
+      const todayStr = formatDate(new Date());
+      
+      const getDatesInRange = (startDate, endDate) => {
+        const date = new Date(startDate);
+        const end = new Date(endDate);
+        const dates = [];
+        while (date <= end) {
+          dates.push(formatDate(new Date(date)));
+          date.setDate(date.getDate() + 1);
+        }
+        return dates;
+      };
+
+      const activeEvents = events.filter(ev => ev.endDate >= todayStr);
+
+      const groupedUpcomingRaw = activeEvents.reduce((acc, ev) => {
+        const dates = getDatesInRange(ev.startDate, ev.endDate);
+        dates.forEach(date => {
+          if (date >= todayStr) { 
+            if (!acc[date]) acc[date] = [];
+            acc[date].push(ev);
+          }
+        });
+        return acc;
+      }, {});
+
+      const sortedDates = Object.keys(groupedUpcomingRaw).sort();
+      const groupedUpcoming = sortedDates.reduce((acc, date) => {
+        acc[date] = groupedUpcomingRaw[date].sort((a, b) => {
+             if (a.isAllDay && !b.isAllDay) return -1;
+             if (!a.isAllDay && b.isAllDay) return 1;
+             return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
+        });
+        return acc;
+      }, {});
 
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth();
@@ -602,17 +782,16 @@
       for (let i = 1; i <= remainingCells; i++) days.push({ day: null, fullDate: '' });
 
       return (
-        <div className="h-dvh flex flex-col font-huninn" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ backgroundColor: theme.colors.bg, color: theme.colors.text }}>
-          {/* Toast Notification */}
+        <div className={`h-dvh flex flex-col ${currentFont.bodyClass}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ backgroundColor: theme.colors.bg, color: theme.colors.text }}>
+          <HolidayAnimation type={holidayType} onDismiss={() => setHolidayType(null)} />
           <ToastContainer toasts={toasts} />
           
-          {/* Header */}
           <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] z-10 transition-colors duration-300" style={{ backgroundColor: theme.colors.headerBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
             <div className="flex items-center gap-3">
-               <div className="p-2 rounded-xl shadow-sm border active:scale-95 transition-transform" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                 <CalendarHeart className="w-5 h-5" style={{ color: theme.colors.accent }} />
+               <div onClick={openUpcomingList} className="cursor-pointer mr-1 active:opacity-70 transition-opacity">
+                 <img src="icon.png" className="w-8 h-8 object-contain" alt="Logo" />
                </div>
-               <div>
+               <div onClick={handleToday} className="cursor-pointer active:opacity-70 transition-opacity">
                  <h1 className="text-xl font-title font-bold tracking-tight text-2xl" style={{ color: theme.colors.text }}>BiBi❣</h1>
                  <p className="text-[12px] font-title font-bold uppercase tracking-widest hidden sm:block" style={{ color: theme.colors.secondaryText }}>{year} . {month + 1}</p>
                </div>
@@ -620,21 +799,19 @@
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1 p-1.5 rounded-2xl border backdrop-blur-sm mr-2" style={{ backgroundColor: theme.colors.gridEmptyBg, borderColor: theme.colors.border + '20' }}>
                 <button onClick={handlePrevMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronLeft className="w-5 h-5" /></button>
-                <span className="text-xl font-bold font-num-huninn min-w-[80px] text-center" style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
+                <span className={`text-xl font-bold font-num-huninn min-w-[80px] text-center`} style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
                 <button onClick={handleNextMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronRight className="w-5 h-5" /></button>
               </div>
               <button onClick={openSettings} className="p-2.5 rounded-xl shadow-sm border hover:brightness-95 transition-all active:scale-95" style={{ backgroundColor: theme.colors.modalBg, color: theme.colors.secondaryText, borderColor: theme.colors.border }}><Settings className="w-5 h-5" /></button>
             </div>
           </header>
 
-          {/* Weekday */}
           <div className="flex-none grid grid-cols-7" style={{ backgroundColor: theme.colors.gridHeaderBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
             {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d, i) => (
               <div key={i} className="py-2 text-center text-[12px] font-bold font-num-huninn tracking-widest" style={{ color: (i === 0 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
             ))}
           </div>
 
-          {/* Grid with Animation */}
           <div key={animationKey} className={`flex-1 grid grid-cols-7 grid-rows-6 w-full h-full ${slideDirection}`}>
             {days.map((cell, idx) => {
               const hasDate = cell.day !== null;
@@ -652,7 +829,13 @@
               const dateTextColor = (isHoliday || dayOfWeek === 0) ? theme.colors.weekendText : theme.colors.text;
 
               return (
-                <div key={idx} onClick={() => hasDate && handleDayClick(cell.fullDate)} className="relative border-b border-r flex flex-col active:brightness-95 transition-colors cursor-pointer select-none" style={{ backgroundColor: cellBg, borderColor: theme.colors.border + '20' }}>
+                <div 
+                  key={idx} 
+                  onClick={() => hasDate && handleDayClick(cell.fullDate)} 
+                  onContextMenu={(e) => hasDate && handleDayContextMenu(e, cell.fullDate)}
+                  className="relative border-b border-r flex flex-col active:brightness-95 transition-colors cursor-pointer select-none" 
+                  style={{ backgroundColor: cellBg, borderColor: theme.colors.border + '20' }}
+                >
                   {hasDate && (
                     <div className="flex flex-col items-center pt-1 mb-0.5 px-0 min-h-[38px] justify-start">
                        <span 
@@ -661,7 +844,11 @@
                        >
                          {cell.day}
                        </span>
-                       {isHoliday && <span className="text-[10px] text-[#9F1239] font-medium -mt-1 truncate max-w-full px-1 leading-tight" style={{ color: theme.colors.weekendText }}>{holidayInfo.name}</span>}
+                       {(isHoliday) && (
+                         <span className="text-[10px] text-[#9F1239] font-medium -mt-1 truncate max-w-full px-1 leading-tight flex items-center justify-center" style={{ color: theme.colors.weekendText }}>
+                           {holidayInfo.name}
+                         </span>
+                       )}
                     </div>
                   )}
                   <div className="flex-1 flex flex-col gap-[2px] w-full pb-1 px-0">
@@ -695,7 +882,7 @@
           {/* Settings Modal */}
           {isSettingsModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+               <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                   <div className="p-6 space-y-5 overflow-y-auto">
                     <div className="flex justify-between items-center pb-2 border-b" style={{ borderColor: theme.colors.border }}>
                       <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Settings className="w-5 h-5"/> 設定 & 同步</h3>
@@ -785,10 +972,10 @@
           {/* Day View Modal */}
           {isDayViewModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh]" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+               <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                   <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <div className="flex items-baseline gap-2">
-                       <span className="text-2xl font-bold font-num-huninn" style={{ color: theme.colors.text }}>{viewingDate}</span>
+                       <span className={`text-2xl font-bold font-num-huninn`} style={{ color: theme.colors.text }}>{viewingDate}</span>
                        <span className="text-xs font-bold uppercase" style={{ color: theme.colors.secondaryText }}>
                         {viewingDate && !isNaN(new Date(viewingDate).getTime()) 
                            ? new Date(viewingDate + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'long' }) 
@@ -818,7 +1005,7 @@
                                       <h4 className="font-bold truncate" style={{ color: theme.colors.text }}>{ev.title}</h4>
                                       <span className="text-[10px] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>{ownerLabel}</span>
                                    </div>
-                                   <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>{ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="text-sm font-bold font-num-huninn">{ev.startTime} - {ev.endTime}</span>}</div>
+                                   <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>{ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="font-bold font-num-huninn text-sm">{ev.startTime} - {ev.endTime}</span>}</div>
                                 </div>
                                 <Edit className="w-4 h-4" style={{ color: theme.colors.secondaryText }} />
                              </div>
@@ -833,10 +1020,10 @@
             </div>
           )}
 
-          {/* Edit Modal (Color Picker Updated) */}
+          {/* Edit Modal */}
           {isEditModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-              <div className="w-full max-w-sm rounded-[1.5rem] shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+              <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                 <div className="px-5 py-4 border-b flex justify-between items-center" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                    <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Leaf className="w-4 h-4" style={{ color: theme.colors.accent }} /> {editingId ? '編輯行程' : '建立行程'}</h3>
                    <div className="flex gap-2">
@@ -844,7 +1031,7 @@
                      <button onClick={() => setIsEditModalOpen(false)} className="p-1.5 hover:opacity-70 rounded-full transition-colors active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-4 h-4" /></button>
                    </div>
                 </div>
-                <div className="p-6 space-y-5">
+                <div className="p-6 space-y-5 overflow-y-auto">
                   <div className="flex gap-2 p-1 rounded-xl" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
                      {['me', 'partner', 'common'].map(type => (
                         <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('tea'); if(type === 'partner') setFormColor('sesame'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'shadow' : 'opacity-60'}`} style={{ backgroundColor: formEventType === type ? theme.colors.modalBg : 'transparent', color: formEventType === type ? theme.colors.text : theme.colors.secondaryText }}>
@@ -894,12 +1081,69 @@
               </div>
             </div>
           )}
+          
+          {/* [NEW] Upcoming Events Modal (Floating) */}
+          {isUpcomingModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+               <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+                     <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}>
+                       <List className="w-5 h-5" style={{ color: theme.colors.accent }} /> 接下來的行程
+                     </h3>
+                     <button onClick={() => setIsUpcomingModalOpen(false)} className="p-1.5 rounded-full transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
+                  </div>
+                  
+                  <div className="p-4 overflow-y-auto flex-1 space-y-4" style={{ backgroundColor: theme.colors.modalHeaderBg }}>
+                     {Object.keys(groupedUpcoming).length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 opacity-50" style={{ color: theme.colors.secondaryText }}>
+                           <Coffee className="w-10 h-10 mb-2" /><p className="font-hand text-lg">目前沒有待辦事項，好好休息！</p>
+                        </div>
+                     ) : (
+                        Object.entries(groupedUpcoming).map(([date, events]) => (
+                          <div key={date} className="space-y-2">
+                             <div className="sticky top-0 z-10 py-1 px-2 text-xs font-bold uppercase rounded-md shadow-sm" style={{ backgroundColor: theme.colors.accent, color: '#FFF' }}>
+                               {date} ({new Date(date + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'short' })})
+                             </div>
+                             {events.map(ev => {
+                                const colorObj = TECHO_COLORS[ev.color] || TECHO_COLORS.latte;
+                                let ownerLabel = '';
+                                if (ev.eventType === 'me') ownerLabel = roleSettings.role1;
+                                else if (ev.eventType === 'partner') ownerLabel = roleSettings.role2;
+                                else ownerLabel = '共同';
+
+                                return (
+                                  <div key={ev.id} onClick={() => openEditModal(null, ev)} className="p-3 rounded-xl border shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }}>
+                                     <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: colorObj.hex }}></div>
+                                     <div className="flex-1 min-w-0">
+                                        <div className="flex justify-between items-start">
+                                           <h4 className="font-bold truncate" style={{ color: theme.colors.text }}>{ev.title}</h4>
+                                           <span className="text-[10px] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>{ownerLabel}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>
+                                          {ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="font-bold font-num-huninn text-sm">{ev.startTime} - {ev.endTime}</span>}
+                                        </div>
+                                     </div>
+                                     <Edit className="w-4 h-4" style={{ color: theme.colors.secondaryText }} />
+                                  </div>
+                                )
+                             })}
+                          </div>
+                        ))
+                     )}
+                  </div>
+               </div>
+            </div>
+          )}
         </div>
       );
     };
 
     const root = createRoot(document.getElementById('root'));
-    root.render(<App />);
+    root.render(
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    );
   </script>
 </body>
 </html>
