@@ -20,17 +20,18 @@
     /* Google Fonts */
     @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Itim&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
 
-    /* Local Font */
+    /* Local Font: ChenYuluoyan-2.0-Thin.ttf */
     @font-face {
-      font-family: 'OpenHuninn';
-      src: url('jf-openhuninn-2.1.ttf') format('truetype');
+      font-family: 'ChenYuluoyan';
+      src: url('ChenYuluoyan-2.0-Thin.ttf') format('truetype');
       font-weight: normal;
       font-style: normal;
       font-display: swap; 
     }
     
     body { 
-      font-family: 'OpenHuninn', 'Zen Maru Gothic', sans-serif; 
+      /* Global default font set to ChenYuluoyan */
+      font-family: 'ChenYuluoyan', 'Zen Maru Gothic', sans-serif; 
       -webkit-tap-highlight-color: transparent;
       overscroll-behavior: none;
       user-select: none;
@@ -40,15 +41,13 @@
     input, textarea { user-select: text; }
 
     /* Font Classes */
-    .font-chenyu { font-family: 'OpenHuninn', cursive; } 
+    .font-chenyu { font-family: 'ChenYuluoyan', cursive; } 
     .font-itim { font-family: 'Itim', cursive; }
     .font-zen { font-family: 'Zen Maru Gothic', sans-serif; }
     .font-title { font-family: 'Caveat', cursive; }
     
-    /* Number Fonts */
-    .font-num-huninn { font-family: 'OpenHuninn', cursive; font-weight: 600; }
-    .font-num-itim { font-family: 'Itim', cursive; }
-    .font-num-zen { font-family: 'Zen Maru Gothic', sans-serif; font-weight: 700; }
+    /* Number Fonts - Added boldness for visibility since it's a Thin font */
+    .font-num-chenyu { font-family: 'ChenYuluoyan', cursive; font-weight: 600; }
 
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -137,7 +136,7 @@
   }
   </script>
 
-  <!-- [Fixed] Use a stable version of Babel Standalone to prevent .targets error -->
+  <!-- Stable Babel -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 </head>
 <body class="overflow-hidden" style="background-color: #F5F1E9; color: #5D4037;">
@@ -187,7 +186,7 @@
 
     // --- Fonts ---
     const FONTS = {
-      huninn: { id: 'huninn', name: '粉圓體 (圓潤)', bodyClass: 'font-huninn', numClass: 'font-num-huninn' },
+      chenyu: { id: 'chenyu', name: '辰宇落雁', bodyClass: 'font-chenyu', numClass: 'font-num-chenyu' },
     };
 
     // --- Themes ---
@@ -222,19 +221,32 @@
           modalBg: '#FFFFFF', modalHeaderBg: '#F9FAFB', inputBg: '#FFFFFF', inputBorder: '#9CA3AF', danger: '#B91C1C'
         }
       },
-      toystory: {
-        id: 'toystory',
-        name: '玩具總動員', 
+      onepiece: {
+        id: 'onepiece',
+        name: '航海王', // Soft Pastel Blue Theme
         colors: {
-          bg: '#E1F5FE', text: '#3E2723', secondaryText: '#5D4037', headerBg: '#FFF9C4',
-          gridHeaderBg: '#C8E6C9', gridBg: '#FFFFFF', gridEmptyBg: '#E1F5FE80', gridWeekendBg: '#FFF3E0',
-          border: '#90CAF9', accent: '#7E57C2', weekendText: '#D32F2F', weekdayText: '#1976D2',
-          modalBg: '#FFFFFF', modalHeaderBg: '#FFF9C4', inputBg: '#FFFFFF', inputBorder: '#90CAF9', danger: '#C62828'
+          bg: '#F0F9FF',          // Alice Blue (Very soft)
+          text: '#455A64',        // Blue Grey (Softer than black)
+          secondaryText: '#90A4AE', 
+          headerBg: '#E3F2FD',    // Soft Blue Header
+          gridHeaderBg: '#FFF59D', // Soft Straw Hat Yellow (Secondary ID)
+          gridBg: '#FFFFFF',      
+          gridEmptyBg: '#F0F9FF80', 
+          gridWeekendBg: '#FFEBEE', // Soft Red tint for weekends
+          border: '#81D4FA',      // Soft Blue Border
+          accent: '#4FC3F7',      // Soft Blue Accent
+          weekendText: '#E57373', // Soft Red
+          weekdayText: '#0277BD', // Ocean Blue
+          modalBg: '#FFFFFF',
+          modalHeaderBg: '#E3F2FD', 
+          inputBg: '#FFFFFF',
+          inputBorder: '#81D4FA', 
+          danger: '#EF5350'       // Soft Red
         }
       }
     };
 
-    // --- Palette ---
+    // --- Palette (Techo + Morandi + Pastels) ---
     const TECHO_COLORS = {
       smokedPlum: { name: '煙燻梅', hex: '#8E4A49', text: '#FFFFFF' },
       ironBlue: { name: '鐵藍灰', hex: '#546E7A', text: '#FFFFFF' },
@@ -258,25 +270,27 @@
       pastelGrey: { name: '晨霧灰', hex: '#CFD8DC', text: '#37474F' },    
     };
 
+    // Fallback Holidays (2025-2027)
     const FALLBACK_HOLIDAYS = {
+      // 2025
       "2025-01-01": { isHoliday: true, name: "元旦" },
       "2025-01-25": { isHoliday: true, name: "除夕" },
       "2025-01-26": { isHoliday: true, name: "春節" },
+      "2025-01-27": { isHoliday: true, name: "春節" },
+      "2025-01-28": { isHoliday: true, name: "春節" },
       "2025-02-28": { isHoliday: true, name: "和平紀念日" },
-      "2025-04-04": { isHoliday: true, name: "兒童節" },
-      "2025-04-05": { isHoliday: true, name: "清明節" },
-      "2025-05-01": { isHoliday: true, name: "勞動節" },
+      "2025-04-03": { isHoliday: true, name: "兒童節" },
+      "2025-04-04": { isHoliday: true, name: "清明節" },
       "2025-05-31": { isHoliday: true, name: "端午節" },
       "2025-10-06": { isHoliday: true, name: "中秋節" },
       "2025-10-10": { isHoliday: true, name: "國慶日" },
+      // 2026
       "2026-01-01": { isHoliday: true, name: "元旦" },
-      "2026-02-16": { isHoliday: true, name: "除夕" },
       "2026-02-17": { isHoliday: true, name: "春節" },
-      "2026-04-04": { isHoliday: true, name: "兒童節" },
-      "2026-04-05": { isHoliday: true, name: "清明節" },
-      "2026-06-19": { isHoliday: true, name: "端午節" },
-      "2026-09-25": { isHoliday: true, name: "中秋節" },
-      "2026-10-10": { isHoliday: true, name: "國慶日" }
+      // 2027
+      "2027-01-01": { isHoliday: true, name: "元旦" },
+      "2027-02-05": { isHoliday: true, name: "除夕" },
+      "2027-02-06": { isHoliday: true, name: "春節" },
     };
 
     const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
@@ -294,42 +308,20 @@
         super(props);
         this.state = { hasError: false, error: null };
       }
-
-      static getDerivedStateFromError(error) {
-        return { hasError: true, error };
-      }
-
-      componentDidCatch(error, errorInfo) {
-        console.error("UI Crash:", error, errorInfo);
-      }
-
-      handleReset = () => {
-         localStorage.clear();
-         window.location.reload();
-      }
-
+      static getDerivedStateFromError(error) { return { hasError: true, error }; }
+      componentDidCatch(error, errorInfo) { console.error("UI Crash:", error, errorInfo); }
+      handleReset = () => { localStorage.clear(); window.location.reload(); }
       render() {
         if (this.state.hasError) {
           return (
             <div className="h-dvh flex flex-col items-center justify-center bg-[#F5F1E9] text-[#5D4037] p-6 text-center font-sans">
-              <div className="bg-red-100 p-4 rounded-full mb-4">
-                <AlertTriangle className="w-10 h-10 text-red-500" />
-              </div>
+              <div className="bg-red-100 p-4 rounded-full mb-4"><AlertTriangle className="w-10 h-10 text-red-500" /></div>
               <h1 className="text-xl font-bold mb-2">哎呀，應用程式出錯了</h1>
               <p className="mb-6 text-sm opacity-70">可能是資料讀取錯誤或快取衝突。</p>
-              <div className="bg-white p-3 rounded-lg border border-red-200 mb-6 w-full max-w-xs overflow-auto text-left">
-                 <code className="text-[10px] text-red-500 font-mono break-all">{this.state.error && this.state.error.toString()}</code>
-              </div>
-              <button 
-                onClick={this.handleReset}
-                className="bg-[#5D4037] text-white px-6 py-3 rounded-xl shadow-md font-bold hover:opacity-90 transition-opacity active:scale-95"
-              >
-                重置並重新整理
-              </button>
+              <button onClick={this.handleReset} className="bg-[#5D4037] text-white px-6 py-3 rounded-xl shadow-md font-bold hover:opacity-90 transition-opacity active:scale-95">重置並重新整理</button>
             </div>
           );
         }
-
         return this.props.children;
       }
     }
@@ -357,23 +349,23 @@
        
        switch(type) {
          case 'cny': 
-           content = (<div className="text-center animate-bounce"><div className="text-9xl mb-4 animate-shake-crazy">🧨</div><div className="text-6xl animate-pulse">🧧</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">新年快樂!</h2></div>);
+           content = (<div className="text-center animate-bounce"><div className="text-9xl mb-4 animate-shake-crazy">🧨</div><div className="text-6xl animate-pulse">🧧</div><h2 className="text-white text-4xl font-bold mt-8 font-num-chenyu">新年快樂!</h2></div>);
            bgColor = 'bg-red-900/90';
            break;
          case 'dragon':
-           content = (<div className="text-center"><div className="text-9xl animate-float-slow">🐲</div><div className="text-6xl mt-4 animate-float-fast delay-100">🛶</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">端午安康</h2></div>);
+           content = (<div className="text-center"><div className="text-9xl animate-float-slow">🐲</div><div className="text-6xl mt-4 animate-float-fast delay-100">🛶</div><h2 className="text-white text-4xl font-bold mt-8 font-num-chenyu">端午安康</h2></div>);
            bgColor = 'bg-emerald-900/90';
            break;
          case 'moon':
-           content = (<div className="text-center"><div className="text-9xl animate-spin-slow">🌕</div><div className="text-6xl mt-4 animate-bounce">🐇</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">中秋團圓</h2></div>);
+           content = (<div className="text-center"><div className="text-9xl animate-spin-slow">🌕</div><div className="text-6xl mt-4 animate-bounce">🐇</div><h2 className="text-white text-4xl font-bold mt-8 font-num-chenyu">中秋團圓</h2></div>);
            bgColor = 'bg-slate-900/90';
            break;
          case 'xmas':
-           content = (<div className="text-center relative"><div className="absolute inset-0 pointer-events-none">{[...Array(10)].map((_, i) => (<div key={i} className="text-2xl absolute animate-snow-fall" style={{ left: `${Math.random()*100}%`, animationDelay: `${Math.random()*5}s` }}>❄️</div>))}</div><div className="text-9xl animate-sway">🎄</div><div className="text-6xl mt-2">🎅</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">Merry Christmas</h2></div>);
+           content = (<div className="text-center relative"><div className="absolute inset-0 pointer-events-none">{[...Array(10)].map((_, i) => (<div key={i} className="text-2xl absolute animate-snow-fall" style={{ left: `${Math.random()*100}%`, animationDelay: `${Math.random()*5}s` }}>❄️</div>))}</div><div className="text-9xl animate-sway">🎄</div><div className="text-6xl mt-2">🎅</div><h2 className="text-white text-4xl font-bold mt-8 font-num-chenyu">Merry Christmas</h2></div>);
            bgColor = 'bg-green-900/90';
            break;
          case 'love':
-           content = (<div className="text-center"><div className="text-9xl animate-heartbeat text-red-500">💖</div><div className="text-6xl mt-4 animate-float-slow">💌</div><h2 className="text-white text-4xl font-bold mt-8 font-num-huninn">Happy Valentine's</h2></div>);
+           content = (<div className="text-center"><div className="text-9xl animate-heartbeat text-red-500">💖</div><div className="text-6xl mt-4 animate-float-slow">💌</div><h2 className="text-white text-4xl font-bold mt-8 font-num-chenyu">Happy Valentine's</h2></div>);
            bgColor = 'bg-pink-900/90';
            break;
          default: return null;
@@ -390,7 +382,11 @@
       const [user, setUser] = useState(null);
       const [customUserId, setCustomUserId] = useState(localStorage.getItem('bibi_custom_uid') || '');
       
-      const [currentDate, setCurrentDate] = useState(new Date());
+      const [currentDate, setCurrentDate] = useState(() => {
+          const savedDate = localStorage.getItem('bibi_last_view_date');
+          return savedDate && !isNaN(new Date(savedDate).getTime()) ? new Date(savedDate) : new Date();
+      });
+
       const [slideDirection, setSlideDirection] = useState(''); 
       const [animationKey, setAnimationKey] = useState(0); 
       
@@ -401,13 +397,15 @@
       const [currentThemeId, setCurrentThemeId] = useState(localStorage.getItem('bibi_theme') || 'original');
       const theme = THEMES[currentThemeId] || THEMES.original;
 
-      // Font State (Locked to Huninn)
-      const currentFont = FONTS.huninn;
+      // Font State (Locked to ChenYuluoyan)
+      const currentFont = FONTS.chenyu;
 
       const [loading, setLoading] = useState(true);
       const [isSaving, setIsSaving] = useState(false); 
       const [toasts, setToasts] = useState([]);
       const [holidayType, setHolidayType] = useState(null);
+      
+      // Initial Holiday Data
       const [holidayData, setHolidayData] = useState(() => {
         const initialData = {};
         Object.entries(FALLBACK_HOLIDAYS).forEach(([date, info]) => {
@@ -451,6 +449,10 @@
         setToasts(prev => [...prev, { id, message, type }]);
         setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 3000);
       };
+      
+      useEffect(() => {
+        localStorage.setItem('bibi_last_view_date', currentDate.toISOString());
+      }, [currentDate]);
 
       useEffect(() => {
         const initAuth = async () => {
@@ -505,12 +507,30 @@
         setTimeout(checkHoliday, 1000);
       }, [holidayData]);
 
+      // [FIX] Optimized Holiday Fetch with Fallback Generation
       useEffect(() => {
         const currentYear = currentDate.getFullYear();
+        
+        const generateFixedHolidays = (y) => ({
+            [`${y}-01-01`]: { isHoliday: true, name: "元旦" },
+            [`${y}-02-28`]: { isHoliday: true, name: "和平紀念日" },
+            [`${y}-04-04`]: { isHoliday: true, name: "兒童節" },
+            [`${y}-04-05`]: { isHoliday: true, name: "清明節" },
+            [`${y}-05-01`]: { isHoliday: true, name: "勞動節" },
+            [`${y}-10-10`]: { isHoliday: true, name: "國慶日" },
+            [`${y}-12-25`]: { isHoliday: false, name: "聖誕節" },
+            [`${y}-02-14`]: { isHoliday: false, name: "情人節" },
+        });
+
         const fetchHolidays = async () => {
           try {
+            console.log(`Fetching holidays for ${currentYear} from API...`);
             const response = await fetch(`https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/${currentYear}.json`);
-            if (!response.ok) return;
+            
+            if (!response.ok) {
+                throw new Error(`API Error: ${response.status}`);
+            }
+            
             const rawData = await response.json();
             const formatted = rawData.reduce((acc, curr) => {
               const dStr = curr.date;
@@ -520,9 +540,24 @@
               }
               return acc;
             }, {});
-            setHolidayData(prev => ({ ...prev, [currentYear]: { ...(prev[currentYear] || {}), ...formatted } }));
-          } catch (err) { console.error(err); }
+            
+            // Merge API data
+            setHolidayData(prev => ({ ...prev, [currentYear]: formatted }));
+            console.log(`Loaded holidays for ${currentYear}`);
+
+          } catch (err) { 
+              console.warn(`Failed to fetch holidays for ${currentYear}, generating fixed holidays fallback.`, err);
+              const fixedHolidays = generateFixedHolidays(currentYear);
+              setHolidayData(prev => {
+                  const existingData = prev[currentYear] || {};
+                  return { 
+                      ...prev, 
+                      [currentYear]: { ...fixedHolidays, ...existingData } 
+                  };
+              });
+          }
         };
+        
         fetchHolidays();
       }, [currentDate.getFullYear()]);
 
@@ -879,16 +914,16 @@
             })}
           </div>
 
-          {/* Settings Modal */}
+          {/* Settings Modal - Floating Centered */}
           {isSettingsModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
                <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                  <div className="p-6 space-y-5 overflow-y-auto">
-                    <div className="flex justify-between items-center pb-2 border-b" style={{ borderColor: theme.colors.border }}>
-                      <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Settings className="w-5 h-5"/> 設定 & 同步</h3>
-                      <button onClick={() => setIsSettingsModalOpen(false)} className="p-1 rounded-full hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
-                    </div>
-                    
+                  <div className="px-5 py-4 border-b flex justify-between items-center shrink-0 flex-none" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+                     <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Settings className="w-5 h-5"/> 設定 & 同步</h3>
+                     <button onClick={() => setIsSettingsModalOpen(false)} className="p-1 rounded-full hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
+                  </div>
+                  
+                  <div className="p-6 space-y-5 overflow-y-auto flex-1">
                     {/* Theme Switcher */}
                     <div className="space-y-2">
                       <label className="text-xs font-bold uppercase flex items-center gap-1" style={{ color: theme.colors.secondaryText }}><Palette className="w-3 h-3"/> 主題風格</label>
@@ -969,11 +1004,11 @@
             </div>
           )}
 
-          {/* Day View Modal */}
+          {/* Day View Modal - Floating Centered */}
           {isDayViewModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                  <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+               <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="px-5 py-4 border-b flex justify-between items-center shrink-0 flex-none" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <div className="flex items-baseline gap-2">
                        <span className={`text-2xl font-bold font-num-huninn`} style={{ color: theme.colors.text }}>{viewingDate}</span>
                        <span className="text-xs font-bold uppercase" style={{ color: theme.colors.secondaryText }}>
@@ -1013,25 +1048,25 @@
                         })
                      )}
                   </div>
-                  <div className="p-4 border-t shrink-0" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="p-4 border-t shrink-0 flex-none" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                      <button onClick={() => openEditModal(viewingDate)} className="w-full text-white py-3 rounded-xl shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 hover:opacity-90" style={{ backgroundColor: theme.colors.accent }}><Plus className="w-5 h-5" /> 新增行程</button>
                   </div>
                </div>
             </div>
           )}
 
-          {/* Edit Modal */}
+          {/* Edit Modal - Floating Centered */}
           {isEditModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-              <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                <div className="px-5 py-4 border-b flex justify-between items-center" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+              <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                <div className="px-5 py-4 border-b flex justify-between items-center shrink-0 flex-none" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                    <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}><Leaf className="w-4 h-4" style={{ color: theme.colors.accent }} /> {editingId ? '編輯行程' : '建立行程'}</h3>
                    <div className="flex gap-2">
                      {editingId && <button onClick={deleteEvent} className="p-1.5 hover:opacity-70 rounded-full transition-colors active:scale-95" style={{ color: theme.colors.secondaryText }}><Trash2 className="w-4 h-4" /></button>}
                      <button onClick={() => setIsEditModalOpen(false)} className="p-1.5 hover:opacity-70 rounded-full transition-colors active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-4 h-4" /></button>
                    </div>
                 </div>
-                <div className="p-6 space-y-5 overflow-y-auto">
+                <div className="p-6 space-y-5 overflow-y-auto flex-1">
                   <div className="flex gap-2 p-1 rounded-xl" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
                      {['me', 'partner', 'common'].map(type => (
                         <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('tea'); if(type === 'partner') setFormColor('sesame'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'shadow' : 'opacity-60'}`} style={{ backgroundColor: formEventType === type ? theme.colors.modalBg : 'transparent', color: formEventType === type ? theme.colors.text : theme.colors.secondaryText }}>
@@ -1072,7 +1107,7 @@
                     ))}
                   </div>
                 </div>
-                <div className="px-5 py-4 border-t flex justify-end" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+                <div className="px-5 py-4 border-t flex justify-end shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                   <button onClick={saveEvent} disabled={isSaving} className="text-white text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2 disabled:opacity-50" style={{ backgroundColor: theme.colors.accent }}>
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4" />} 
                     {isSaving ? '儲存中...' : '儲存行程'}
@@ -1082,11 +1117,11 @@
             </div>
           )}
           
-          {/* [NEW] Upcoming Events Modal (Floating) */}
+          {/* [NEW] Upcoming Events Modal (Floating Centered) */}
           {isUpcomingModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
-               <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border flex flex-col max-h-[80vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                  <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+               <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                  <div className="px-5 py-4 border-b flex justify-between items-center shrink-0 flex-none" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}>
                        <List className="w-5 h-5" style={{ color: theme.colors.accent }} /> 接下來的行程
                      </h3>
