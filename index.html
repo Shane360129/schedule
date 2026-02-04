@@ -20,18 +20,18 @@
     /* Google Fonts */
     @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Itim&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
 
-    /* Local Font: ChenYuluoyan-2.0-Thin.ttf */
+    /* Local Font: NaikaiFont-SemiBold.ttf */
     @font-face {
-      font-family: 'ChenYuluoyan';
-      src: url('ChenYuluoyan-2.0-Thin.ttf') format('truetype');
+      font-family: 'NaikaiFont';
+      src: url('NaikaiFont-SemiBold.ttf') format('truetype');
       font-weight: normal;
       font-style: normal;
       font-display: swap; 
     }
     
     body { 
-      /* Global default font set to ChenYuluoyan */
-      font-family: 'ChenYuluoyan', 'Zen Maru Gothic', sans-serif; 
+      /* Global default font set to NaikaiFont */
+      font-family: 'NaikaiFont', 'Zen Maru Gothic', sans-serif; 
       -webkit-tap-highlight-color: transparent;
       overscroll-behavior: none;
       user-select: none;
@@ -41,13 +41,13 @@
     input, textarea { user-select: text; }
 
     /* Font Classes */
-    .font-chenyu { font-family: 'ChenYuluoyan', cursive; } 
+    .font-naikai { font-family: 'NaikaiFont', cursive; } 
     .font-itim { font-family: 'Itim', cursive; }
     .font-zen { font-family: 'Zen Maru Gothic', sans-serif; }
     .font-title { font-family: 'Caveat', cursive; }
     
-    /* Number Fonts - Added boldness for visibility since it's a Thin font */
-    .font-num-chenyu { font-family: 'ChenYuluoyan', cursive; font-weight: 600; }
+    /* Number Fonts */
+    .font-num-naikai { font-family: 'NaikaiFont', cursive; }
 
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -186,7 +186,7 @@
 
     // --- Fonts ---
     const FONTS = {
-      chenyu: { id: 'chenyu', name: '辰宇落雁', bodyClass: 'font-chenyu', numClass: 'font-num-chenyu' },
+      naikai: { id: 'naikai', name: '內海字體', bodyClass: 'font-naikai', numClass: 'font-num-naikai' },
     };
 
     // --- Themes ---
@@ -349,23 +349,23 @@
        
        switch(type) {
          case 'cny': 
-           content = (<div className="text-center animate-bounce"><div className="text-9xl mb-4 animate-shake-crazy">🧨</div><div className="text-6xl animate-pulse">🧧</div><h2 className="text-white text-4xl font-bold mt-8 font-num-chenyu">新年快樂!</h2></div>);
+           content = (<div className="text-center animate-bounce"><div className="text-9xl mb-4 animate-shake-crazy">🧨</div><div className="text-6xl animate-pulse">🧧</div><h2 className="text-white text-4xl font-bold mt-8 font-num-naikai">新年快樂!</h2></div>);
            bgColor = 'bg-red-900/90';
            break;
          case 'dragon':
-           content = (<div className="text-center"><div className="text-9xl animate-float-slow">🐲</div><div className="text-6xl mt-4 animate-float-fast delay-100">🛶</div><h2 className="text-white text-4xl font-bold mt-8 font-num-chenyu">端午安康</h2></div>);
+           content = (<div className="text-center"><div className="text-9xl animate-float-slow">🐲</div><div className="text-6xl mt-4 animate-float-fast delay-100">🛶</div><h2 className="text-white text-4xl font-bold mt-8 font-num-naikai">端午安康</h2></div>);
            bgColor = 'bg-emerald-900/90';
            break;
          case 'moon':
-           content = (<div className="text-center"><div className="text-9xl animate-spin-slow">🌕</div><div className="text-6xl mt-4 animate-bounce">🐇</div><h2 className="text-white text-4xl font-bold mt-8 font-num-chenyu">中秋團圓</h2></div>);
+           content = (<div className="text-center"><div className="text-9xl animate-spin-slow">🌕</div><div className="text-6xl mt-4 animate-bounce">🐇</div><h2 className="text-white text-4xl font-bold mt-8 font-num-naikai">中秋團圓</h2></div>);
            bgColor = 'bg-slate-900/90';
            break;
          case 'xmas':
-           content = (<div className="text-center relative"><div className="absolute inset-0 pointer-events-none">{[...Array(10)].map((_, i) => (<div key={i} className="text-2xl absolute animate-snow-fall" style={{ left: `${Math.random()*100}%`, animationDelay: `${Math.random()*5}s` }}>❄️</div>))}</div><div className="text-9xl animate-sway">🎄</div><div className="text-6xl mt-2">🎅</div><h2 className="text-white text-4xl font-bold mt-8 font-num-chenyu">Merry Christmas</h2></div>);
+           content = (<div className="text-center relative"><div className="absolute inset-0 pointer-events-none">{[...Array(10)].map((_, i) => (<div key={i} className="text-2xl absolute animate-snow-fall" style={{ left: `${Math.random()*100}%`, animationDelay: `${Math.random()*5}s` }}>❄️</div>))}</div><div className="text-9xl animate-sway">🎄</div><div className="text-6xl mt-2">🎅</div><h2 className="text-white text-4xl font-bold mt-8 font-num-naikai">Merry Christmas</h2></div>);
            bgColor = 'bg-green-900/90';
            break;
          case 'love':
-           content = (<div className="text-center"><div className="text-9xl animate-heartbeat text-red-500">💖</div><div className="text-6xl mt-4 animate-float-slow">💌</div><h2 className="text-white text-4xl font-bold mt-8 font-num-chenyu">Happy Valentine's</h2></div>);
+           content = (<div className="text-center"><div className="text-9xl animate-heartbeat text-red-500">💖</div><div className="text-6xl mt-4 animate-float-slow">💌</div><h2 className="text-white text-4xl font-bold mt-8 font-num-naikai">Happy Valentine's</h2></div>);
            bgColor = 'bg-pink-900/90';
            break;
          default: return null;
@@ -397,8 +397,8 @@
       const [currentThemeId, setCurrentThemeId] = useState(localStorage.getItem('bibi_theme') || 'original');
       const theme = THEMES[currentThemeId] || THEMES.original;
 
-      // Font State (Locked to ChenYuluoyan)
-      const currentFont = FONTS.chenyu;
+      // Font State (Locked to NaikaiFont)
+      const currentFont = FONTS.naikai;
 
       const [loading, setLoading] = useState(true);
       const [isSaving, setIsSaving] = useState(false); 
@@ -824,7 +824,13 @@
           <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] z-10 transition-colors duration-300" style={{ backgroundColor: theme.colors.headerBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
             <div className="flex items-center gap-3">
                <div onClick={openUpcomingList} className="cursor-pointer mr-1 active:opacity-70 transition-opacity">
-                 <img src="icon.png" className="w-8 h-8 object-contain" alt="Logo" />
+                 {currentThemeId === 'onepiece' ? (
+                   <svg className="w-8 h-8 drop-shadow-sm animate-pulse" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                     <image href="hat.svg" width="24" height="24" />
+                   </svg>
+                 ) : (
+                   <img src="icon.png" className="w-8 h-8 object-contain" alt="Logo" />
+                 )}
                </div>
                <div onClick={handleToday} className="cursor-pointer active:opacity-70 transition-opacity">
                  <h1 className="text-xl font-title font-bold tracking-tight text-2xl" style={{ color: theme.colors.text }}>BiBi❣</h1>
@@ -834,7 +840,7 @@
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1 p-1.5 rounded-2xl border backdrop-blur-sm mr-2" style={{ backgroundColor: theme.colors.gridEmptyBg, borderColor: theme.colors.border + '20' }}>
                 <button onClick={handlePrevMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronLeft className="w-5 h-5" /></button>
-                <span className={`text-xl font-bold font-num-huninn min-w-[80px] text-center`} style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
+                <span className={`text-xl font-bold font-num-chenyu min-w-[80px] text-center`} style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
                 <button onClick={handleNextMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronRight className="w-5 h-5" /></button>
               </div>
               <button onClick={openSettings} className="p-2.5 rounded-xl shadow-sm border hover:brightness-95 transition-all active:scale-95" style={{ backgroundColor: theme.colors.modalBg, color: theme.colors.secondaryText, borderColor: theme.colors.border }}><Settings className="w-5 h-5" /></button>
@@ -843,7 +849,7 @@
 
           <div className="flex-none grid grid-cols-7" style={{ backgroundColor: theme.colors.gridHeaderBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
             {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d, i) => (
-              <div key={i} className="py-2 text-center text-[12px] font-bold font-num-huninn tracking-widest" style={{ color: (i === 0 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
+              <div key={i} className="py-2 text-center text-[12px] font-bold font-num-chenyu tracking-widest" style={{ color: (i === 0 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
             ))}
           </div>
 
@@ -874,7 +880,7 @@
                   {hasDate && (
                     <div className="flex flex-col items-center pt-1 mb-0.5 px-0 min-h-[38px] justify-start">
                        <span 
-                         className={`text-lg sm:text-xl font-bold font-num-huninn h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'shadow-md' : ''}`}
+                         className={`text-lg sm:text-xl font-bold font-num-chenyu h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'shadow-md' : ''}`}
                          style={{ backgroundColor: isToday ? theme.colors.accent : 'transparent', color: isToday ? '#fff' : dateTextColor }}
                        >
                          {cell.day}
@@ -900,14 +906,14 @@
                         <div 
                             key={ev.id} 
                             onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }} 
-                            className={`text-[10px] font-bold font-num-huninn sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 active:scale-95 relative z-10 ${marginClass}`}
+                            className={`text-[10px] font-bold font-num-chenyu sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 active:scale-95 relative z-10 ${marginClass}`}
                             style={{ backgroundColor: colorObj.hex, color: colorObj.text }}
                         >
-                          {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className="text-[10px] font-bold font-num-huninn mr-1">{ev.startTime}</span>}{ev.title}</span>}
+                          {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className="text-[10px] font-bold font-num-chenyu mr-1">{ev.startTime}</span>}{ev.title}</span>}
                         </div>
                       );
                     })}
-                    {segments.length > 4 && <div className="text-[10px] font-num-huninn text-center leading-none mt-auto font-bold" style={{ color: theme.colors.weekdayText }}>+{segments.length - 4}</div>}
+                    {segments.length > 4 && <div className="text-[10px] font-num-chenyu text-center leading-none mt-auto font-bold" style={{ color: theme.colors.weekdayText }}>+{segments.length - 4}</div>}
                   </div>
                 </div>
               )
@@ -1010,7 +1016,7 @@
                <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border flex flex-col max-h-[90vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
                   <div className="px-5 py-4 border-b flex justify-between items-center shrink-0 flex-none" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
                      <div className="flex items-baseline gap-2">
-                       <span className={`text-2xl font-bold font-num-huninn`} style={{ color: theme.colors.text }}>{viewingDate}</span>
+                       <span className={`text-2xl font-bold font-num-chenyu`} style={{ color: theme.colors.text }}>{viewingDate}</span>
                        <span className="text-xs font-bold uppercase" style={{ color: theme.colors.secondaryText }}>
                         {viewingDate && !isNaN(new Date(viewingDate).getTime()) 
                            ? new Date(viewingDate + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'long' }) 
@@ -1040,7 +1046,7 @@
                                       <h4 className="font-bold truncate" style={{ color: theme.colors.text }}>{ev.title}</h4>
                                       <span className="text-[10px] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>{ownerLabel}</span>
                                    </div>
-                                   <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>{ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="font-bold font-num-huninn text-sm">{ev.startTime} - {ev.endTime}</span>}</div>
+                                   <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>{ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="font-bold font-num-chenyu text-sm">{ev.startTime} - {ev.endTime}</span>}</div>
                                 </div>
                                 <Edit className="w-4 h-4" style={{ color: theme.colors.secondaryText }} />
                              </div>
@@ -1083,13 +1089,13 @@
                      <div className="grid grid-cols-[auto_1fr] gap-2 items-center text-sm">
                         <span className="text-xs font-bold" style={{ color: theme.colors.secondaryText }}>開始</span>
                         <div className="flex gap-2">
-                           <input type="date" value={formStartDate} onChange={e => setFormStartDate(e.target.value)} className="border rounded px-2 py-1 w-full text-lg font-bold font-num-huninn" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
-                           {!formIsAllDay && <input type="time" value={formStartTime} onChange={handleStartTimeChange} className="border rounded px-1 py-1 text-lg font-bold font-num-huninn" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
+                           <input type="date" value={formStartDate} onChange={e => setFormStartDate(e.target.value)} className="border rounded px-2 py-1 w-full text-lg font-bold font-num-chenyu" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                           {!formIsAllDay && <input type="time" value={formStartTime} onChange={handleStartTimeChange} className="border rounded px-1 py-1 text-lg font-bold font-num-chenyu" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
                         </div>
                         <span className="text-xs font-bold" style={{ color: theme.colors.secondaryText }}>結束</span>
                         <div className="flex gap-2">
-                           <input type="date" value={formEndDate} onChange={e => setFormEndDate(e.target.value)} className="border rounded px-2 py-1 w-full text-lg font-bold font-num-huninn" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
-                           {!formIsAllDay && <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)} className="border rounded px-1 py-1 text-lg font-bold font-num-huninn" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
+                           <input type="date" value={formEndDate} onChange={e => setFormEndDate(e.target.value)} className="border rounded px-2 py-1 w-full text-lg font-bold font-num-chenyu" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                           {!formIsAllDay && <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)} className="border rounded px-1 py-1 text-lg font-bold font-num-chenyu" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />}
                         </div>
                      </div>
                   </div>
@@ -1155,7 +1161,7 @@
                                            <span className="text-[10px] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>{ownerLabel}</span>
                                         </div>
                                         <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>
-                                          {ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="font-bold font-num-huninn text-sm">{ev.startTime} - {ev.endTime}</span>}
+                                          {ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="font-bold font-num-chenyu text-sm">{ev.startTime} - {ev.endTime}</span>}
                                         </div>
                                      </div>
                                      <Edit className="w-4 h-4" style={{ color: theme.colors.secondaryText }} />
