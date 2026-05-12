@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'bibi-v1';
+const CACHE_VERSION = 'bibi-v2';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const CDN_CACHE = `${CACHE_VERSION}-cdn`;
 
