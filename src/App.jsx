@@ -292,9 +292,10 @@ const App = () => {
   const touchStartX = useRef(null);
   const touchEndX = useRef(null);
   const minSwipeDistance = 50;
+  const toastIdRef = useRef(0);
 
   const addToast = (message, type = 'success') => {
-    const id = Date.now();
+    const id = ++toastIdRef.current;
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 3000);
   };
@@ -322,6 +323,19 @@ const App = () => {
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (isEditModalOpen) setIsEditModalOpen(false);
+      else if (isUpcomingModalOpen) setIsUpcomingModalOpen(false);
+      else if (isDayViewModalOpen) setIsDayViewModalOpen(false);
+      else if (isSettingsModalOpen) setIsSettingsModalOpen(false);
+      else if (holidayType) setHolidayType(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isEditModalOpen, isUpcomingModalOpen, isDayViewModalOpen, isSettingsModalOpen, holidayType]);
 
   const handleInstallApp = async () => {
     if (!deferredPrompt) return;
@@ -564,12 +578,17 @@ const App = () => {
   const saveEvent = async () => {
     triggerHaptic();
     const targetUid = customUserId || user?.uid;
-    if (!targetUid || !formTitle || !formStartDate || !formEndDate) return;
-    
-    setIsSaving(true); 
+    if (!targetUid) { addToast('尚未登入，請重新整理頁面', 'error'); return; }
+    if (!formTitle.trim()) { addToast('請輸入行程標題', 'error'); return; }
+    if (!formStartDate || !formEndDate) { addToast('請選擇開始與結束日期', 'error'); return; }
+
+    setIsSaving(true);
     let start = formStartDate;
     let end = formEndDate;
-    if (new Date(start) > new Date(end)) [start, end] = [end, start];
+    if (new Date(start) > new Date(end)) {
+      [start, end] = [end, start];
+      addToast('開始日晚於結束日，已自動互換', 'error');
+    }
 
     const eventData = {
       title: formTitle, description: formDesc,
@@ -601,13 +620,16 @@ const App = () => {
   const deleteEvent = async () => {
     triggerHaptic();
     const targetUid = customUserId || user?.uid;
-    if (targetUid && editingId) {
-      try {
-        await deleteDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_events', editingId));
-        setIsEditModalOpen(false);
-        if(viewingDate) setIsDayViewModalOpen(true);
-        addToast('行程已刪除 🗑️');
-      } catch (e) { console.error("Delete Error:", e); }
+    if (!targetUid || !editingId) return;
+    if (!window.confirm(`確定要刪除「${formTitle || '此行程'}」嗎？`)) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_events', editingId));
+      setIsEditModalOpen(false);
+      if (viewingDate) setIsDayViewModalOpen(true);
+      addToast('行程已刪除 🗑️');
+    } catch (e) {
+      console.error("Delete Error:", e);
+      addToast('刪除失敗，請重試', 'error');
     }
   };
 
@@ -752,11 +774,23 @@ const App = () => {
                         className={`text-[10px] font-bold font-num-naikai sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 active:scale-95 relative z-10 ${marginClass}`}
                         style={{ backgroundColor: colorObj.hex, color: colorObj.text }}
                     >
-                      {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className="text-[10px] font-bold font-num-naikai mr-1">{ev.startTime}</span>}{ev.title}</span>}
+                      <span className="truncate w-full font-medium leading-none flex items-center gap-1">
+                        {ev.isStart && !ev.isAllDay && ev.startTime && (
+                          <span className="text-[10px] font-bold font-num-naikai mr-1">{ev.startTime}</span>
+                        )}
+                        {ev.title}
+                      </span>
                     </div>
                   );
                 })}
-                {segments.length > 4 && <div className="text-[10px] font-num-naikai text-center leading-none mt-auto font-bold" style={{ color: theme.colors.weekdayText }}>+{segments.length - 4}</div>}
+                {segments.length > 4 && (
+                  <div
+                    className="text-[10px] font-num-naikai text-center leading-none mt-auto font-bold mx-1 py-0.5 rounded transition-colors"
+                    style={{ color: theme.colors.weekdayText, backgroundColor: theme.colors.gridHeaderBg }}
+                  >
+                    +{segments.length - 4} 個
+                  </div>
+                )}
               </div>
             </div>
           )
@@ -782,10 +816,10 @@ const App = () => {
                         key={t.id} 
                         onClick={() => changeTheme(t.id)}
                         className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition-all active:scale-95 ${currentThemeId === t.id ? 'ring-2 ring-offset-1' : 'hover:scale-105'}`}
-                        style={{ 
-                          backgroundColor: t.colors.bg, 
+                        style={{
+                          backgroundColor: t.colors.bg,
                           borderColor: t.colors.border,
-                          ringColor: theme.colors.accent 
+                          '--tw-ring-color': theme.colors.accent
                         }}
                       >
                         <div className="w-6 h-6 rounded-full border shadow-sm" style={{ backgroundColor: t.colors.accent }}></div>
@@ -882,16 +916,19 @@ const App = () => {
                        else ownerLabel = '共同';
 
                        return (
-                         <div key={ev.id} onClick={() => openEditModal(null, ev)} className="p-3 rounded-xl border shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }}>
-                            <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: colorObj.hex }}></div>
+                         <div key={ev.id} onClick={() => openEditModal(null, ev)} className="p-3 rounded-xl border shadow-sm flex items-start gap-3 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }}>
+                            <div className="w-3 h-3 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: colorObj.hex }}></div>
                             <div className="flex-1 min-w-0">
                                <div className="flex justify-between items-start">
                                   <h4 className="font-bold truncate" style={{ color: theme.colors.text }}>{ev.title}</h4>
                                   <span className="text-[10px] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>{ownerLabel}</span>
                                </div>
                                <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>{ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="font-bold font-num-naikai text-sm">{ev.startTime} - {ev.endTime}</span>}</div>
+                               {ev.description && (
+                                 <p className="mt-1.5 text-xs whitespace-pre-wrap break-words leading-snug" style={{ color: theme.colors.secondaryText }}>{ev.description}</p>
+                               )}
                             </div>
-                            <Edit className="w-4 h-4" style={{ color: theme.colors.secondaryText }} />
+                            <Edit className="w-4 h-4 mt-1 shrink-0" style={{ color: theme.colors.secondaryText }} />
                          </div>
                        )
                     })
@@ -950,7 +987,7 @@ const App = () => {
               {/* Fixed Color Picker */}
               <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar items-center">
                 {Object.entries(TECHO_COLORS).map(([key, style]) => (
-                  <button key={key} onClick={() => setFormColor(key)} className={`w-8 h-8 rounded-full shrink-0 transition-transform flex items-center justify-center ${formColor === key ? 'ring-2 ring-offset-2 scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}`} style={{ backgroundColor: style.hex, ringColor: theme.colors.secondaryText }}>
+                  <button key={key} onClick={() => setFormColor(key)} className={`w-8 h-8 rounded-full shrink-0 transition-transform flex items-center justify-center ${formColor === key ? 'ring-2 ring-offset-2 scale-110' : 'hover:scale-105 opacity-80 hover:opacity-100'}`} style={{ backgroundColor: style.hex, '--tw-ring-color': theme.colors.secondaryText }}>
                     {formColor === key && <CheckSquare className="w-4 h-4 drop-shadow-md" style={{ color: style.text }} />}
                   </button>
                 ))}
