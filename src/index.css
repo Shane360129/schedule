@@ -1,0 +1,116 @@
+/* Google Fonts (must precede @tailwind directives) */
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Itim&family=Zen+Maru+Gothic:wght@300;400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Local Font: NaikaiFont-SemiBold (woff2 subset).
+   Path is root-relative; Vite prepends `base` at build time. */
+@font-face {
+  font-family: 'NaikaiFont';
+  src: url('/NaikaiFont-SemiBold.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+body {
+  font-family: 'NaikaiFont', 'Zen Maru Gothic', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+/* Font Classes */
+.font-naikai { font-family: 'NaikaiFont', cursive; }
+.font-itim { font-family: 'Itim', cursive; }
+.font-zen { font-family: 'Zen Maru Gothic', sans-serif; }
+.font-title { font-family: 'Caveat', cursive; }
+
+/* Number Fonts */
+.font-num-naikai { font-family: 'NaikaiFont', cursive; font-weight: 600; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Animations */
+.slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.slide-in-left { animation: slideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+
+@keyframes slideInRight {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes slideInLeft {
+  from { transform: translateX(-20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.toast-enter { animation: toastEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes toastEnter {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-enter { animation: modalZoomIn 0.2s ease-out forwards; }
+@keyframes modalZoomIn {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.animate-float-slow { animation: float 3s ease-in-out infinite; }
+.animate-float-fast { animation: float 1.5s ease-in-out infinite; }
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
+}
+
+.animate-shake-crazy { animation: shakeCrazy 0.5s ease-in-out infinite; }
+@keyframes shakeCrazy {
+  0%, 100% { transform: rotate(-5deg); }
+  50% { transform: rotate(5deg); }
+}
+
+.animate-spin-slow { animation: spin 8s linear infinite; }
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+.animate-heartbeat { animation: heartbeat 1.2s ease-in-out infinite; }
+@keyframes heartbeat {
+  0% { transform: scale(1); }
+  14% { transform: scale(1.3); }
+  28% { transform: scale(1); }
+  42% { transform: scale(1.3); }
+  70% { transform: scale(1); }
+}
+
+.animate-snow-fall { animation: snowFall 5s linear infinite; }
+@keyframes snowFall {
+  0% { transform: translateY(-10vh) translateX(0); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(110vh) translateX(20px); opacity: 0; }
+}
+
+.initial-loader {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100dvh;
+  background-color: #F5F1E9;
+  color: #C2A385;
+}
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

@@ -1,18 +1,17 @@
-const CACHE_VERSION = 'bibi-v2';
+const CACHE_VERSION = 'bibi-v3';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
-const CDN_CACHE = `${CACHE_VERSION}-cdn`;
+const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
+
+const BASE = self.registration.scope;
 
 const SHELL_ASSETS = [
-  './',
-  './index.html',
-  './NaikaiFont-SemiBold.woff2',
-  './icon.png',
+  BASE,
+  `${BASE}index.html`,
+  `${BASE}NaikaiFont-SemiBold.woff2`,
+  `${BASE}icon.png`,
 ];
 
 const CDN_HOSTS = [
-  'esm.sh',
-  'cdn.tailwindcss.com',
-  'cdnjs.cloudflare.com',
   'fonts.googleapis.com',
   'fonts.gstatic.com',
   'www.gstatic.com',
@@ -21,7 +20,8 @@ const CDN_HOSTS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL_ASSETS))
+    caches.open(SHELL_CACHE)
+      .then((cache) => Promise.allSettled(SHELL_ASSETS.map((u) => cache.add(u))))
       .then(() => self.skipWaiting())
   );
 });
@@ -57,7 +57,7 @@ self.addEventListener('fetch', (event) => {
         return fetch(req).then((res) => {
           if (res.ok) {
             const copy = res.clone();
-            caches.open(SHELL_CACHE).then((c) => c.put(req, copy));
+            caches.open(RUNTIME_CACHE).then((c) => c.put(req, copy));
           }
           return res;
         }).catch(() => cached);
@@ -68,7 +68,7 @@ self.addEventListener('fetch', (event) => {
 
   if (CDN_HOSTS.some((host) => url.hostname.endsWith(host))) {
     event.respondWith(
-      caches.open(CDN_CACHE).then((cache) =>
+      caches.open(RUNTIME_CACHE).then((cache) =>
         cache.match(req).then((cached) => {
           const networkFetch = fetch(req).then((res) => {
             if (res.ok) cache.put(req, res.clone());
