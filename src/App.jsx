@@ -752,7 +752,12 @@ const App = () => {
                         className={`text-[10px] font-bold font-num-naikai sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 active:scale-95 relative z-10 ${marginClass}`}
                         style={{ backgroundColor: colorObj.hex, color: colorObj.text }}
                     >
-                      {(ev.isStart || ev.isSunday) && <span className="truncate w-full font-medium leading-none flex items-center gap-1">{!ev.isAllDay && ev.startTime && <span className="text-[10px] font-bold font-num-naikai mr-1">{ev.startTime}</span>}{ev.title}</span>}
+                      <span className="truncate w-full font-medium leading-none flex items-center gap-1">
+                        {ev.isStart && !ev.isAllDay && ev.startTime && (
+                          <span className="text-[10px] font-bold font-num-naikai mr-1">{ev.startTime}</span>
+                        )}
+                        {ev.title}
+                      </span>
                     </div>
                   );
                 })}
