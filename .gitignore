@@ -5,3 +5,10 @@ dist
 .env
 .env.local
 .vite
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+functions/node_modules/
+functions/.env*
