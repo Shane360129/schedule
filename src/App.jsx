@@ -867,6 +867,52 @@ const App = () => {
 
                 <hr style={{ borderColor: theme.colors.border }} />
 
+                {/* LINE 通知綁定 Section */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase flex items-center gap-1" style={{ color: theme.colors.secondaryText }}>
+                    💬 LINE 通知
+                  </label>
+                  <p className="text-[11px] leading-snug" style={{ color: theme.colors.secondaryText }}>
+                    1. 加 BiBi Schedule Bot 為好友<br/>
+                    2. 點下方按鈕複製綁定指令<br/>
+                    3. 在 LINE 對 Bot 貼上並送出
+                  </p>
+                  <button
+                    onClick={() => {
+                      const targetUid = customUserId || user?.uid || '';
+                      if (!targetUid) { addToast('尚未登入，請重新整理頁面', 'error'); return; }
+                      const cmd = `綁定 ${targetUid}`;
+                      if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(cmd).then(
+                          () => addToast('已複製，貼到 LINE Bot 對話即可 ✨'),
+                          () => addToast('複製失敗，請手動複製 ID', 'error')
+                        );
+                      } else {
+                        try {
+                          const ta = document.createElement('textarea');
+                          ta.value = cmd;
+                          document.body.appendChild(ta);
+                          ta.select();
+                          document.execCommand('copy');
+                          document.body.removeChild(ta);
+                          addToast('已複製，貼到 LINE Bot 對話即可 ✨');
+                        } catch (e) {
+                          addToast('複製失敗，請手動複製 ID', 'error');
+                        }
+                      }
+                    }}
+                    className="w-full py-2 text-xs font-bold rounded-lg active:scale-95 transition-transform text-white shadow-sm"
+                    style={{ backgroundColor: theme.colors.accent }}
+                  >
+                    複製「綁定」指令
+                  </button>
+                  <p className="text-[10px] leading-snug opacity-70" style={{ color: theme.colors.secondaryText }}>
+                    取消通知請在 LINE 對 Bot 傳：解除綁定
+                  </p>
+                </div>
+
+                <hr style={{ borderColor: theme.colors.border }} />
+
                 {/* Role Names Section */}
                 <div className="space-y-3">
                   <label className="text-xs font-bold uppercase flex items-center gap-1" style={{ color: theme.colors.secondaryText }}><Users className="w-3 h-3"/> 角色名稱設定</label>
