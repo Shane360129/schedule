@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v4-timezone-fix';
+const BUILD_VERSION = '2026-05-15-v5-defensive-scheduled';
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
@@ -478,43 +478,58 @@ exports.dailyMorningSummary = onSchedule(
   },
   async () => {
     const today = formatDateTW(new Date());
+    console.log('[dailyMorningSummary] start', { today, buildVersion: BUILD_VERSION });
 
-    const snap = await db()
-      .collectionGroup('bibi_settings')
-      .where('lineUserIds', '!=', [])
-      .get();
+    // 不用 where('lineUserIds', '!=', [])：collectionGroup + 陣列 != 查詢
+    // 在沒手動建 index 時會丟 FAILED_PRECONDITION 讓 function 500。
+    // 直接撈全部 bibi_settings 在程式內過濾，數量小不會有效能問題。
+    const snap = await db().collectionGroup('bibi_settings').get();
+    console.log('[dailyMorningSummary] bibi_settings docs:', snap.size);
 
     for (const doc of snap.docs) {
-      if (doc.id !== 'line') continue;
-      const uid = doc.ref.parent.parent?.id;
-      if (!uid) continue;
-      const lineUserIds = doc.data().lineUserIds || [];
-      if (lineUserIds.length === 0) continue;
+      try {
+        if (doc.id !== 'line') continue;
+        const uid = doc.ref.parent.parent?.id;
+        if (!uid) continue;
+        const lineUserIds = doc.data()?.lineUserIds || [];
+        if (lineUserIds.length === 0) continue;
 
-      const eventsSnap = await db()
-        .collection('artifacts').doc(APP_ID)
-        .collection('users').doc(uid)
-        .collection('bibi_events')
-        .where('startDate', '<=', today)
-        .where('endDate', '>=', today)
-        .get();
+        const eventsSnap = await db()
+          .collection('artifacts').doc(APP_ID)
+          .collection('users').doc(uid)
+          .collection('bibi_events')
+          .where('startDate', '<=', today)
+          .where('endDate', '>=', today)
+          .get();
 
-      const lines = [`☀️ 早安！今天 (${today}) 的行程：`];
-      eventsSnap.forEach((d) => {
-        const e = d.data();
-        lines.push(`• ${e.isAllDay ? '全天' : (e.startTime || '')} ${e.title}`);
-      });
+        const lines = [`☀️ 早安！今天 (${today}) 的行程：`];
+        eventsSnap.forEach((d) => {
+          const e = d.data();
+          lines.push(`• ${e.isAllDay ? '全天' : (e.startTime || '')} ${e.title}`);
+        });
 
-      const message =
-        lines.length === 1
-          ? `☀️ 早安！${today} 今天沒有排程，好好享受 ☕`
-          : lines.join('\n');
+        const message =
+          lines.length === 1
+            ? `☀️ 早安！${today} 今天沒有排程，好好享受 ☕`
+            : lines.join('\n');
 
-      const client = lineClient();
-      await Promise.allSettled(
-        lineUserIds.map((id) => client.pushMessage(id, { type: 'text', text: message }))
-      );
+        const client = lineClient();
+        const results = await Promise.allSettled(
+          lineUserIds.map((id) => client.pushMessage(id, { type: 'text', text: message }))
+        );
+        results.forEach((r, i) => {
+          if (r.status === 'rejected') {
+            console.error('[dailyMorningSummary] push failed', {
+              uid, to: lineUserIds[i],
+              err: r.reason?.originalError?.response?.data || r.reason?.message || r.reason,
+            });
+          }
+        });
+      } catch (err) {
+        console.error('[dailyMorningSummary] user error', { path: doc.ref.path, err: err?.message || err });
+      }
     }
+    console.log('[dailyMorningSummary] done');
   }
 );
 
@@ -530,35 +545,39 @@ exports.preEventReminder = onSchedule(
     // 避免邊界事件因 cron 延遲被漏掉，也避免重複推播。
     const horizon = new Date(now.getTime() + 45 * 60 * 1000);
     const today = formatDateTW(now);
+    console.log('[preEventReminder] start', { today, buildVersion: BUILD_VERSION });
 
     const snap = await db()
       .collectionGroup('bibi_events')
       .where('startDate', '==', today)
       .where('isAllDay', '==', false)
       .get();
+    console.log('[preEventReminder] today events:', snap.size);
 
     for (const doc of snap.docs) {
-      const ev = doc.data();
-      if (!ev.startTime) continue;
-      if (ev.reminderNotifiedAt) continue; // 已通知過，跳過
-      // 事件的 startDate/startTime 都是 Taipei 當地時間，
-      // 用 ISO 8601 帶 +08:00 偏移建構正確的 UTC 時間戳。
-      // 之前用 startTs.setHours 把 14:30 設成 14:30 UTC，等於誤判 8 小時，
-      // 導致提醒視窗永遠抓不到事件。
-      const startTs = taipeiEventStart(ev.startDate, ev.startTime);
-      // 只在「事件還沒開始」且「45 分內會開始」時推
-      if (startTs > now && startTs <= horizon) {
-        const uid = doc.ref.parent.parent?.id;
-        if (!uid) continue;
-        await pushToBoundUsers(
-          uid,
-          `⏰ 即將開始：${ev.title}\n  ${ev.startTime} - ${ev.endTime}`
-        );
-        // 標記已通知，避免下一輪 cron 再推一次
-        await doc.ref.update({
-          reminderNotifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+      try {
+        const ev = doc.data();
+        if (!ev.startTime) continue;
+        if (ev.reminderNotifiedAt) continue;
+        // 事件的 startDate/startTime 都是 Taipei 當地時間，
+        // 用 ISO 8601 帶 +08:00 偏移建構正確的 UTC 時間戳。
+        const startTs = taipeiEventStart(ev.startDate, ev.startTime);
+        if (startTs > now && startTs <= horizon) {
+          const uid = doc.ref.parent.parent?.id;
+          if (!uid) continue;
+          console.log('[preEventReminder] pushing', { uid, title: ev.title, startTime: ev.startTime });
+          await pushToBoundUsers(
+            uid,
+            `⏰ 即將開始：${ev.title}\n  ${ev.startTime} - ${ev.endTime}`
+          );
+          await doc.ref.update({
+            reminderNotifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (err) {
+        console.error('[preEventReminder] event error', { path: doc.ref.path, err: err?.message || err });
       }
     }
+    console.log('[preEventReminder] done');
   }
 );
