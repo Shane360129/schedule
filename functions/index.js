@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v5-defensive-scheduled';
+const BUILD_VERSION = '2026-05-15-v6-no-composite-index';
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
@@ -494,17 +494,19 @@ exports.dailyMorningSummary = onSchedule(
         const lineUserIds = doc.data()?.lineUserIds || [];
         if (lineUserIds.length === 0) continue;
 
+        // 只用 startDate 單欄位 range，endDate 在程式裡過濾，
+        // 避免 Firestore 對兩個不同欄位的 range query 要求 composite index。
         const eventsSnap = await db()
           .collection('artifacts').doc(APP_ID)
           .collection('users').doc(uid)
           .collection('bibi_events')
           .where('startDate', '<=', today)
-          .where('endDate', '>=', today)
           .get();
 
         const lines = [`☀️ 早安！今天 (${today}) 的行程：`];
         eventsSnap.forEach((d) => {
           const e = d.data();
+          if (!e.endDate || e.endDate < today) return; // 已結束的略過
           lines.push(`• ${e.isAllDay ? '全天' : (e.startTime || '')} ${e.title}`);
         });
 
@@ -541,41 +543,49 @@ exports.preEventReminder = onSchedule(
   },
   async () => {
     const now = new Date();
-    // 把通知視窗放寬到 [now, now+45m]，再用 reminderNotifiedAt 去重，
-    // 避免邊界事件因 cron 延遲被漏掉，也避免重複推播。
     const horizon = new Date(now.getTime() + 45 * 60 * 1000);
     const today = formatDateTW(now);
     console.log('[preEventReminder] start', { today, buildVersion: BUILD_VERSION });
 
-    const snap = await db()
-      .collectionGroup('bibi_events')
-      .where('startDate', '==', today)
-      .where('isAllDay', '==', false)
-      .get();
-    console.log('[preEventReminder] today events:', snap.size);
-
-    for (const doc of snap.docs) {
+    // 避免 collectionGroup + 多 where 的 composite index 需求，
+    // 先抓綁定設定，再逐個 user 查當天事件 (數量小，效能 OK)。
+    const settingsSnap = await db().collectionGroup('bibi_settings').get();
+    for (const settingDoc of settingsSnap.docs) {
       try {
-        const ev = doc.data();
-        if (!ev.startTime) continue;
-        if (ev.reminderNotifiedAt) continue;
-        // 事件的 startDate/startTime 都是 Taipei 當地時間，
-        // 用 ISO 8601 帶 +08:00 偏移建構正確的 UTC 時間戳。
-        const startTs = taipeiEventStart(ev.startDate, ev.startTime);
-        if (startTs > now && startTs <= horizon) {
-          const uid = doc.ref.parent.parent?.id;
-          if (!uid) continue;
-          console.log('[preEventReminder] pushing', { uid, title: ev.title, startTime: ev.startTime });
-          await pushToBoundUsers(
-            uid,
-            `⏰ 即將開始：${ev.title}\n  ${ev.startTime} - ${ev.endTime}`
-          );
-          await doc.ref.update({
-            reminderNotifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
+        if (settingDoc.id !== 'line') continue;
+        const uid = settingDoc.ref.parent.parent?.id;
+        if (!uid) continue;
+        const lineUserIds = settingDoc.data()?.lineUserIds || [];
+        if (lineUserIds.length === 0) continue;
+
+        const eventsSnap = await db()
+          .collection('artifacts').doc(APP_ID)
+          .collection('users').doc(uid)
+          .collection('bibi_events')
+          .where('startDate', '==', today)
+          .get();
+
+        for (const doc of eventsSnap.docs) {
+          const ev = doc.data();
+          if (ev.isAllDay) continue;
+          if (!ev.startTime) continue;
+          if (ev.reminderNotifiedAt) continue;
+          // 事件的 startDate/startTime 都是 Taipei 當地時間，
+          // 用 ISO 8601 帶 +08:00 偏移建構正確的 UTC 時間戳。
+          const startTs = taipeiEventStart(ev.startDate, ev.startTime);
+          if (startTs > now && startTs <= horizon) {
+            console.log('[preEventReminder] pushing', { uid, title: ev.title, startTime: ev.startTime });
+            await pushToBoundUsers(
+              uid,
+              `⏰ 即將開始：${ev.title}\n  ${ev.startTime} - ${ev.endTime}`
+            );
+            await doc.ref.update({
+              reminderNotifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
         }
       } catch (err) {
-        console.error('[preEventReminder] event error', { path: doc.ref.path, err: err?.message || err });
+        console.error('[preEventReminder] user error', { path: settingDoc.ref.path, err: err?.message || err });
       }
     }
     console.log('[preEventReminder] done');
