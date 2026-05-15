@@ -46,8 +46,28 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/schedule/sw.js').catch((err) => {
+        navigator.serviceWorker.register('/schedule/sw.js').then((reg) => {
+          // 偵測新版本：updatefound → installing → installed (有 controller 表示是「更新」而非首次安裝)
+          reg.addEventListener('updatefound', () => {
+            const newSW = reg.installing;
+            if (!newSW) return;
+            newSW.addEventListener('statechange', () => {
+              if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                newSW.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+          // 主動每分鐘檢查一次，PWA 長時間開著也能拿到新版
+          setInterval(() => reg.update().catch(() => {}), 60 * 1000);
+        }).catch((err) => {
           console.warn('SW registration failed:', err);
+        });
+        // 新 SW 接管後 reload 一次，讓使用者立刻看到新版
+        let _swReloaded = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (_swReloaded) return;
+          _swReloaded = true;
+          window.location.reload();
         });
       });
     }
