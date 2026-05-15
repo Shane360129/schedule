@@ -17,7 +17,8 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v3-quickreply-fix';
+const BUILD_VERSION = '2026-05-15-v4-timezone-fix';
+const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
 function lineClient() {
@@ -26,11 +27,27 @@ function lineClient() {
   });
 }
 
+// Firebase Functions runtime is UTC. 所有日期計算都要明確指定 Asia/Taipei，
+// 不能用 Date.prototype.getHours/getDate (它們會回傳 UTC 值)。
 function formatDateTW(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  // YYYY-MM-DD in Asia/Taipei timezone（用 sv-SE 取 ISO-like 格式）
+  const fmt = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: TAIPEI_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return fmt.format(d);
+}
+
+function taipeiMidnight(dateStr) {
+  // dateStr 是 YYYY-MM-DD（視為 Taipei 當地日期），回傳對應 UTC 時間戳
+  return new Date(`${dateStr}T00:00:00+08:00`);
+}
+
+function taipeiEventStart(dateStr, timeStr) {
+  // dateStr=YYYY-MM-DD, timeStr=HH:MM，都是 Taipei 當地時間
+  return new Date(`${dateStr}T${timeStr}:00+08:00`);
 }
 
 function formatEvent(ev) {
@@ -70,11 +87,21 @@ async function removeBindingsForSource(sourceId) {
 }
 
 const WEEK_DAYS_TW = ['日', '一', '二', '三', '四', '五', '六'];
+const WEEKDAY_EN_TO_TW = { Sun: '日', Mon: '一', Tue: '二', Wed: '三', Thu: '四', Fri: '五', Sat: '六' };
 
 function formatDateLabel(d) {
-  const m = d.getMonth() + 1;
-  const day = d.getDate();
-  return `${m}/${day}（${WEEK_DAYS_TW[d.getDay()]}）`;
+  // 用 Asia/Taipei 取月/日/星期，避免 UTC 偏移導致差一天
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: TAIPEI_TZ,
+    month: 'numeric',
+    day: 'numeric',
+    weekday: 'short',
+  });
+  const parts = fmt.formatToParts(d);
+  const month = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
+  const weekday = parts.find((p) => p.type === 'weekday')?.value;
+  return `${month}/${day}（${WEEKDAY_EN_TO_TW[weekday] || weekday}）`;
 }
 
 function getQuickReplyItems() {
@@ -110,8 +137,8 @@ async function safeReply(client, replyToken, message) {
 }
 
 function getRangeFromText(text) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // 以 Taipei 當地日期為基準，避免 UTC 凌晨時段算到昨天
+  const today = taipeiMidnight(formatDateTW(new Date()));
   if (text === '今日' || text === '今天' || text === '今日行程') {
     return { start: today, days: 1, title: '📅 今日行程' };
   }
@@ -370,6 +397,8 @@ exports.lineWebhook = onRequest(
             });
           } else if (range) {
             await replyAgenda(client, ev, range);
+          } else if (ev.source?.type === 'group' || ev.source?.type === 'room') {
+            // 群組／多人聊天室：非指令訊息保持安靜，避免干擾其他對話
           } else {
             await safeReply(client, ev.replyToken, withQuickReply({
               type: 'text',
@@ -512,9 +541,11 @@ exports.preEventReminder = onSchedule(
       const ev = doc.data();
       if (!ev.startTime) continue;
       if (ev.reminderNotifiedAt) continue; // 已通知過，跳過
-      const [h, m] = ev.startTime.split(':').map(Number);
-      const startTs = new Date(now);
-      startTs.setHours(h, m, 0, 0);
+      // 事件的 startDate/startTime 都是 Taipei 當地時間，
+      // 用 ISO 8601 帶 +08:00 偏移建構正確的 UTC 時間戳。
+      // 之前用 startTs.setHours 把 14:30 設成 14:30 UTC，等於誤判 8 小時，
+      // 導致提醒視窗永遠抓不到事件。
+      const startTs = taipeiEventStart(ev.startDate, ev.startTime);
       // 只在「事件還沒開始」且「45 分內會開始」時推
       if (startTs > now && startTs <= horizon) {
         const uid = doc.ref.parent.parent?.id;
