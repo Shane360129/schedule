@@ -877,7 +877,7 @@ const App = () => {
                               borderBottomRightRadius: ev.runEndsAtEventEnd ? '6px' : '0',
                             }}
                           >
-                            <span className="truncate font-medium leading-none flex items-center gap-1">
+                            <span className="block w-full truncate text-center font-medium leading-none">
                               {ev.isStart && !ev.isAllDay && ev.startTime && (
                                 <span className="text-[10px] font-bold font-num-naikai mr-1">{ev.startTime}</span>
                               )}
