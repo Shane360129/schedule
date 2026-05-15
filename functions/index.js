@@ -39,6 +39,35 @@ function formatEvent(ev) {
   return `${ev.title}\n  ${time}`;
 }
 
+// 取得對話的推播目標 ID：個人聊天回傳 userId，群組回傳 groupId，多人聊天室回傳 roomId
+function getSourceId(ev) {
+  const src = ev.source || {};
+  if (src.type === 'group') return src.groupId;
+  if (src.type === 'room') return src.roomId;
+  return src.userId;
+}
+
+function getWelcomeText(sourceType) {
+  const scope = sourceType === 'group' ? '這個群組' : sourceType === 'room' ? '這個聊天室' : '這個 LINE';
+  return `哈囉！要把${scope}跟 BiBi 行事曆綁定，請打開行事曆 App → 設定 → LINE 通知，按「複製綁定指令」按鈕，再貼到這裡傳送即可。\n\n或是直接傳給我：\n綁定 <你的裝置 ID>`;
+}
+
+async function removeBindingsForSource(sourceId) {
+  if (!sourceId) return;
+  const snap = await db()
+    .collectionGroup('bibi_settings')
+    .where('lineUserIds', 'array-contains', sourceId)
+    .get();
+  if (snap.empty) return;
+  const batch = db().batch();
+  snap.forEach((doc) =>
+    batch.update(doc.ref, {
+      lineUserIds: admin.firestore.FieldValue.arrayRemove(sourceId),
+    })
+  );
+  await batch.commit();
+}
+
 async function pushToBoundUsers(uid, message) {
   const doc = await db()
     .collection('artifacts').doc(APP_ID)
@@ -55,10 +84,16 @@ async function pushToBoundUsers(uid, message) {
 }
 
 async function replyTodayAgenda(client, ev) {
-  const lineUserId = ev.source.userId;
+  const sourceId = getSourceId(ev);
+  if (!sourceId) {
+    return client.replyMessage(ev.replyToken, {
+      type: 'text',
+      text: '無法辨識來源，請改回個人聊天視窗或重新邀請 Bot。',
+    });
+  }
   const snap = await db()
     .collectionGroup('bibi_settings')
-    .where('lineUserIds', 'array-contains', lineUserId)
+    .where('lineUserIds', 'array-contains', sourceId)
     .get();
 
   const uids = new Set();
@@ -115,12 +150,22 @@ exports.lineWebhook = onRequest(
 
     for (const ev of events) {
       try {
-        if (ev.type === 'follow') {
+        if (ev.type === 'follow' || ev.type === 'join') {
           await client.replyMessage(ev.replyToken, {
             type: 'text',
-            text: '哈囉！要把這個 LINE 跟 BiBi 行事曆綁定，請打開行事曆 App → 設定 → LINE 通知，按「複製綁定指令」按鈕，再貼到這裡傳送即可。\n\n或是直接傳給我：\n綁定 <你的裝置 ID>',
+            text: getWelcomeText(ev.source?.type),
           });
+        } else if (ev.type === 'unfollow' || ev.type === 'leave') {
+          await removeBindingsForSource(getSourceId(ev));
         } else if (ev.type === 'message' && ev.message.type === 'text') {
+          const sourceId = getSourceId(ev);
+          if (!sourceId) {
+            await client.replyMessage(ev.replyToken, {
+              type: 'text',
+              text: '無法辨識訊息來源，請改用個人聊天或重新邀請 Bot。',
+            });
+            continue;
+          }
           const text = ev.message.text.trim();
           const m = text.match(/^綁定[\s　]+(\S+)$/);
           if (m) {
@@ -131,27 +176,17 @@ exports.lineWebhook = onRequest(
               .collection('bibi_settings').doc('line')
               .set(
                 {
-                  lineUserIds: admin.firestore.FieldValue.arrayUnion(ev.source.userId),
+                  lineUserIds: admin.firestore.FieldValue.arrayUnion(sourceId),
                   updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 },
                 { merge: true }
               );
             await client.replyMessage(ev.replyToken, {
               type: 'text',
-              text: `✅ 綁定成功！\n之後 ${uid.substring(0, 6)}... 這組行事曆有變動或排程提醒都會推給你。\n\n想取消綁定請傳：解除綁定`,
+              text: `✅ 綁定成功！\n之後 ${uid.substring(0, 6)}... 這組行事曆有變動或排程提醒都會推到這個聊天視窗。\n\n想取消綁定請傳：解除綁定`,
             });
           } else if (text === '解除綁定') {
-            const snap = await db()
-              .collectionGroup('bibi_settings')
-              .where('lineUserIds', 'array-contains', ev.source.userId)
-              .get();
-            const batch = db().batch();
-            snap.forEach((doc) =>
-              batch.update(doc.ref, {
-                lineUserIds: admin.firestore.FieldValue.arrayRemove(ev.source.userId),
-              })
-            );
-            await batch.commit();
+            await removeBindingsForSource(sourceId);
             await client.replyMessage(ev.replyToken, {
               type: 'text',
               text: '已解除所有綁定。要重新綁定請再傳：綁定 <你的裝置 ID>',
