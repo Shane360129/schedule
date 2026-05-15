@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-  Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle
+import {
+  ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2,
+  Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle, Calendar
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -143,7 +143,9 @@ const FALLBACK_HOLIDAYS = {
 };
 
 const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
-const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+// 統一週起始為「週一」，回傳值 0=Mon, 1=Tue, ..., 6=Sun
+const getFirstDayOfMonth = (year, month) => (new Date(year, month, 1).getDay() + 6) % 7;
+const dayOfWeekMonFirst = (date) => (date.getDay() + 6) % 7;
 const formatDate = (date) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -548,23 +550,25 @@ const App = () => {
       const isStart = dateStr === ev.startDate;
       const isEnd = dateStr === ev.endDate;
       const dayDate = new Date(dateStr + 'T00:00:00');
-      const dayOfWeek = dayDate.getDay();
-      const isSunday = dayOfWeek === 0;
-      const isSaturday = dayOfWeek === 6;
-      const isRunStart = isStart || isSunday;
+      const dowMonFirst = dayOfWeekMonFirst(dayDate); // 0=Mon, 6=Sun
+      const isMonday = dowMonFirst === 0;
+      const isSunday = dowMonFirst === 6;
+      // run 起始：事件本身的開始日 或 每週的週一
+      const isRunStart = isStart || isMonday;
       let runLength = 0;
       let runEndsAtEventEnd = false;
       if (isRunStart) {
         const evEnd = new Date(ev.endDate + 'T00:00:00');
+        // 本週結束 = 同週的週日
         const weekEnd = new Date(dayDate);
-        weekEnd.setDate(dayDate.getDate() + (6 - dayOfWeek));
+        weekEnd.setDate(dayDate.getDate() + (6 - dowMonFirst));
         const runEnd = evEnd.getTime() < weekEnd.getTime() ? evEnd : weekEnd;
         runEndsAtEventEnd = evEnd.getTime() <= weekEnd.getTime();
         runLength = Math.round((runEnd.getTime() - dayDate.getTime()) / 86400000) + 1;
       }
       return {
         ...ev,
-        isStart, isEnd, isSunday, isSaturday,
+        isStart, isEnd, isSunday, isMonday,
         isRunStart, runLength, runEndsAtEventEnd,
         lane: eventLanes.get(ev.id) || 0,
       };
@@ -691,14 +695,29 @@ const App = () => {
 
   const activeEvents = events.filter(ev => ev.endDate >= todayStr);
 
+  // 多日事件：以週 (週一~週日) 為單位切段，每段在 upcoming 列表佔一筆，
+  // 不再每天重複顯示。同一週的多日事件 → 一筆 (帶迄日)；跨週 → 一週一筆。
   const groupedUpcomingRaw = activeEvents.reduce((acc, ev) => {
-    const dates = getDatesInRange(ev.startDate, ev.endDate);
-    dates.forEach(date => {
-      if (date >= todayStr) { 
-        if (!acc[date]) acc[date] = [];
-        acc[date].push(ev);
-      }
-    });
+    let segStartStr = ev.startDate < todayStr ? todayStr : ev.startDate;
+    const evEnd = ev.endDate;
+    while (segStartStr <= evEnd) {
+      const startDate = new Date(segStartStr + 'T00:00:00');
+      const dowMon = dayOfWeekMonFirst(startDate); // 0=Mon, 6=Sun
+      const daysToSun = 6 - dowMon;
+      const weekEnd = new Date(startDate);
+      weekEnd.setDate(startDate.getDate() + daysToSun);
+      const weekEndStr = formatDate(weekEnd);
+      const segEndStr = weekEndStr < evEnd ? weekEndStr : evEnd;
+      if (!acc[segStartStr]) acc[segStartStr] = [];
+      acc[segStartStr].push({
+        ...ev,
+        _segStartDate: segStartStr,
+        _segEndDate: segEndStr,
+      });
+      const nextStart = new Date(weekEnd);
+      nextStart.setDate(weekEnd.getDate() + 1);
+      segStartStr = formatDate(nextStart);
+    }
     return acc;
   }, {});
 
@@ -714,6 +733,8 @@ const App = () => {
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+  const now = new Date();
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfMonth(year, month);
   const days = [];
@@ -743,17 +764,30 @@ const App = () => {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 p-1.5 rounded-2xl border backdrop-blur-sm mr-2" style={{ backgroundColor: theme.colors.gridEmptyBg, borderColor: theme.colors.border + '20' }}>
-            <button onClick={handlePrevMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronLeft className="w-5 h-5" /></button>
-            <span className={`text-xl font-bold font-num-naikai min-w-[80px] text-center`} style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
-            <button onClick={handleNextMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronRight className="w-5 h-5" /></button>
+            <button onClick={handlePrevMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }} aria-label="上個月"><ChevronLeft className="w-5 h-5" /></button>
+            <button onClick={handleToday} className="text-xl font-bold font-num-naikai min-w-[80px] text-center hover:opacity-70 active:scale-95 transition-all rounded-lg" style={{ color: theme.colors.text }} aria-label="回到今天">
+              {month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span>
+            </button>
+            <button onClick={handleNextMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }} aria-label="下個月"><ChevronRight className="w-5 h-5" /></button>
+            {!isCurrentMonth && (
+              <button
+                onClick={handleToday}
+                className="ml-1 px-2.5 py-1 text-xs font-bold rounded-lg active:scale-95 transition-all flex items-center gap-1"
+                style={{ backgroundColor: theme.colors.accent, color: '#FFF' }}
+                aria-label="回到本月"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                今天
+              </button>
+            )}
           </div>
           <button onClick={openSettings} className="p-2.5 rounded-xl shadow-sm border hover:brightness-95 transition-all active:scale-95" style={{ backgroundColor: theme.colors.modalBg, color: theme.colors.secondaryText, borderColor: theme.colors.border }}><Settings className="w-5 h-5" /></button>
         </div>
       </header>
 
       <div className="flex-none grid grid-cols-7" style={{ backgroundColor: theme.colors.gridHeaderBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
-        {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d, i) => (
-          <div key={i} className="py-2 text-center text-[12px] font-bold font-num-naikai tracking-widest" style={{ color: (i === 0 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
+        {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d, i) => (
+          <div key={i} className="py-2 text-center text-[12px] font-bold font-num-naikai tracking-widest" style={{ color: (i === 5 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
         ))}
       </div>
 
@@ -764,14 +798,15 @@ const App = () => {
           const isToday = hasDate && cell.fullDate === formatDate(new Date());
           const holidayInfo = hasDate ? holidayData[year]?.[cell.fullDate] : null;
           const isHoliday = holidayInfo?.isHoliday === true;
-          const dayOfWeek = idx % 7;
-          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-          
+          const dayOfWeek = idx % 7; // 0=Mon, 5=Sat, 6=Sun
+          const isWeekend = dayOfWeek === 5 || dayOfWeek === 6;
+
           let cellBg = theme.colors.gridBg;
           if (!hasDate) cellBg = theme.colors.gridEmptyBg;
           else if (isHoliday || isWeekend) cellBg = theme.colors.gridWeekendBg;
-          
-          const dateTextColor = (isHoliday || dayOfWeek === 0) ? theme.colors.weekendText : theme.colors.text;
+
+          // 國定假日 + 週日用 weekendText 色 (週六照常)
+          const dateTextColor = (isHoliday || dayOfWeek === 6) ? theme.colors.weekendText : theme.colors.text;
 
           return (
             <div 
@@ -842,7 +877,7 @@ const App = () => {
                               borderBottomRightRadius: ev.runEndsAtEventEnd ? '6px' : '0',
                             }}
                           >
-                            <span className="truncate font-medium leading-none flex items-center gap-1">
+                            <span className="block w-full truncate text-center font-medium leading-none">
                               {ev.isStart && !ev.isAllDay && ev.startTime && (
                                 <span className="text-[10px] font-bold font-num-naikai mr-1">{ev.startTime}</span>
                               )}
@@ -1150,7 +1185,7 @@ const App = () => {
                             else ownerLabel = '共同';
 
                             return (
-                              <div key={ev.id} onClick={() => openEditModal(null, ev)} className="p-3 rounded-xl border shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }}>
+                              <div key={`${ev.id}-${ev._segStartDate}`} onClick={() => openEditModal(null, ev)} className="p-3 rounded-xl border shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }}>
                                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: colorObj.hex }}></div>
                                  <div className="flex-1 min-w-0">
                                     <div className="flex justify-between items-start">
