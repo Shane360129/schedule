@@ -442,7 +442,8 @@ exports.notifyOnEventDelete = onDocumentDeleted(
 // -------- Scheduled notifications --------
 exports.dailyMorningSummary = onSchedule(
   {
-    schedule: '0 8 * * *',
+    // TODO: 測試完改回 '0 8 * * *'
+    schedule: '30 11 * * *',
     timeZone: 'Asia/Taipei',
     secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   },
