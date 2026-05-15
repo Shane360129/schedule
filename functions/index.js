@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v13-explicit-cmds';
+const BUILD_VERSION = '2026-05-15-v14-month-view';
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
@@ -230,6 +230,19 @@ function getRangeFromText(text) {
       title: `📅 週末行程（${shortDateLabel(sat)} ~ ${shortDateLabel(sun)}）`,
     };
   }
+  if (text === '整月行程' || text === '當月行程' || text === '本月' ||
+      text === '這個月' || text === '本月行程' || text === '這個月行程') {
+    const todayStr = formatDateTW(new Date());
+    const [y, mo] = todayStr.split('-').map(Number);
+    const monthStartStr = `${y}-${String(mo).padStart(2, '0')}-01`;
+    const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    const monthEndStr = `${y}-${String(mo).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    return {
+      start: taipeiMidnight(monthStartStr),
+      days: lastDay,
+      title: `📅 ${mo}月整月行程（${monthStartStr} ~ ${monthEndStr}）`,
+    };
+  }
   // 純日期查詢：使用者直接傳「5/16」、「5月20日」、「週三」、「下週一」等，
   // 整段文字就是日期關鍵字時，當成單日行程查詢
   const todayStr = formatDateTW(new Date());
@@ -241,12 +254,13 @@ function getRangeFromText(text) {
   return null;
 }
 
-function buildAgendaFlex(title, dateGroups) {
+function buildAgendaFlex(title, dateGroups, { compact = false } = {}) {
   const todayStr = formatDateTW(new Date());
   const showDateHeader = dateGroups.length > 1;
   const bodyContents = [];
 
   dateGroups.forEach((g, idx) => {
+    if (compact && g.events.length === 0) return; // 整月卡片自動跳過空檔
     const isToday = g.dateStr === todayStr;
     if (showDateHeader) {
       bodyContents.push({
@@ -278,57 +292,50 @@ function buildAgendaFlex(title, dateGroups) {
     const timedEvents = g.events.filter((e) => !e.isAllDay);
 
     allDayEvents.forEach((ev) => {
+      // 多日事件在 compact 模式下顯示「→ 結束日」標示，
+      // 因為這版只在起始日列出一次，看不到範圍會困惑
+      const isMulti = ev.startDate !== ev.endDate;
+      const titleText = isMulti && compact
+        ? `${ev.title || '(未命名)'} → ${ev.endDate.slice(5).replace('-', '/')}`
+        : (ev.title || '(未命名)');
       bodyContents.push({
         type: 'box',
         layout: 'horizontal',
         spacing: 'sm',
         margin: 'sm',
         contents: [
-          {
-            type: 'text',
-            text: '📌',
-            size: 'xs',
-            flex: 2,
-            gravity: 'top',
-          },
-          {
-            type: 'text',
-            text: ev.title || '(未命名)',
-            size: 'sm',
-            wrap: true,
-            flex: 5,
-            weight: 'bold',
-            color: '#6D4C41',
-          },
+          { type: 'text', text: '📌', size: 'xs', flex: 2, gravity: 'top' },
+          { type: 'text', text: titleText, size: 'sm', wrap: true, flex: 5,
+            weight: 'bold', color: '#6D4C41' },
         ],
       });
     });
     timedEvents.forEach((ev) => {
+      const isMulti = ev.startDate !== ev.endDate;
+      const titleText = isMulti && compact
+        ? `${ev.title || '(未命名)'} → ${ev.endDate.slice(5).replace('-', '/')}`
+        : (ev.title || '(未命名)');
       bodyContents.push({
         type: 'box',
         layout: 'horizontal',
         spacing: 'sm',
         margin: 'sm',
         contents: [
-          {
-            type: 'text',
-            text: ev.startTime || '',
-            size: 'xs',
-            color: '#999999',
-            flex: 2,
-            gravity: 'top',
-          },
-          {
-            type: 'text',
-            text: ev.title || '(未命名)',
-            size: 'sm',
-            wrap: true,
-            flex: 5,
-          },
+          { type: 'text', text: ev.startTime || '', size: 'xs',
+            color: '#999999', flex: 2, gravity: 'top' },
+          { type: 'text', text: titleText, size: 'sm', wrap: true, flex: 5 },
         ],
       });
     });
   });
+
+  // compact 模式下若整個月都沒事件，補一條提示
+  if (compact && bodyContents.length === 0) {
+    bodyContents.push({
+      type: 'text', text: '這段期間沒有任何行程 ☕',
+      size: 'sm', color: '#999999', align: 'center', margin: 'lg',
+    });
+  }
 
   return {
     type: 'flex',
@@ -983,6 +990,10 @@ async function replyAgenda(client, ev, range) {
     }));
   }
 
+  // 範圍超過 14 天 (e.g. 整月) 進入 compact 模式：
+  // 空檔日不顯示、多日事件只列在範圍內的起始日，避免卡片過長
+  const compactMode = range.days > 14;
+
   const dateGroups = [];
   for (let i = 0; i < range.days; i++) {
     const d = new Date(range.start);
@@ -1002,9 +1013,16 @@ async function replyAgenda(client, ev, range) {
     eventsSnap.forEach((doc) => {
       const e = doc.data();
       if (!e.endDate || e.endDate < rangeStartStr) return;
-      for (const g of dateGroups) {
-        if (g.dateStr >= e.startDate && g.dateStr <= e.endDate) {
-          g.events.push(e);
+      if (compactMode) {
+        // 只在「範圍內的第一天」列出一次，避免多日事件填滿整張卡片
+        const firstInRange = e.startDate < rangeStartStr ? rangeStartStr : e.startDate;
+        const g = dateGroups.find((g) => g.dateStr === firstInRange);
+        if (g) g.events.push(e);
+      } else {
+        for (const g of dateGroups) {
+          if (g.dateStr >= e.startDate && g.dateStr <= e.endDate) {
+            g.events.push(e);
+          }
         }
       }
     });
@@ -1017,7 +1035,9 @@ async function replyAgenda(client, ev, range) {
     });
   }
 
-  return safeReply(client, ev.replyToken, withQuickReply(buildAgendaFlex(range.title, dateGroups)));
+  return safeReply(client, ev.replyToken, withQuickReply(
+    buildAgendaFlex(range.title, dateGroups, { compact: compactMode })
+  ));
 }
 
 async function pushToBoundUsers(uid, message) {
@@ -1046,6 +1066,7 @@ function getHelpText() {
     '📅 查詢行程：',
     '　今日／明天／後天／大後天',
     '　本週／下週／下下週／週末',
+    '　整月行程／當月行程／本月',
     '　直接傳日期：「5/16」「5月20日」「週三」「下週一」',
     '',
     '➕ 新增行程（必須打「新增」開頭）：',
