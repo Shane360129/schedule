@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v7-9am-week-range';
+const BUILD_VERSION = '2026-05-15-v8-ux-package';
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
@@ -63,6 +63,17 @@ function getDayOfWeekTaipei(d) {
 function shortDateLabel(d) {
   // 給 title 用的「5/13（一）」格式，已對齊 Taipei 時區
   return formatDateLabel(d);
+}
+
+function addDaysStr(dateStr, days) {
+  // dateStr=YYYY-MM-DD, 回傳加 days 天後的 YYYY-MM-DD
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + days);
+  const yy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
 }
 
 function formatEvent(ev) {
@@ -162,7 +173,17 @@ function getRangeFromText(text) {
     t.setDate(today.getDate() + 1);
     return { start: t, days: 1, title: '📅 明日行程' };
   }
-  // 本週 / 下週：以「週一」為一週起始，整段顯示週一 ~ 週日
+  if (text === '後天') {
+    const t = new Date(today);
+    t.setDate(today.getDate() + 2);
+    return { start: t, days: 1, title: `📅 後天行程（${shortDateLabel(t)}）` };
+  }
+  if (text === '大後天') {
+    const t = new Date(today);
+    t.setDate(today.getDate() + 3);
+    return { start: t, days: 1, title: `📅 大後天行程（${shortDateLabel(t)}）` };
+  }
+  // 本週 / 下週 / 下下週 / 週末：以「週一」為一週起始
   const dow = getDayOfWeekTaipei(new Date()); // 0=日, 1=一, ...
   const daysToMonday = (dow + 6) % 7; // 一→0, 二→1, ..., 日→6
   if (text === '本週' || text === '這週' || text === '這禮拜' || text === '本周') {
@@ -187,24 +208,52 @@ function getRangeFromText(text) {
       title: `📅 下週行程（${shortDateLabel(nextMonday)} ~ ${shortDateLabel(nextSunday)}）`,
     };
   }
+  if (text === '下下週' || text === '下下周' || text === '下下禮拜') {
+    const nm = new Date(today);
+    nm.setDate(today.getDate() - daysToMonday + 14);
+    const ns = new Date(nm);
+    ns.setDate(nm.getDate() + 6);
+    return {
+      start: nm,
+      days: 7,
+      title: `📅 下下週行程（${shortDateLabel(nm)} ~ ${shortDateLabel(ns)}）`,
+    };
+  }
+  if (text === '週末' || text === '周末' || text === '禮拜' || text === '這週末') {
+    const sat = new Date(today);
+    sat.setDate(today.getDate() - daysToMonday + 5); // 週六
+    const sun = new Date(sat);
+    sun.setDate(sat.getDate() + 1);
+    return {
+      start: sat,
+      days: 2,
+      title: `📅 週末行程（${shortDateLabel(sat)} ~ ${shortDateLabel(sun)}）`,
+    };
+  }
   return null;
 }
 
 function buildAgendaFlex(title, dateGroups) {
+  const todayStr = formatDateTW(new Date());
   const showDateHeader = dateGroups.length > 1;
   const bodyContents = [];
 
   dateGroups.forEach((g, idx) => {
+    const isToday = g.dateStr === todayStr;
     if (showDateHeader) {
       bodyContents.push({
         type: 'text',
-        text: formatDateLabel(g.date),
+        text: isToday ? `▶ ${formatDateLabel(g.date)}　今天` : formatDateLabel(g.date),
         weight: 'bold',
         size: 'sm',
-        color: '#555555',
+        color: isToday ? '#8D6E63' : '#555555',
         margin: idx === 0 ? 'none' : 'lg',
       });
-      bodyContents.push({ type: 'separator', margin: 'xs', color: '#EEEEEE' });
+      bodyContents.push({
+        type: 'separator',
+        margin: 'xs',
+        color: isToday ? '#BCAAA4' : '#EEEEEE',
+      });
     }
     if (g.events.length === 0) {
       bodyContents.push({
@@ -216,7 +265,11 @@ function buildAgendaFlex(title, dateGroups) {
       });
       return;
     }
-    g.events.forEach((ev) => {
+    // 全天事件先列，跟有時間的分開
+    const allDayEvents = g.events.filter((e) => e.isAllDay);
+    const timedEvents = g.events.filter((e) => !e.isAllDay);
+
+    allDayEvents.forEach((ev) => {
       bodyContents.push({
         type: 'box',
         layout: 'horizontal',
@@ -225,7 +278,33 @@ function buildAgendaFlex(title, dateGroups) {
         contents: [
           {
             type: 'text',
-            text: ev.isAllDay ? '全天' : (ev.startTime || ''),
+            text: '📌',
+            size: 'xs',
+            flex: 2,
+            gravity: 'top',
+          },
+          {
+            type: 'text',
+            text: ev.title || '(未命名)',
+            size: 'sm',
+            wrap: true,
+            flex: 5,
+            weight: 'bold',
+            color: '#6D4C41',
+          },
+        ],
+      });
+    });
+    timedEvents.forEach((ev) => {
+      bodyContents.push({
+        type: 'box',
+        layout: 'horizontal',
+        spacing: 'sm',
+        margin: 'sm',
+        contents: [
+          {
+            type: 'text',
+            text: ev.startTime || '',
             size: 'xs',
             color: '#999999',
             flex: 2,
@@ -275,6 +354,305 @@ function buildAgendaFlex(title, dateGroups) {
   };
 }
 
+async function getBoundUidsForSource(sourceId) {
+  if (!sourceId) return [];
+  const snap = await db()
+    .collectionGroup('bibi_settings')
+    .where('lineUserIds', 'array-contains', sourceId)
+    .get();
+  const uids = [];
+  snap.forEach((doc) => {
+    if (doc.id !== 'line') return;
+    const uid = doc.ref.parent.parent?.id;
+    if (uid) uids.push(uid);
+  });
+  return uids;
+}
+
+async function getRoleSettings(uid) {
+  const doc = await db()
+    .collection('artifacts').doc(APP_ID)
+    .collection('users').doc(uid)
+    .collection('bibi_settings').doc('roles')
+    .get();
+  return doc.exists ? doc.data() : { role1: '我', role2: '夥伴' };
+}
+
+const COLOR_BY_TYPE = { me: 'tea', partner: 'sesame', common: 'latte' };
+
+function buildEventConfirmFlex(ev, ownerLabel) {
+  const dateLine = ev.startDate === ev.endDate
+    ? ev.startDate
+    : `${ev.startDate} ~ ${ev.endDate}`;
+  const timeLine = ev.isAllDay ? '全天' : `${ev.startTime} - ${ev.endTime}`;
+  return {
+    type: 'flex',
+    altText: `已新增：${ev.title}`,
+    contents: {
+      type: 'bubble',
+      size: 'kilo',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [{ type: 'text', text: '✅ 已新增行程', weight: 'bold', color: '#FFFFFF' }],
+        backgroundColor: '#8D6E63',
+        paddingAll: 'md',
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        paddingAll: 'lg',
+        contents: [
+          { type: 'text', text: ev.title, weight: 'bold', size: 'lg', wrap: true },
+          { type: 'separator', margin: 'sm' },
+          { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+            { type: 'text', text: '📅', flex: 1, size: 'xs' },
+            { type: 'text', text: dateLine, flex: 6, size: 'sm' },
+          ]},
+          { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+            { type: 'text', text: '⏰', flex: 1, size: 'xs' },
+            { type: 'text', text: timeLine, flex: 6, size: 'sm' },
+          ]},
+          { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+            { type: 'text', text: '👤', flex: 1, size: 'xs' },
+            { type: 'text', text: ownerLabel, flex: 6, size: 'sm' },
+          ]},
+        ],
+      },
+    },
+  };
+}
+
+// -------- 自然語言事件解析 --------
+// 範例：「後天10點要看醫生」、「明天下午3點半 阿明 牙醫」、「5/20 全天 媽媽生日」
+function parseNaturalEvent(text, roleSettings, todayStr, todayDow) {
+  const result = {
+    isAllDay: true,
+    startTime: '',
+    endTime: '',
+    startDate: todayStr,
+    endDate: todayStr,
+    title: '',
+    description: '',
+    eventType: 'common',
+    color: COLOR_BY_TYPE.common,
+  };
+  let remaining = text.trim();
+  let foundDate = false;
+  let foundTime = false;
+
+  // -- 1. 日期 --
+  const dateKeywords = [
+    { re: /^(今天|今日)/, days: 0 },
+    { re: /^(明天|明日)/, days: 1 },
+    { re: /^(後天)/, days: 2 },
+    { re: /^(大後天)/, days: 3 },
+  ];
+  for (const { re, days } of dateKeywords) {
+    const m = remaining.match(re);
+    if (m) {
+      result.startDate = addDaysStr(todayStr, days);
+      result.endDate = result.startDate;
+      remaining = remaining.replace(m[0], '').trim();
+      foundDate = true;
+      break;
+    }
+  }
+  // 下週X / 週X / 禮拜X / 星期X
+  if (!foundDate) {
+    const wdMap = { '日': 0, '天': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 };
+    let m;
+    if ((m = remaining.match(/^下週([日天一二三四五六])/) ||
+              remaining.match(/^下周([日天一二三四五六])/) ||
+              remaining.match(/^下禮拜([日天一二三四五六])/))) {
+      const target = wdMap[m[1]];
+      const daysToMonday = (todayDow + 6) % 7;
+      const offsetFromMonday = (target + 6) % 7; // 一→0, 日→6
+      result.startDate = addDaysStr(todayStr, -daysToMonday + 7 + offsetFromMonday);
+      result.endDate = result.startDate;
+      remaining = remaining.replace(m[0], '').trim();
+      foundDate = true;
+    } else if ((m = remaining.match(/^週([日天一二三四五六])/) ||
+                     remaining.match(/^周([日天一二三四五六])/) ||
+                     remaining.match(/^禮拜([日天一二三四五六])/) ||
+                     remaining.match(/^星期([日天一二三四五六])/))) {
+      const target = wdMap[m[1]];
+      const offset = (target - todayDow + 7) % 7; // 本週剩餘的同名日；0 → 今天
+      result.startDate = addDaysStr(todayStr, offset);
+      result.endDate = result.startDate;
+      remaining = remaining.replace(m[0], '').trim();
+      foundDate = true;
+    }
+  }
+  // M/D 或 M月D日 或 M月D
+  if (!foundDate) {
+    let m;
+    if ((m = remaining.match(/^(\d{1,2})\/(\d{1,2})/))) {
+      const month = parseInt(m[1]);
+      const day = parseInt(m[2]);
+      const [y] = todayStr.split('-').map(Number);
+      const cand = `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      result.startDate = cand < todayStr
+        ? `${y + 1}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        : cand;
+      result.endDate = result.startDate;
+      remaining = remaining.replace(m[0], '').trim();
+      foundDate = true;
+    } else if ((m = remaining.match(/^(\d{1,2})月(\d{1,2})[日號]?/))) {
+      const month = parseInt(m[1]);
+      const day = parseInt(m[2]);
+      const [y] = todayStr.split('-').map(Number);
+      const cand = `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      result.startDate = cand < todayStr
+        ? `${y + 1}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        : cand;
+      result.endDate = result.startDate;
+      remaining = remaining.replace(m[0], '').trim();
+      foundDate = true;
+    }
+  }
+
+  // -- 2. 全天關鍵字 --
+  if (/全天/.test(remaining)) {
+    result.isAllDay = true;
+    remaining = remaining.replace(/全天/g, '').trim();
+    foundTime = true; // 算是有時間訊號
+  }
+
+  // -- 3. 時間範圍 --（要在「全天」之後，因為有可能同時出現）
+  if (!result.isAllDay || !foundTime) {
+    const timeRe = /(上午|下午|早上|晚上|中午)?\s*(\d{1,2})\s*[點:時](\s*(半|\d{1,2})\s*分?)?(?:\s*[到~\-至]\s*(上午|下午|早上|晚上|中午)?\s*(\d{1,2})\s*[點:時](\s*(半|\d{1,2})\s*分?)?)?/;
+    const m = remaining.match(timeRe);
+    if (m) {
+      const ampm1 = m[1];
+      let h1 = parseInt(m[2]);
+      const min1raw = m[4];
+      let mn1 = 0;
+      if (min1raw === '半') mn1 = 30;
+      else if (min1raw && /^\d+$/.test(min1raw)) mn1 = parseInt(min1raw);
+      if ((ampm1 === '下午' || ampm1 === '晚上') && h1 < 12) h1 += 12;
+      if (ampm1 === '中午' && h1 < 12) h1 += 12;
+      if ((ampm1 === '上午' || ampm1 === '早上') && h1 === 12) h1 = 0;
+
+      result.startTime = `${String(h1).padStart(2, '0')}:${String(mn1).padStart(2, '0')}`;
+      result.isAllDay = false;
+
+      const ampm2 = m[5];
+      const h2raw = m[6];
+      const min2raw = m[8];
+      if (h2raw) {
+        let h2 = parseInt(h2raw);
+        let mn2 = 0;
+        if (min2raw === '半') mn2 = 30;
+        else if (min2raw && /^\d+$/.test(min2raw)) mn2 = parseInt(min2raw);
+        if ((ampm2 === '下午' || ampm2 === '晚上') && h2 < 12) h2 += 12;
+        if (ampm2 === '中午' && h2 < 12) h2 += 12;
+        if ((ampm2 === '上午' || ampm2 === '早上') && h2 === 12) h2 = 0;
+        result.endTime = `${String(h2).padStart(2, '0')}:${String(mn2).padStart(2, '0')}`;
+      } else {
+        // 沒寫結束時間 → 預設加 1 小時
+        let h2 = h1 + 1;
+        const mn2 = mn1;
+        if (h2 >= 24) h2 = 23;
+        result.endTime = `${String(h2).padStart(2, '0')}:${String(mn2).padStart(2, '0')}`;
+      }
+      remaining = remaining.replace(m[0], '').trim();
+      foundTime = true;
+    }
+  }
+
+  // -- 4. 角色辨識 --
+  const r1 = (roleSettings?.role1 || '').trim();
+  const r2 = (roleSettings?.role2 || '').trim();
+  if (r1 && r1 !== '我' && remaining.includes(r1)) {
+    result.eventType = 'me';
+    result.color = COLOR_BY_TYPE.me;
+    remaining = remaining.split(r1).join('').trim();
+  } else if (r2 && r2 !== '夥伴' && remaining.includes(r2)) {
+    result.eventType = 'partner';
+    result.color = COLOR_BY_TYPE.partner;
+    remaining = remaining.split(r2).join('').trim();
+  }
+
+  // -- 5. Title --
+  result.title = remaining
+    .replace(/^[要去想是有的]+/, '')
+    .replace(/[，。、,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!foundDate || !result.title) return null;
+  // 預設：沒指定全天又沒指定時間 → 全天
+  if (!foundTime) {
+    result.isAllDay = true;
+    result.startTime = '';
+    result.endTime = '';
+  }
+  return result;
+}
+
+async function replyBindingStatus(client, ev) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '🔓 這個聊天視窗還沒綁定任何行事曆\n\n請傳：綁定 <你的裝置 ID>',
+    }));
+  }
+  const lines = ['🔗 綁定狀態', ''];
+  const todayStr = formatDateTW(new Date());
+  const monthStart = todayStr.slice(0, 8) + '01';
+  for (const uid of uids) {
+    const roles = await getRoleSettings(uid);
+    const eventsSnap = await db()
+      .collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid)
+      .collection('bibi_events')
+      .where('startDate', '>=', monthStart)
+      .get();
+    lines.push(`📋 UID：${uid.substring(0, 8)}…`);
+    lines.push(`👥 ${roles.role1 || '我'} ／ ${roles.role2 || '夥伴'}`);
+    lines.push(`📊 本月事件：${eventsSnap.size} 件`);
+    lines.push('');
+  }
+  lines.push(`想要解除請傳：解除綁定`);
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text',
+    text: lines.join('\n'),
+  }));
+}
+
+async function tryCreateNaturalEvent(client, ev, text) {
+  // 回傳 true 表示有解析成功並處理了；false 表示不像新增指令，呼叫端繼續走其他分支
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) return false; // 還沒綁定就別誤判
+
+  const todayStr = formatDateTW(new Date());
+  const todayDow = getDayOfWeekTaipei(new Date());
+  const targetUid = uids[0]; // 多綁時只新增到第一個
+  const roles = await getRoleSettings(targetUid);
+
+  const parsed = parseNaturalEvent(text, roles, todayStr, todayDow);
+  if (!parsed) return false;
+
+  await db()
+    .collection('artifacts').doc(APP_ID)
+    .collection('users').doc(targetUid)
+    .collection('bibi_events')
+    .add(parsed);
+
+  const ownerLabel = parsed.eventType === 'me' ? (roles.role1 || '我')
+    : parsed.eventType === 'partner' ? (roles.role2 || '夥伴')
+    : '共同';
+  await safeReply(client, ev.replyToken, withQuickReply(
+    buildEventConfirmFlex(parsed, ownerLabel)
+  ));
+  return true;
+}
+
 async function replyAgenda(client, ev, range) {
   const sourceId = getSourceId(ev);
   if (!sourceId) {
@@ -283,16 +661,8 @@ async function replyAgenda(client, ev, range) {
       text: '無法辨識來源，請改回個人聊天視窗或重新邀請 Bot。',
     });
   }
-  const snap = await db()
-    .collectionGroup('bibi_settings')
-    .where('lineUserIds', 'array-contains', sourceId)
-    .get();
-  const uids = new Set();
-  snap.forEach((doc) => {
-    const uid = doc.ref.parent.parent?.id;
-    if (uid) uids.add(uid);
-  });
-  if (uids.size === 0) {
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
     return safeReply(client, ev.replyToken, withQuickReply({
       type: 'text',
       text: '你還沒綁定任何行事曆。請先傳：綁定 <你的裝置 ID>',
@@ -357,10 +727,18 @@ function getHelpText() {
     '',
     '🔗 綁定 <裝置 ID>　— 綁定行事曆',
     '🚫 解除綁定　— 取消綁定',
-    '📅 今日 / 明天 / 本週 / 下週　— 查詢行程',
-    '❓ 幫助　— 顯示這個說明',
+    '📊 狀態　— 看目前綁了哪組行事曆',
     '',
-    '提示：可使用下方按鈕快速查詢。',
+    '📅 查詢行程：',
+    '　今日／明天／後天／大後天',
+    '　本週／下週／下下週／週末',
+    '',
+    '➕ 直接傳訊息就能新增行程，例如：',
+    '　「明天10點看牙醫」',
+    '　「後天下午3點半開會」',
+    '　「5/20 全天 媽媽生日」',
+    '　（沒指定誰 → 共同；包含角色名稱 → 那個人）',
+    '',
     `（版本 ${BUILD_VERSION}）`,
   ].join('\n');
 }
@@ -427,8 +805,12 @@ exports.lineWebhook = onRequest(
               type: 'text',
               text: '已解除所有綁定。要重新綁定請再傳：綁定 <你的裝置 ID>',
             });
+          } else if (text === '狀態' || text === '綁定狀態' || text === 'status') {
+            await replyBindingStatus(client, ev);
           } else if (range) {
             await replyAgenda(client, ev, range);
+          } else if (await tryCreateNaturalEvent(client, ev, text)) {
+            // 已自動把訊息解析為新增行程
           } else if (ev.source?.type === 'group' || ev.source?.type === 'room') {
             // 群組／多人聊天室：非指令訊息保持安靜，避免干擾其他對話
           } else {
@@ -620,5 +1002,99 @@ exports.preEventReminder = onSchedule(
       }
     }
     console.log('[preEventReminder] done');
+  }
+);
+
+// 每週日 20:00 (Taipei) 推下週預覽
+exports.weeklySundayPreview = onSchedule(
+  {
+    schedule: '0 20 * * 0',
+    timeZone: 'Asia/Taipei',
+    secrets: [LINE_CHANNEL_ACCESS_TOKEN],
+  },
+  async () => {
+    const todayStr = formatDateTW(new Date());
+    const dow = getDayOfWeekTaipei(new Date());
+    // 從今天到下個週一的天數：週日 → 1、其他天就是 (8 - dow) % 7
+    const daysToNextMonday = ((8 - dow) % 7) || 7;
+    const nextMondayStr = addDaysStr(todayStr, daysToNextMonday);
+    const nextSundayStr = addDaysStr(nextMondayStr, 6);
+    console.log('[weeklySundayPreview] start', {
+      buildVersion: BUILD_VERSION, nextMondayStr, nextSundayStr,
+    });
+
+    const settingsSnap = await db().collectionGroup('bibi_settings').get();
+    for (const settingDoc of settingsSnap.docs) {
+      try {
+        if (settingDoc.id !== 'line') continue;
+        const uid = settingDoc.ref.parent.parent?.id;
+        if (!uid) continue;
+        const lineUserIds = settingDoc.data()?.lineUserIds || [];
+        if (lineUserIds.length === 0) continue;
+
+        const eventsSnap = await db()
+          .collection('artifacts').doc(APP_ID)
+          .collection('users').doc(uid)
+          .collection('bibi_events')
+          .where('startDate', '<=', nextSundayStr)
+          .get();
+
+        // 依日期分組
+        const byDate = {};
+        for (let i = 0; i < 7; i++) {
+          byDate[addDaysStr(nextMondayStr, i)] = [];
+        }
+        eventsSnap.forEach((d) => {
+          const e = d.data();
+          if (!e.endDate || e.endDate < nextMondayStr) return;
+          for (const dateStr of Object.keys(byDate)) {
+            if (dateStr >= e.startDate && dateStr <= e.endDate) {
+              byDate[dateStr].push(e);
+            }
+          }
+        });
+
+        const lines = [`🌙 下週行程預覽 (${nextMondayStr} ~ ${nextSundayStr})`, ''];
+        let totalCount = 0;
+        for (const dateStr of Object.keys(byDate)) {
+          const events = byDate[dateStr];
+          const label = formatDateLabel(taipeiMidnight(dateStr));
+          if (events.length === 0) continue;
+          totalCount += events.length;
+          lines.push(`${label}`);
+          // 全天先列
+          events.sort((a, b) => {
+            if (a.isAllDay && !b.isAllDay) return -1;
+            if (!a.isAllDay && b.isAllDay) return 1;
+            return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
+          });
+          events.forEach((e) => {
+            lines.push(`  • ${e.isAllDay ? '全天' : e.startTime || ''} ${e.title}`);
+          });
+          lines.push('');
+        }
+        const message = totalCount === 0
+          ? `🌙 下週 (${nextMondayStr} ~ ${nextSundayStr}) 沒有排程，可以好好放鬆 ☕`
+          : lines.join('\n').trim();
+
+        const client = lineClient();
+        const results = await Promise.allSettled(
+          lineUserIds.map((id) => client.pushMessage(id, { type: 'text', text: message }))
+        );
+        results.forEach((r, i) => {
+          if (r.status === 'rejected') {
+            console.error('[weeklySundayPreview] push failed', {
+              uid, to: lineUserIds[i],
+              err: r.reason?.originalError?.response?.data || r.reason?.message || r.reason,
+            });
+          }
+        });
+      } catch (err) {
+        console.error('[weeklySundayPreview] user error', {
+          path: settingDoc.ref.path, err: err?.message || err,
+        });
+      }
+    }
+    console.log('[weeklySundayPreview] done');
   }
 );
