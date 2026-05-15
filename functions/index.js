@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v9-sender-identity';
+const BUILD_VERSION = '2026-05-15-v10-identity-fix';
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
@@ -660,7 +660,8 @@ async function handleIdentitySet(client, ev, text) {
     return true;
   }
 
-  // 從綁定的行事曆角色名稱比對
+  // 從綁定的行事曆角色名稱比對 (不分大小寫、自動 trim)
+  const claim = claimedName.toLowerCase();
   let matchedRole = null;
   let matchedRoleName = null;
   let firstRoles = null;
@@ -669,10 +670,10 @@ async function handleIdentitySet(client, ev, text) {
     if (!firstRoles) firstRoles = roles;
     const r1 = (roles.role1 || '我').trim();
     const r2 = (roles.role2 || '夥伴').trim();
-    if (claimedName === r1 || claimedName === '我' || claimedName === '我自己') {
+    if (claim === r1.toLowerCase() || claim === '我' || claim === '我自己') {
       matchedRole = 'me'; matchedRoleName = r1; break;
     }
-    if (claimedName === r2 || claimedName === '夥伴' || claimedName === '另一半') {
+    if (claim === r2.toLowerCase() || claim === '夥伴' || claim === '另一半') {
       matchedRole = 'partner'; matchedRoleName = r2; break;
     }
   }
@@ -680,19 +681,20 @@ async function handleIdentitySet(client, ev, text) {
   if (!matchedRole) {
     await safeReply(client, ev.replyToken, withQuickReply({
       type: 'text',
-      text: `找不到名字「${claimedName}」。\n目前行事曆設定的角色：${firstRoles.role1 || '我'} ／ ${firstRoles.role2 || '夥伴'}\n\n請傳：我是 ${firstRoles.role1 || '我'}\n或：我是 ${firstRoles.role2 || '夥伴'}`,
+      text: `找不到名字「${claimedName}」。\n目前行事曆設定的角色：${firstRoles.role1 || '我'} ／ ${firstRoles.role2 || '夥伴'}\n\n要改名請到 App 的設定畫面。\n\n請傳：我是 ${firstRoles.role1 || '我'}\n或：我是 ${firstRoles.role2 || '夥伴'}`,
     }));
     return true;
   }
 
-  // 存到 userRoleMap，merge=true 會保留其他人的 mapping
+  // 存到 userRoleMap，巢狀物件 + merge=true 才會正確 deep merge，
+  // 不會蓋掉其他寄件人已存的 mapping。
   for (const uid of uids) {
     await db()
       .collection('artifacts').doc(APP_ID)
       .collection('users').doc(uid)
       .collection('bibi_settings').doc('line')
       .set({
-        [`userRoleMap.${senderUserId}`]: matchedRole,
+        userRoleMap: { [senderUserId]: matchedRole },
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
   }
