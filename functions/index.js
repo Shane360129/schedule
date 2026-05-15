@@ -17,7 +17,15 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v14-month-view';
+const BUILD_VERSION = '2026-05-15-v15-usage-quiet';
+
+// 通知開關 (true=開, false=關，省 LINE push 額度)
+const NOTIFY_ON_CREATE = true;
+const NOTIFY_ON_UPDATE = false;
+const NOTIFY_ON_DELETE = false;
+const NOTIFY_DAILY_SUMMARY = true;
+const NOTIFY_PRE_EVENT_REMINDER = true;
+const NOTIFY_WEEKLY_SUNDAY_PREVIEW = false;
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
@@ -74,6 +82,28 @@ function addDaysStr(dateStr, days) {
   const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(date.getUTCDate()).padStart(2, '0');
   return `${yy}-${mm}-${dd}`;
+}
+
+function addMonthKey(key, delta) {
+  // key=YYYY-MM, 回傳加 delta 月後的 YYYY-MM
+  const [y, m] = key.split('-').map(Number);
+  let newM = m + delta;
+  let newY = y;
+  while (newM <= 0) { newM += 12; newY -= 1; }
+  while (newM > 12) { newM -= 12; newY += 1; }
+  return `${newY}-${String(newM).padStart(2, '0')}`;
+}
+
+function monthRangeForQuery(y, mo) {
+  // 給「整月行程」/「2026/7」等查詢用
+  const monthStartStr = `${y}-${String(mo).padStart(2, '0')}-01`;
+  const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const monthEndStr = `${y}-${String(mo).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return {
+    start: taipeiMidnight(monthStartStr),
+    days: lastDay,
+    title: `📅 ${y}/${mo} 整月行程（${monthStartStr} ~ ${monthEndStr}）`,
+  };
 }
 
 function formatEvent(ev) {
@@ -232,16 +262,27 @@ function getRangeFromText(text) {
   }
   if (text === '整月行程' || text === '當月行程' || text === '本月' ||
       text === '這個月' || text === '本月行程' || text === '這個月行程') {
-    const todayStr = formatDateTW(new Date());
-    const [y, mo] = todayStr.split('-').map(Number);
-    const monthStartStr = `${y}-${String(mo).padStart(2, '0')}-01`;
-    const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
-    const monthEndStr = `${y}-${String(mo).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    return {
-      start: taipeiMidnight(monthStartStr),
-      days: lastDay,
-      title: `📅 ${mo}月整月行程（${monthStartStr} ~ ${monthEndStr}）`,
-    };
+    const todayStr2 = formatDateTW(new Date());
+    const [y, mo] = todayStr2.split('-').map(Number);
+    return monthRangeForQuery(y, mo);
+  }
+  // 年月查詢：「2026/7」「2026-7」「2026年7月」「2026/07/行程」等
+  let mm;
+  if ((mm = text.match(/^(\d{4})[\/\-年](\d{1,2})月?(行程|份)?$/))) {
+    const y = parseInt(mm[1]);
+    const mo = parseInt(mm[2]);
+    if (mo >= 1 && mo <= 12) return monthRangeForQuery(y, mo);
+  }
+  // 純月份查詢：「7月」「7月行程」「7月份」(假設當前年；如果已過去就推到明年)
+  if ((mm = text.match(/^(\d{1,2})月(行程|份)?$/))) {
+    const mo = parseInt(mm[1]);
+    if (mo >= 1 && mo <= 12) {
+      const todayStr2 = formatDateTW(new Date());
+      const [curY, curMo] = todayStr2.split('-').map(Number);
+      // 「7月」今天是 5 月 → 今年；今天是 8 月 → 明年
+      const y = mo >= curMo ? curY : curY + 1;
+      return monthRangeForQuery(y, mo);
+    }
   }
   // 純日期查詢：使用者直接傳「5/16」、「5月20日」、「週三」、「下週一」等，
   // 整段文字就是日期關鍵字時，當成單日行程查詢
@@ -702,6 +743,46 @@ async function replyBindingStatus(client, ev) {
   }));
 }
 
+async function replyUsage(client, ev) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '尚未綁定行事曆',
+    }));
+  }
+  const monthKey = formatDateTW(new Date()).slice(0, 7); // YYYY-MM
+  const prevMonthKey = addMonthKey(monthKey, -1);
+  const lines = ['📊 LINE 推播用量', ''];
+  for (const uid of uids) {
+    const usageDoc = await db()
+      .collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid)
+      .collection('bibi_settings').doc('usage')
+      .get();
+    const data = usageDoc.exists ? usageDoc.data() : {};
+    const thisMonth = data[monthKey] || 0;
+    const prevMonth = data[prevMonthKey] || 0;
+    lines.push(`📋 ${uid.substring(0, 8)}…`);
+    lines.push(`本月（${monthKey}）：${thisMonth} 則`);
+    lines.push(`上月（${prevMonthKey}）：${prevMonth} 則`);
+    lines.push(`免費額度：200 則／月`);
+    if (thisMonth >= 200) {
+      lines.push(`⚠️ 本月已超額 ${thisMonth - 200} 則`);
+    } else {
+      lines.push(`還剩：${200 - thisMonth} 則`);
+    }
+    lines.push('');
+  }
+  lines.push('註：只算主動推播 (早安/提醒/事件變動)，');
+  lines.push('　你跟我互動的回覆不算。');
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text',
+    text: lines.join('\n'),
+  }));
+}
+
 async function getSenderRoleForUid(uid, senderUserId) {
   if (!senderUserId) return null;
   const lineDoc = await db()
@@ -1040,6 +1121,44 @@ async function replyAgenda(client, ev, range) {
   ));
 }
 
+async function incrementPushCount(uid, count = 1) {
+  if (!count || count < 1) return;
+  const monthKey = formatDateTW(new Date()).slice(0, 7); // YYYY-MM
+  try {
+    await db()
+      .collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid)
+      .collection('bibi_settings').doc('usage')
+      .set({
+        [monthKey]: admin.firestore.FieldValue.increment(count),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+  } catch (err) {
+    console.warn('[usage] increment failed', err?.message || err);
+  }
+}
+
+async function pushToTargets(uid, lineUserIds, message) {
+  if (!lineUserIds || lineUserIds.length === 0) return;
+  const msgObject = typeof message === 'string'
+    ? { type: 'text', text: message }
+    : message;
+  const client = lineClient();
+  const results = await Promise.allSettled(
+    lineUserIds.map((id) => client.pushMessage(id, msgObject))
+  );
+  results.forEach((r, i) => {
+    if (r.status === 'rejected') {
+      console.error('[push] failed', {
+        uid, to: lineUserIds[i],
+        err: r.reason?.originalError?.response?.data || r.reason?.message || r.reason,
+      });
+    }
+  });
+  const successCount = results.filter((r) => r.status === 'fulfilled').length;
+  if (successCount > 0) await incrementPushCount(uid, successCount);
+}
+
 async function pushToBoundUsers(uid, message) {
   const doc = await db()
     .collection('artifacts').doc(APP_ID)
@@ -1047,29 +1166,23 @@ async function pushToBoundUsers(uid, message) {
     .collection('bibi_settings').doc('line')
     .get();
   const lineUserIds = (doc.exists ? doc.data().lineUserIds : []) || [];
-  if (lineUserIds.length === 0) return;
-
-  const client = lineClient();
-  await Promise.allSettled(
-    lineUserIds.map((id) => client.pushMessage(id, { type: 'text', text: message }))
-  );
+  await pushToTargets(uid, lineUserIds, message);
 }
 
 function getHelpText() {
   return [
     '🤖 我聽得懂的指令：',
     '',
-    '🔗 綁定 <裝置 ID>　— 綁定行事曆',
-    '🙋 我是 <你的名字>　— 自我介紹',
-    '🚫 解除綁定 / 📊 狀態 / 誰是誰',
+    '🔗 綁定 / 解除綁定 / 我是 <名字>',
+    '📊 狀態 / 誰是誰 / 用量',
     '',
     '📅 查詢行程：',
     '　今日／明天／後天／大後天',
     '　本週／下週／下下週／週末',
-    '　整月行程／當月行程／本月',
-    '　直接傳日期：「5/16」「5月20日」「週三」「下週一」',
+    '　整月行程／本月／7月／2026/7',
+    '　直接傳日期：「5/16」「週三」「下週一」',
     '',
-    '➕ 新增行程（必須打「新增」開頭）：',
+    '➕ 新增行程（必須以「新增」開頭）：',
     '　「新增 明天10點 看牙醫」',
     '　「新增 5/20 全天 媽媽生日」',
     '　「新增 7/10-7/22 加州旅遊」← 多日',
@@ -1077,10 +1190,11 @@ function getHelpText() {
     '',
     '🗑️ 刪除行程：',
     '　「刪除 5/20 媽媽生日」',
-    '　（部分關鍵字即可；多筆相符會列出來讓你選）',
     '',
-    '時段別名：今晚 20:00 / 明早 07:00 /',
-    '　中午 12:00 / 傍晚 18:00',
+    '⏰ 自動通知（已開啟）：',
+    '　• 每日 09:00 早安行程摘要',
+    '　• 事件開始前 15-45 分提醒',
+    '　• 新增事件即時通知',
     '',
     `（版本 ${BUILD_VERSION}）`,
   ].join('\n');
@@ -1150,6 +1264,8 @@ exports.lineWebhook = onRequest(
             });
           } else if (text === '狀態' || text === '綁定狀態' || text === 'status') {
             await replyBindingStatus(client, ev);
+          } else if (text === '用量' || text === '推播用量' || text === 'usage') {
+            await replyUsage(client, ev);
           } else if (text === '誰是誰' || text === '誰是誰?' || text === '誰是誰？') {
             await replyIdentityMap(client, ev);
           } else if (text === '幫助' || text === '說明' || text === '指令' ||
@@ -1194,12 +1310,24 @@ exports.notifyOnEventCreate = onDocumentCreated(
     secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   },
   async (event) => {
+    if (!NOTIFY_ON_CREATE) return;
     const ev = event.data.data();
     const uid = event.params.uid;
-    await pushToBoundUsers(uid, `📝 新增行程：${formatEvent(ev)}`);
+    const roles = await getRoleSettings(uid);
+    const ownerLabel = ev.eventType === 'me' ? (roles.role1 || '我')
+      : ev.eventType === 'partner' ? (roles.role2 || '夥伴')
+      : '共同';
+    const flex = buildEventConfirmFlex(ev, ownerLabel);
+    // 從 App 新增 vs 從 LINE 新增都會走這個 trigger，
+    // 把卡片標題從「✅ 已新增行程」改成「📝 新增行程」做差異化
+    flex.contents.header.contents[0].text = '📝 新增行程';
+    flex.altText = `📝 新增行程：${ev.title}`;
+    await pushToBoundUsers(uid, flex);
   }
 );
 
+// 修改通知：預設關閉（NOTIFY_ON_UPDATE=false）。
+// 仍保留 trigger，因為要在「時間變動時清掉 reminderNotifiedAt」讓提醒可重發。
 exports.notifyOnEventUpdate = onDocumentUpdated(
   {
     document: `artifacts/${APP_ID}/users/{uid}/bibi_events/{eventId}`,
@@ -1208,7 +1336,6 @@ exports.notifyOnEventUpdate = onDocumentUpdated(
   async (event) => {
     const before = event.data.before.data();
     const after = event.data.after.data();
-    const uid = event.params.uid;
     const timeChanged =
       before.startDate !== after.startDate ||
       before.endDate !== after.endDate ||
@@ -1218,13 +1345,15 @@ exports.notifyOnEventUpdate = onDocumentUpdated(
     const titleChanged = before.title !== after.title;
     if (!timeChanged && !titleChanged) return;
 
-    // 時間有變動，要清掉「已提醒」記號才能在新時間重新提醒
+    // 時間變動 → 清提醒記號 (跟通知開關無關，永遠執行)
     if (timeChanged && after.reminderNotifiedAt) {
       await event.data.after.ref.update({
         reminderNotifiedAt: admin.firestore.FieldValue.delete(),
       });
     }
 
+    if (!NOTIFY_ON_UPDATE) return;
+    const uid = event.params.uid;
     await pushToBoundUsers(uid, `✏️ 行程更新：${formatEvent(after)}`);
   }
 );
@@ -1235,6 +1364,7 @@ exports.notifyOnEventDelete = onDocumentDeleted(
     secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   },
   async (event) => {
+    if (!NOTIFY_ON_DELETE) return;
     const ev = event.data.data();
     const uid = event.params.uid;
     await pushToBoundUsers(uid, `🗑️ 行程刪除：${ev.title}`);
@@ -1249,6 +1379,10 @@ exports.dailyMorningSummary = onSchedule(
     secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   },
   async () => {
+    if (!NOTIFY_DAILY_SUMMARY) {
+      console.log('[dailyMorningSummary] disabled by feature flag');
+      return;
+    }
     const today = formatDateTW(new Date());
     console.log('[dailyMorningSummary] start', { today, buildVersion: BUILD_VERSION });
 
@@ -1287,18 +1421,7 @@ exports.dailyMorningSummary = onSchedule(
             ? `☀️ 早安！${today} 今天沒有排程，好好享受 ☕`
             : lines.join('\n');
 
-        const client = lineClient();
-        const results = await Promise.allSettled(
-          lineUserIds.map((id) => client.pushMessage(id, { type: 'text', text: message }))
-        );
-        results.forEach((r, i) => {
-          if (r.status === 'rejected') {
-            console.error('[dailyMorningSummary] push failed', {
-              uid, to: lineUserIds[i],
-              err: r.reason?.originalError?.response?.data || r.reason?.message || r.reason,
-            });
-          }
-        });
+        await pushToTargets(uid, lineUserIds, message);
       } catch (err) {
         console.error('[dailyMorningSummary] user error', { path: doc.ref.path, err: err?.message || err });
       }
@@ -1314,6 +1437,10 @@ exports.preEventReminder = onSchedule(
     secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   },
   async () => {
+    if (!NOTIFY_PRE_EVENT_REMINDER) {
+      console.log('[preEventReminder] disabled by feature flag');
+      return;
+    }
     const now = new Date();
     const horizon = new Date(now.getTime() + 45 * 60 * 1000);
     const today = formatDateTW(now);
@@ -1372,6 +1499,10 @@ exports.weeklySundayPreview = onSchedule(
     secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   },
   async () => {
+    if (!NOTIFY_WEEKLY_SUNDAY_PREVIEW) {
+      console.log('[weeklySundayPreview] disabled by feature flag');
+      return;
+    }
     const todayStr = formatDateTW(new Date());
     const dow = getDayOfWeekTaipei(new Date());
     // 從今天到下個週一的天數：週日 → 1、其他天就是 (8 - dow) % 7
@@ -1436,18 +1567,7 @@ exports.weeklySundayPreview = onSchedule(
           ? `🌙 下週 (${nextMondayStr} ~ ${nextSundayStr}) 沒有排程，可以好好放鬆 ☕`
           : lines.join('\n').trim();
 
-        const client = lineClient();
-        const results = await Promise.allSettled(
-          lineUserIds.map((id) => client.pushMessage(id, { type: 'text', text: message }))
-        );
-        results.forEach((r, i) => {
-          if (r.status === 'rejected') {
-            console.error('[weeklySundayPreview] push failed', {
-              uid, to: lineUserIds[i],
-              err: r.reason?.originalError?.response?.data || r.reason?.message || r.reason,
-            });
-          }
-        });
+        await pushToTargets(uid, lineUserIds, message);
       } catch (err) {
         console.error('[weeklySundayPreview] user error', {
           path: settingDoc.ref.path, err: err?.message || err,
