@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v12-date-query';
+const BUILD_VERSION = '2026-05-15-v13-explicit-cmds';
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
@@ -818,30 +818,45 @@ async function replyIdentityMap(client, ev) {
   }));
 }
 
-async function tryCreateNaturalEvent(client, ev, text) {
-  // 回傳 true 表示有解析成功並處理了；false 表示不像新增指令，呼叫端繼續走其他分支
+async function tryCreateExplicit(client, ev, text) {
+  // 由「新增 X」指令明確觸發，所以可以對所有錯誤狀態都回覆
+  if (!text) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '請補上行程內容。\n例如：\n　「新增 明天10點 看牙醫」\n　「新增 5/20 全天 媽媽生日」\n　「新增 7/10-7/22 加州旅遊」',
+    }));
+    return;
+  }
   const sourceId = getSourceId(ev);
   const uids = await getBoundUidsForSource(sourceId);
-  if (uids.length === 0) return false; // 還沒綁定就別誤判
+  if (uids.length === 0) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '尚未綁定行事曆，無法新增。先傳：綁定 <你的裝置 ID>',
+    }));
+    return;
+  }
 
   const todayStr = formatDateTW(new Date());
   const todayDow = getDayOfWeekTaipei(new Date());
-  const targetUid = uids[0]; // 多綁時只新增到第一個
+  const targetUid = uids[0];
   const roles = await getRoleSettings(targetUid);
   const senderRole = await getSenderRoleForUid(targetUid, ev.source?.userId);
 
   const parsed = parseNaturalEvent(text, roles, todayStr, todayDow);
-  if (!parsed) return false;
-
-  // 抓到日期但沒寫事件標題：在 DM 提示用戶補上，群組裡 silent 避免吵
-  if (parsed.error === 'no_title') {
-    const isGroup = ev.source?.type === 'group' || ev.source?.type === 'room';
-    if (isGroup) return false;
+  if (!parsed) {
     await safeReply(client, ev.replyToken, withQuickReply({
       type: 'text',
-      text: '看起來想新增行程，但抓不到行程名稱 🤔\n例如：「明天10點 開會」、「5/20 全天 媽媽生日」',
+      text: `抓不到日期 🤔「${text}」\n例如：「新增 明天10點 看牙醫」、「新增 5/20 全天 媽媽生日」`,
     }));
-    return true;
+    return;
+  }
+  if (parsed.error === 'no_title') {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '抓不到行程名稱 🤔\n例如：「新增 明天10點 開會」、「新增 5/20 全天 媽媽生日」',
+    }));
+    return;
   }
 
   // 用戶沒明確提到角色名稱 → fallback 用寄件人角色
@@ -862,7 +877,94 @@ async function tryCreateNaturalEvent(client, ev, text) {
   await safeReply(client, ev.replyToken, withQuickReply(
     buildEventConfirmFlex(parsed, ownerLabel)
   ));
-  return true;
+}
+
+async function tryDeleteEvent(client, ev, text) {
+  if (!text) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '請指定要刪除的日期 + 事件名稱。\n例：「刪除 5/20 媽媽生日」',
+    }));
+    return;
+  }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '尚未綁定行事曆，無法刪除',
+    }));
+    return;
+  }
+  const todayStr = formatDateTW(new Date());
+  const todayDow = getDayOfWeekTaipei(new Date());
+  const targetUid = uids[0];
+
+  const dateToken = parseDateToken(text, todayStr, todayDow);
+  if (!dateToken) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '請先指定日期。\n例：「刪除 5/20 媽媽生日」',
+    }));
+    return;
+  }
+  const titleQuery = text.slice(dateToken.consumed.length).trim();
+  if (!titleQuery) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '請補上要刪除的事件名稱（部分關鍵字即可）。\n例：「刪除 5/20 媽媽生日」',
+    }));
+    return;
+  }
+
+  // 撈出 startDate <= 目標日的事件，再過濾 endDate >= 目標日，
+  // 然後比對 title 包含關鍵字
+  const dateStr = dateToken.date;
+  const eventsSnap = await db()
+    .collection('artifacts').doc(APP_ID)
+    .collection('users').doc(targetUid)
+    .collection('bibi_events')
+    .where('startDate', '<=', dateStr)
+    .get();
+  const matches = [];
+  eventsSnap.forEach((d) => {
+    const e = d.data();
+    if (!e.endDate || e.endDate < dateStr) return;
+    if (e.title && e.title.includes(titleQuery)) {
+      matches.push({ ref: d.ref, data: e });
+    }
+  });
+
+  if (matches.length === 0) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: `${dateStr} 沒有找到包含「${titleQuery}」的行程`,
+    }));
+    return;
+  }
+  if (matches.length > 1) {
+    const list = matches.map((m, i) => {
+      const range = m.data.startDate === m.data.endDate
+        ? m.data.startDate
+        : `${m.data.startDate} ~ ${m.data.endDate}`;
+      return `${i + 1}. ${m.data.title}（${range}）`;
+    }).join('\n');
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: `找到 ${matches.length} 筆相符的行程，請打更精準的關鍵字：\n\n${list}`,
+    }));
+    return;
+  }
+
+  const match = matches[0];
+  await match.ref.delete();
+  const range = match.data.startDate === match.data.endDate
+    ? match.data.startDate
+    : `${match.data.startDate} ~ ${match.data.endDate}`;
+  await safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text',
+    text: `🗑️ 已刪除：${match.data.title}\n　${range}`,
+  }));
 }
 
 async function replyAgenda(client, ev, range) {
@@ -938,26 +1040,26 @@ function getHelpText() {
     '🤖 我聽得懂的指令：',
     '',
     '🔗 綁定 <裝置 ID>　— 綁定行事曆',
-    '🙋 我是 <你的名字>　— 自我介紹，新增行程時自動歸給你',
-    '🚫 解除綁定　— 取消綁定',
-    '📊 狀態 / 誰是誰　— 查綁定資訊',
+    '🙋 我是 <你的名字>　— 自我介紹',
+    '🚫 解除綁定 / 📊 狀態 / 誰是誰',
     '',
     '📅 查詢行程：',
     '　今日／明天／後天／大後天',
     '　本週／下週／下下週／週末',
-    '　直接傳日期也可以：「5/16」「5月20日」「週三」「下週一」',
+    '　直接傳日期：「5/16」「5月20日」「週三」「下週一」',
     '',
-    '➕ 直接傳訊息就能新增行程：',
-    '　「明天10點看牙醫」',
-    '　「後天下午3點半開會」',
-    '　「5/20 全天 媽媽生日」',
-    '　「5/13到5/15 出差」← 多日',
-    '　「今晚 阿花生日趴」← 模糊時段',
+    '➕ 新增行程（必須打「新增」開頭）：',
+    '　「新增 明天10點 看牙醫」',
+    '　「新增 5/20 全天 媽媽生日」',
+    '　「新增 7/10-7/22 加州旅遊」← 多日',
+    '　「新增 今晚 阿花生日趴」← 模糊時段',
+    '',
+    '🗑️ 刪除行程：',
+    '　「刪除 5/20 媽媽生日」',
+    '　（部分關鍵字即可；多筆相符會列出來讓你選）',
     '',
     '時段別名：今晚 20:00 / 明早 07:00 /',
     '　中午 12:00 / 傍晚 18:00',
-    '',
-    '⚠️ 編輯／刪除請到 App 操作。',
     '',
     `（版本 ${BUILD_VERSION}）`,
   ].join('\n');
@@ -1029,14 +1131,26 @@ exports.lineWebhook = onRequest(
             await replyBindingStatus(client, ev);
           } else if (text === '誰是誰' || text === '誰是誰?' || text === '誰是誰？') {
             await replyIdentityMap(client, ev);
+          } else if (text === '幫助' || text === '說明' || text === '指令' ||
+                     text.toLowerCase() === 'help') {
+            // 明確的 help 指令，連群組也要回
+            await safeReply(client, ev.replyToken, withQuickReply({
+              type: 'text',
+              text: getHelpText(),
+            }));
           } else if (text.startsWith('我是') && await handleIdentitySet(client, ev, text)) {
             // 已處理「我是 X」自我介紹
+          } else if (text.startsWith('新增')) {
+            // 明確的新增指令，要求 prefix 避免誤觸
+            const body = text.replace(/^新增[\s　]*/, '').trim();
+            await tryCreateExplicit(client, ev, body);
+          } else if (text.startsWith('刪除') || text.startsWith('刪 ') || text === '刪') {
+            const body = text.replace(/^刪除?[\s　]*/, '').trim();
+            await tryDeleteEvent(client, ev, body);
           } else if (range) {
             await replyAgenda(client, ev, range);
-          } else if (await tryCreateNaturalEvent(client, ev, text)) {
-            // 已自動把訊息解析為新增行程
           } else if (ev.source?.type === 'group' || ev.source?.type === 'room') {
-            // 群組／多人聊天室：非指令訊息保持安靜，避免干擾其他對話
+            // 群組／多人聊天室：非指令訊息保持安靜
           } else {
             await safeReply(client, ev.replyToken, withQuickReply({
               type: 'text',
