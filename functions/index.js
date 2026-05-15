@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v10-identity-fix';
+const BUILD_VERSION = '2026-05-15-v11-nlp-polish';
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
@@ -425,7 +425,67 @@ function buildEventConfirmFlex(ev, ownerLabel) {
 }
 
 // -------- 自然語言事件解析 --------
-// 範例：「後天10點要看醫生」、「明天下午3點半 阿明 牙醫」、「5/20 全天 媽媽生日」
+
+// 解析一個日期 token (從 text 開頭嘗試比對)，
+// 回傳 { date: 'YYYY-MM-DD', consumed: '原始符合的字串' } 或 null。
+function parseDateToken(text, todayStr, todayDow) {
+  const dateKeywords = [
+    { re: /^(今天|今日)/, days: 0 },
+    { re: /^(明天|明日)/, days: 1 },
+    { re: /^(後天)/, days: 2 },
+    { re: /^(大後天)/, days: 3 },
+  ];
+  for (const { re, days } of dateKeywords) {
+    const m = text.match(re);
+    if (m) return { date: addDaysStr(todayStr, days), consumed: m[0] };
+  }
+  const wdMap = { '日': 0, '天': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 };
+  let m;
+  if ((m = text.match(/^下週([日天一二三四五六])/) ||
+            text.match(/^下周([日天一二三四五六])/) ||
+            text.match(/^下禮拜([日天一二三四五六])/))) {
+    const target = wdMap[m[1]];
+    const daysToMonday = (todayDow + 6) % 7;
+    const offsetFromMonday = (target + 6) % 7;
+    return {
+      date: addDaysStr(todayStr, -daysToMonday + 7 + offsetFromMonday),
+      consumed: m[0],
+    };
+  }
+  if ((m = text.match(/^週([日天一二三四五六])/) ||
+            text.match(/^周([日天一二三四五六])/) ||
+            text.match(/^禮拜([日天一二三四五六])/) ||
+            text.match(/^星期([日天一二三四五六])/))) {
+    const target = wdMap[m[1]];
+    const offset = (target - todayDow + 7) % 7;
+    return { date: addDaysStr(todayStr, offset), consumed: m[0] };
+  }
+  const buildMDDate = (m1, m2, mraw) => {
+    const month = parseInt(m1);
+    const day = parseInt(m2);
+    const [y] = todayStr.split('-').map(Number);
+    const cand = `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    // 只有比今天「明顯過去」(超過 60 天) 才推到明年，
+    // 避免「5/13」today=5/15 被推到明年產生跨年事件
+    const daysDiff = (new Date(cand) - new Date(todayStr)) / 86400000;
+    return {
+      date: daysDiff < -60
+        ? `${y + 1}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        : cand,
+      consumed: mraw,
+    };
+  };
+  if ((m = text.match(/^(\d{1,2})\/(\d{1,2})/))) {
+    return buildMDDate(m[1], m[2], m[0]);
+  }
+  if ((m = text.match(/^(\d{1,2})月(\d{1,2})[日號]?/))) {
+    return buildMDDate(m[1], m[2], m[0]);
+  }
+  return null;
+}
+
+// 範例：「後天10點要看醫生」、「明天下午3點半 阿明 牙醫」、「5/20 全天 媽媽生日」、
+//      「5/13到5/15 出差」、「今晚 阿花生日趴」
 function parseNaturalEvent(text, roleSettings, todayStr, todayDow) {
   const result = {
     isAllDay: true,
@@ -442,74 +502,56 @@ function parseNaturalEvent(text, roleSettings, todayStr, todayDow) {
   let foundDate = false;
   let foundTime = false;
 
-  // -- 1. 日期 --
-  const dateKeywords = [
-    { re: /^(今天|今日)/, days: 0 },
-    { re: /^(明天|明日)/, days: 1 },
-    { re: /^(後天)/, days: 2 },
-    { re: /^(大後天)/, days: 3 },
+  // -- 1a. 模糊時段 (今晚/明早/明晚/後天晚上)，同時隱含日期+時間 --
+  const fuzzyPhrases = [
+    { re: /^(今晚|今天晚上)/, dateDays: 0, time: '20:00', endTime: '21:00' },
+    { re: /^(今天中午)/, dateDays: 0, time: '12:00', endTime: '13:00' },
+    { re: /^(今天傍晚)/, dateDays: 0, time: '18:00', endTime: '19:00' },
+    { re: /^(明早|明天早上|明天早晨)/, dateDays: 1, time: '07:00', endTime: '08:00' },
+    { re: /^(明晚|明天晚上)/, dateDays: 1, time: '20:00', endTime: '21:00' },
+    { re: /^(明天中午)/, dateDays: 1, time: '12:00', endTime: '13:00' },
+    { re: /^(後天晚上|後天晚)/, dateDays: 2, time: '20:00', endTime: '21:00' },
+    { re: /^(後天早上|後天早)/, dateDays: 2, time: '07:00', endTime: '08:00' },
   ];
-  for (const { re, days } of dateKeywords) {
-    const m = remaining.match(re);
+  for (const f of fuzzyPhrases) {
+    const m = remaining.match(f.re);
     if (m) {
-      result.startDate = addDaysStr(todayStr, days);
+      result.startDate = addDaysStr(todayStr, f.dateDays);
       result.endDate = result.startDate;
+      result.startTime = f.time;
+      result.endTime = f.endTime;
+      result.isAllDay = false;
       remaining = remaining.replace(m[0], '').trim();
       foundDate = true;
+      foundTime = true;
       break;
     }
   }
-  // 下週X / 週X / 禮拜X / 星期X
+
+  // -- 1b. 標準日期 (含日期範圍「5/13 到 5/15」「明天到後天」) --
   if (!foundDate) {
-    const wdMap = { '日': 0, '天': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 };
-    let m;
-    if ((m = remaining.match(/^下週([日天一二三四五六])/) ||
-              remaining.match(/^下周([日天一二三四五六])/) ||
-              remaining.match(/^下禮拜([日天一二三四五六])/))) {
-      const target = wdMap[m[1]];
-      const daysToMonday = (todayDow + 6) % 7;
-      const offsetFromMonday = (target + 6) % 7; // 一→0, 日→6
-      result.startDate = addDaysStr(todayStr, -daysToMonday + 7 + offsetFromMonday);
-      result.endDate = result.startDate;
-      remaining = remaining.replace(m[0], '').trim();
+    const first = parseDateToken(remaining, todayStr, todayDow);
+    if (first) {
+      result.startDate = first.date;
+      result.endDate = first.date;
+      remaining = remaining.slice(first.consumed.length).trim();
       foundDate = true;
-    } else if ((m = remaining.match(/^週([日天一二三四五六])/) ||
-                     remaining.match(/^周([日天一二三四五六])/) ||
-                     remaining.match(/^禮拜([日天一二三四五六])/) ||
-                     remaining.match(/^星期([日天一二三四五六])/))) {
-      const target = wdMap[m[1]];
-      const offset = (target - todayDow + 7) % 7; // 本週剩餘的同名日；0 → 今天
-      result.startDate = addDaysStr(todayStr, offset);
-      result.endDate = result.startDate;
-      remaining = remaining.replace(m[0], '').trim();
-      foundDate = true;
-    }
-  }
-  // M/D 或 M月D日 或 M月D
-  if (!foundDate) {
-    let m;
-    if ((m = remaining.match(/^(\d{1,2})\/(\d{1,2})/))) {
-      const month = parseInt(m[1]);
-      const day = parseInt(m[2]);
-      const [y] = todayStr.split('-').map(Number);
-      const cand = `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      result.startDate = cand < todayStr
-        ? `${y + 1}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-        : cand;
-      result.endDate = result.startDate;
-      remaining = remaining.replace(m[0], '').trim();
-      foundDate = true;
-    } else if ((m = remaining.match(/^(\d{1,2})月(\d{1,2})[日號]?/))) {
-      const month = parseInt(m[1]);
-      const day = parseInt(m[2]);
-      const [y] = todayStr.split('-').map(Number);
-      const cand = `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      result.startDate = cand < todayStr
-        ? `${y + 1}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-        : cand;
-      result.endDate = result.startDate;
-      remaining = remaining.replace(m[0], '').trim();
-      foundDate = true;
+      // 看後面有沒有接連接詞 + 第二個日期 → 多日事件
+      const connectorMatch = remaining.match(/^[到~\-至]\s*/);
+      if (connectorMatch) {
+        const afterConn = remaining.slice(connectorMatch[0].length);
+        const second = parseDateToken(afterConn, todayStr, todayDow);
+        if (second) {
+          // 確保 endDate >= startDate (若使用者打反就 swap)
+          if (second.date < result.startDate) {
+            result.endDate = result.startDate;
+            result.startDate = second.date;
+          } else {
+            result.endDate = second.date;
+          }
+          remaining = afterConn.slice(second.consumed.length).trim();
+        }
+      }
     }
   }
 
@@ -517,11 +559,31 @@ function parseNaturalEvent(text, roleSettings, todayStr, todayDow) {
   if (/全天/.test(remaining)) {
     result.isAllDay = true;
     remaining = remaining.replace(/全天/g, '').trim();
-    foundTime = true; // 算是有時間訊號
+    foundTime = true;
   }
 
-  // -- 3. 時間範圍 --（要在「全天」之後，因為有可能同時出現）
-  if (!result.isAllDay || !foundTime) {
+  // -- 2b. 單獨的模糊時段（中午/傍晚/凌晨/清晨）— 沒附日期，套今天的時間 --
+  if (!foundTime) {
+    const slotMap = [
+      { re: /中午/, time: '12:00', endTime: '13:00' },
+      { re: /傍晚/, time: '18:00', endTime: '19:00' },
+      { re: /清晨/, time: '06:00', endTime: '07:00' },
+      { re: /凌晨/, time: '01:00', endTime: '02:00' },
+    ];
+    for (const s of slotMap) {
+      if (s.re.test(remaining)) {
+        result.startTime = s.time;
+        result.endTime = s.endTime;
+        result.isAllDay = false;
+        remaining = remaining.replace(s.re, '').trim();
+        foundTime = true;
+        break;
+      }
+    }
+  }
+
+  // -- 3. 時間範圍 --（要在「全天」與模糊時段之後）
+  if (!foundTime) {
     const timeRe = /(上午|下午|早上|晚上|中午)?\s*(\d{1,2})\s*[點:時](\s*(半|\d{1,2})\s*分?)?(?:\s*[到~\-至]\s*(上午|下午|早上|晚上|中午)?\s*(\d{1,2})\s*[點:時](\s*(半|\d{1,2})\s*分?)?)?/;
     const m = remaining.match(timeRe);
     if (m) {
@@ -582,7 +644,8 @@ function parseNaturalEvent(text, roleSettings, todayStr, todayDow) {
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!foundDate || !result.title) return null;
+  if (!foundDate) return null; // 不是新增指令，讓 caller fall through
+  if (!result.title) return { error: 'no_title' };
   // 預設：沒指定全天又沒指定時間 → 全天
   if (!foundTime) {
     result.isAllDay = true;
@@ -679,6 +742,9 @@ async function handleIdentitySet(client, ev, text) {
   }
 
   if (!matchedRole) {
+    // 群組／聊天室：比對失敗保持沉默，避免有人隨手打「我是吃飯了」就被回覆吵到
+    const isGroup = ev.source?.type === 'group' || ev.source?.type === 'room';
+    if (isGroup) return false;
     await safeReply(client, ev.replyToken, withQuickReply({
       type: 'text',
       text: `找不到名字「${claimedName}」。\n目前行事曆設定的角色：${firstRoles.role1 || '我'} ／ ${firstRoles.role2 || '夥伴'}\n\n要改名請到 App 的設定畫面。\n\n請傳：我是 ${firstRoles.role1 || '我'}\n或：我是 ${firstRoles.role2 || '夥伴'}`,
@@ -758,6 +824,17 @@ async function tryCreateNaturalEvent(client, ev, text) {
 
   const parsed = parseNaturalEvent(text, roles, todayStr, todayDow);
   if (!parsed) return false;
+
+  // 抓到日期但沒寫事件標題：在 DM 提示用戶補上，群組裡 silent 避免吵
+  if (parsed.error === 'no_title') {
+    const isGroup = ev.source?.type === 'group' || ev.source?.type === 'room';
+    if (isGroup) return false;
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '看起來想新增行程，但抓不到行程名稱 🤔\n例如：「明天10點 開會」、「5/20 全天 媽媽生日」',
+    }));
+    return true;
+  }
 
   // 用戶沒明確提到角色名稱 → fallback 用寄件人角色
   if (parsed.eventType === 'common' && senderRole) {
@@ -861,12 +938,17 @@ function getHelpText() {
     '　今日／明天／後天／大後天',
     '　本週／下週／下下週／週末',
     '',
-    '➕ 直接傳訊息就能新增行程，例如：',
+    '➕ 直接傳訊息就能新增行程：',
     '　「明天10點看牙醫」',
     '　「後天下午3點半開會」',
     '　「5/20 全天 媽媽生日」',
-    '　（沒指定 → 預設用你的角色；',
-    '　　訊息含對方名字 → 歸給對方）',
+    '　「5/13到5/15 出差」← 多日',
+    '　「今晚 阿花生日趴」← 模糊時段',
+    '',
+    '時段別名：今晚 20:00 / 明早 07:00 /',
+    '　中午 12:00 / 傍晚 18:00',
+    '',
+    '⚠️ 編輯／刪除請到 App 操作。',
     '',
     `（版本 ${BUILD_VERSION}）`,
   ].join('\n');

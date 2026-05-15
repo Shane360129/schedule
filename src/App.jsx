@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2, 
-  Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle
+import {
+  ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2,
+  Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle, Calendar
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -733,6 +733,8 @@ const App = () => {
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+  const now = new Date();
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfMonth(year, month);
   const days = [];
@@ -762,9 +764,22 @@ const App = () => {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 p-1.5 rounded-2xl border backdrop-blur-sm mr-2" style={{ backgroundColor: theme.colors.gridEmptyBg, borderColor: theme.colors.border + '20' }}>
-            <button onClick={handlePrevMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronLeft className="w-5 h-5" /></button>
-            <span className={`text-xl font-bold font-num-naikai min-w-[80px] text-center`} style={{ color: theme.colors.text }}>{month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span></span>
-            <button onClick={handleNextMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><ChevronRight className="w-5 h-5" /></button>
+            <button onClick={handlePrevMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }} aria-label="上個月"><ChevronLeft className="w-5 h-5" /></button>
+            <button onClick={handleToday} className="text-xl font-bold font-num-naikai min-w-[80px] text-center hover:opacity-70 active:scale-95 transition-all rounded-lg" style={{ color: theme.colors.text }} aria-label="回到今天">
+              {month + 1}月 <span className="text-base" style={{ color: theme.colors.secondaryText }}>{year}</span>
+            </button>
+            <button onClick={handleNextMonth} className="p-2 rounded-xl transition-colors hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }} aria-label="下個月"><ChevronRight className="w-5 h-5" /></button>
+            {!isCurrentMonth && (
+              <button
+                onClick={handleToday}
+                className="ml-1 px-2.5 py-1 text-xs font-bold rounded-lg active:scale-95 transition-all flex items-center gap-1"
+                style={{ backgroundColor: theme.colors.accent, color: '#FFF' }}
+                aria-label="回到本月"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                今天
+              </button>
+            )}
           </div>
           <button onClick={openSettings} className="p-2.5 rounded-xl shadow-sm border hover:brightness-95 transition-all active:scale-95" style={{ backgroundColor: theme.colors.modalBg, color: theme.colors.secondaryText, borderColor: theme.colors.border }}><Settings className="w-5 h-5" /></button>
         </div>
