@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v8-ux-package';
+const BUILD_VERSION = '2026-05-15-v9-sender-identity';
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
@@ -624,6 +624,124 @@ async function replyBindingStatus(client, ev) {
   }));
 }
 
+async function getSenderRoleForUid(uid, senderUserId) {
+  if (!senderUserId) return null;
+  const lineDoc = await db()
+    .collection('artifacts').doc(APP_ID)
+    .collection('users').doc(uid)
+    .collection('bibi_settings').doc('line')
+    .get();
+  return lineDoc.data()?.userRoleMap?.[senderUserId] || null;
+}
+
+async function handleIdentitySet(client, ev, text) {
+  // 「我是 Shane」「我是 阿花」「我是 我」「我是 夥伴」
+  const m = text.match(/^我是\s*[:：]?\s*(.+)$/);
+  if (!m) return false;
+  const claimedName = m[1].trim();
+  if (!claimedName) return false;
+
+  const sourceId = getSourceId(ev);
+  const senderUserId = ev.source?.userId;
+  if (!senderUserId) {
+    await safeReply(client, ev.replyToken, {
+      type: 'text',
+      text: '抓不到你的 LINE 個人 ID — 請先把我加為好友再試一次。',
+    });
+    return true;
+  }
+
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '這個聊天還沒綁定行事曆，先傳：綁定 <你的裝置 ID>',
+    }));
+    return true;
+  }
+
+  // 從綁定的行事曆角色名稱比對
+  let matchedRole = null;
+  let matchedRoleName = null;
+  let firstRoles = null;
+  for (const uid of uids) {
+    const roles = await getRoleSettings(uid);
+    if (!firstRoles) firstRoles = roles;
+    const r1 = (roles.role1 || '我').trim();
+    const r2 = (roles.role2 || '夥伴').trim();
+    if (claimedName === r1 || claimedName === '我' || claimedName === '我自己') {
+      matchedRole = 'me'; matchedRoleName = r1; break;
+    }
+    if (claimedName === r2 || claimedName === '夥伴' || claimedName === '另一半') {
+      matchedRole = 'partner'; matchedRoleName = r2; break;
+    }
+  }
+
+  if (!matchedRole) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: `找不到名字「${claimedName}」。\n目前行事曆設定的角色：${firstRoles.role1 || '我'} ／ ${firstRoles.role2 || '夥伴'}\n\n請傳：我是 ${firstRoles.role1 || '我'}\n或：我是 ${firstRoles.role2 || '夥伴'}`,
+    }));
+    return true;
+  }
+
+  // 存到 userRoleMap，merge=true 會保留其他人的 mapping
+  for (const uid of uids) {
+    await db()
+      .collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid)
+      .collection('bibi_settings').doc('line')
+      .set({
+        [`userRoleMap.${senderUserId}`]: matchedRole,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+  }
+
+  await safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text',
+    text: `✅ 認識你了！\n之後你在這裡新增行程，沒特別指定的話會自動歸給「${matchedRoleName}」。\n\n要改回去請再傳：我是 <另一個名字>\n要看誰是誰請傳：誰是誰`,
+  }));
+  return true;
+}
+
+async function replyIdentityMap(client, ev) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '尚未綁定行事曆',
+    }));
+    return;
+  }
+  const lines = ['👥 LINE ID 對應角色', ''];
+  for (const uid of uids) {
+    const roles = await getRoleSettings(uid);
+    const lineDoc = await db()
+      .collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid)
+      .collection('bibi_settings').doc('line')
+      .get();
+    const map = lineDoc.data()?.userRoleMap || {};
+    const entries = Object.entries(map);
+    lines.push(`📋 ${uid.substring(0, 8)}…`);
+    if (entries.length === 0) {
+      lines.push('  （還沒有人設定）');
+    } else {
+      entries.forEach(([lineUid, role]) => {
+        const name = role === 'me' ? (roles.role1 || '我') : (roles.role2 || '夥伴');
+        lines.push(`  • ${lineUid.substring(0, 6)}… → ${name}`);
+      });
+    }
+    lines.push(`  設定方式：我是 ${roles.role1 || '我'}　或　我是 ${roles.role2 || '夥伴'}`);
+    lines.push('');
+  }
+  await safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text',
+    text: lines.join('\n'),
+  }));
+}
+
 async function tryCreateNaturalEvent(client, ev, text) {
   // 回傳 true 表示有解析成功並處理了；false 表示不像新增指令，呼叫端繼續走其他分支
   const sourceId = getSourceId(ev);
@@ -634,9 +752,16 @@ async function tryCreateNaturalEvent(client, ev, text) {
   const todayDow = getDayOfWeekTaipei(new Date());
   const targetUid = uids[0]; // 多綁時只新增到第一個
   const roles = await getRoleSettings(targetUid);
+  const senderRole = await getSenderRoleForUid(targetUid, ev.source?.userId);
 
   const parsed = parseNaturalEvent(text, roles, todayStr, todayDow);
   if (!parsed) return false;
+
+  // 用戶沒明確提到角色名稱 → fallback 用寄件人角色
+  if (parsed.eventType === 'common' && senderRole) {
+    parsed.eventType = senderRole;
+    parsed.color = COLOR_BY_TYPE[senderRole] || COLOR_BY_TYPE.common;
+  }
 
   await db()
     .collection('artifacts').doc(APP_ID)
@@ -726,8 +851,9 @@ function getHelpText() {
     '🤖 我聽得懂的指令：',
     '',
     '🔗 綁定 <裝置 ID>　— 綁定行事曆',
+    '🙋 我是 <你的名字>　— 自我介紹，新增行程時自動歸給你',
     '🚫 解除綁定　— 取消綁定',
-    '📊 狀態　— 看目前綁了哪組行事曆',
+    '📊 狀態 / 誰是誰　— 查綁定資訊',
     '',
     '📅 查詢行程：',
     '　今日／明天／後天／大後天',
@@ -737,7 +863,8 @@ function getHelpText() {
     '　「明天10點看牙醫」',
     '　「後天下午3點半開會」',
     '　「5/20 全天 媽媽生日」',
-    '　（沒指定誰 → 共同；包含角色名稱 → 那個人）',
+    '　（沒指定 → 預設用你的角色；',
+    '　　訊息含對方名字 → 歸給對方）',
     '',
     `（版本 ${BUILD_VERSION}）`,
   ].join('\n');
@@ -807,6 +934,10 @@ exports.lineWebhook = onRequest(
             });
           } else if (text === '狀態' || text === '綁定狀態' || text === 'status') {
             await replyBindingStatus(client, ev);
+          } else if (text === '誰是誰' || text === '誰是誰?' || text === '誰是誰？') {
+            await replyIdentityMap(client, ev);
+          } else if (text.startsWith('我是') && await handleIdentitySet(client, ev, text)) {
+            // 已處理「我是 X」自我介紹
           } else if (range) {
             await replyAgenda(client, ev, range);
           } else if (await tryCreateNaturalEvent(client, ev, text)) {
