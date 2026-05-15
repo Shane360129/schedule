@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v11-nlp-polish';
+const BUILD_VERSION = '2026-05-15-v12-date-query';
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
@@ -229,6 +229,14 @@ function getRangeFromText(text) {
       days: 2,
       title: `📅 週末行程（${shortDateLabel(sat)} ~ ${shortDateLabel(sun)}）`,
     };
+  }
+  // 純日期查詢：使用者直接傳「5/16」、「5月20日」、「週三」、「下週一」等，
+  // 整段文字就是日期關鍵字時，當成單日行程查詢
+  const todayStr = formatDateTW(new Date());
+  const token = parseDateToken(text, todayStr, dow);
+  if (token && text === token.consumed) {
+    const d = taipeiMidnight(token.date);
+    return { start: d, days: 1, title: `📅 ${shortDateLabel(d)} 行程` };
   }
   return null;
 }
@@ -937,6 +945,7 @@ function getHelpText() {
     '📅 查詢行程：',
     '　今日／明天／後天／大後天',
     '　本週／下週／下下週／週末',
+    '　直接傳日期也可以：「5/16」「5月20日」「週三」「下週一」',
     '',
     '➕ 直接傳訊息就能新增行程：',
     '　「明天10點看牙醫」',
