@@ -68,6 +68,195 @@ async function removeBindingsForSource(sourceId) {
   await batch.commit();
 }
 
+const WEEK_DAYS_TW = ['日', '一', '二', '三', '四', '五', '六'];
+
+function formatDateLabel(d) {
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${m}/${day}（${WEEK_DAYS_TW[d.getDay()]}）`;
+}
+
+function getQuickReplyItems() {
+  return [
+    { type: 'action', action: { type: 'message', label: '今日', text: '今日' } },
+    { type: 'action', action: { type: 'message', label: '明天', text: '明天' } },
+    { type: 'action', action: { type: 'message', label: '本週', text: '本週' } },
+    { type: 'action', action: { type: 'message', label: '下週', text: '下週' } },
+  ];
+}
+
+function withQuickReply(message) {
+  return { ...message, quickReply: { items: getQuickReplyItems() } };
+}
+
+function getRangeFromText(text) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (text === '今日' || text === '今天' || text === '今日行程') {
+    return { start: today, days: 1, title: '📅 今日行程' };
+  }
+  if (text === '明天' || text === '明日' || text === '明日行程') {
+    const t = new Date(today);
+    t.setDate(today.getDate() + 1);
+    return { start: t, days: 1, title: '📅 明日行程' };
+  }
+  if (text === '本週' || text === '這週' || text === '這禮拜' || text === '本周') {
+    return { start: today, days: 7, title: '📅 本週行程（今天起 7 日）' };
+  }
+  if (text === '下週' || text === '下周' || text === '下禮拜') {
+    const t = new Date(today);
+    t.setDate(today.getDate() + 7);
+    return { start: t, days: 7, title: '📅 下週行程' };
+  }
+  return null;
+}
+
+function buildAgendaFlex(title, dateGroups) {
+  const showDateHeader = dateGroups.length > 1;
+  const bodyContents = [];
+
+  dateGroups.forEach((g, idx) => {
+    if (showDateHeader) {
+      bodyContents.push({
+        type: 'text',
+        text: formatDateLabel(g.date),
+        weight: 'bold',
+        size: 'sm',
+        color: '#555555',
+        margin: idx === 0 ? 'none' : 'lg',
+      });
+      bodyContents.push({ type: 'separator', margin: 'xs', color: '#EEEEEE' });
+    }
+    if (g.events.length === 0) {
+      bodyContents.push({
+        type: 'text',
+        text: showDateHeader ? '（空檔）' : '今天沒有行程，好好休息 ☕',
+        size: 'xs',
+        color: '#AAAAAA',
+        margin: 'sm',
+      });
+      return;
+    }
+    g.events.forEach((ev) => {
+      bodyContents.push({
+        type: 'box',
+        layout: 'horizontal',
+        spacing: 'sm',
+        margin: 'sm',
+        contents: [
+          {
+            type: 'text',
+            text: ev.isAllDay ? '全天' : (ev.startTime || ''),
+            size: 'xs',
+            color: '#999999',
+            flex: 2,
+            gravity: 'top',
+          },
+          {
+            type: 'text',
+            text: ev.title || '(未命名)',
+            size: 'sm',
+            wrap: true,
+            flex: 5,
+          },
+        ],
+      });
+    });
+  });
+
+  return {
+    type: 'flex',
+    altText: title,
+    contents: {
+      type: 'bubble',
+      size: 'mega',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [{
+          type: 'text',
+          text: title,
+          weight: 'bold',
+          size: 'md',
+          color: '#FFFFFF',
+        }],
+        backgroundColor: '#BCAAA4',
+        paddingAll: 'md',
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'xs',
+        paddingAll: 'lg',
+        contents: bodyContents.length > 0 ? bodyContents : [{
+          type: 'text', text: '沒有行程 ☕', size: 'sm', color: '#999999',
+        }],
+      },
+    },
+  };
+}
+
+async function replyAgenda(client, ev, range) {
+  const sourceId = getSourceId(ev);
+  if (!sourceId) {
+    return client.replyMessage(ev.replyToken, {
+      type: 'text',
+      text: '無法辨識來源，請改回個人聊天視窗或重新邀請 Bot。',
+    });
+  }
+  const snap = await db()
+    .collectionGroup('bibi_settings')
+    .where('lineUserIds', 'array-contains', sourceId)
+    .get();
+  const uids = new Set();
+  snap.forEach((doc) => {
+    const uid = doc.ref.parent.parent?.id;
+    if (uid) uids.add(uid);
+  });
+  if (uids.size === 0) {
+    return client.replyMessage(ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '你還沒綁定任何行事曆。請先傳：綁定 <你的裝置 ID>',
+    }));
+  }
+
+  const dateGroups = [];
+  for (let i = 0; i < range.days; i++) {
+    const d = new Date(range.start);
+    d.setDate(range.start.getDate() + i);
+    dateGroups.push({ date: d, dateStr: formatDateTW(d), events: [] });
+  }
+  const rangeStartStr = dateGroups[0].dateStr;
+  const rangeEndStr = dateGroups[dateGroups.length - 1].dateStr;
+
+  for (const uid of uids) {
+    const eventsSnap = await db()
+      .collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid)
+      .collection('bibi_events')
+      .where('startDate', '<=', rangeEndStr)
+      .get();
+    eventsSnap.forEach((doc) => {
+      const e = doc.data();
+      if (!e.endDate || e.endDate < rangeStartStr) return;
+      for (const g of dateGroups) {
+        if (g.dateStr >= e.startDate && g.dateStr <= e.endDate) {
+          g.events.push(e);
+        }
+      }
+    });
+  }
+  for (const g of dateGroups) {
+    g.events.sort((a, b) => {
+      if (a.isAllDay && !b.isAllDay) return -1;
+      if (!a.isAllDay && b.isAllDay) return 1;
+      return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
+    });
+  }
+
+  return client.replyMessage(ev.replyToken, withQuickReply(buildAgendaFlex(range.title, dateGroups)));
+}
+
 async function pushToBoundUsers(uid, message) {
   const doc = await db()
     .collection('artifacts').doc(APP_ID)
@@ -83,52 +272,17 @@ async function pushToBoundUsers(uid, message) {
   );
 }
 
-async function replyTodayAgenda(client, ev) {
-  const sourceId = getSourceId(ev);
-  if (!sourceId) {
-    return client.replyMessage(ev.replyToken, {
-      type: 'text',
-      text: '無法辨識來源，請改回個人聊天視窗或重新邀請 Bot。',
-    });
-  }
-  const snap = await db()
-    .collectionGroup('bibi_settings')
-    .where('lineUserIds', 'array-contains', sourceId)
-    .get();
-
-  const uids = new Set();
-  snap.forEach((doc) => {
-    const uid = doc.ref.parent.parent?.id;
-    if (uid) uids.add(uid);
-  });
-
-  if (uids.size === 0) {
-    return client.replyMessage(ev.replyToken, {
-      type: 'text',
-      text: '你還沒綁定任何行事曆。請先傳：綁定 <你的裝置 ID>',
-    });
-  }
-
-  const today = formatDateTW(new Date());
-  const lines = [`📅 ${today} 今日行程`];
-
-  for (const uid of uids) {
-    const eventsSnap = await db()
-      .collection('artifacts').doc(APP_ID)
-      .collection('users').doc(uid)
-      .collection('bibi_events')
-      .where('startDate', '<=', today)
-      .where('endDate', '>=', today)
-      .get();
-    eventsSnap.forEach((doc) => {
-      const e = doc.data();
-      lines.push(`• ${e.isAllDay ? '全天' : (e.startTime || '')} ${e.title}`);
-    });
-  }
-
-  if (lines.length === 1) lines.push('（沒有行程，好好休息 ☕）');
-
-  return client.replyMessage(ev.replyToken, { type: 'text', text: lines.join('\n') });
+function getHelpText() {
+  return [
+    '🤖 我聽得懂的指令：',
+    '',
+    '🔗 綁定 <裝置 ID>　— 綁定行事曆',
+    '🚫 解除綁定　— 取消綁定',
+    '📅 今日 / 明天 / 本週 / 下週　— 查詢行程',
+    '❓ 幫助　— 顯示這個說明',
+    '',
+    '提示：可使用下方按鈕快速查詢。',
+  ].join('\n');
 }
 
 // -------- Webhook: handle messages received by the bot --------
@@ -151,10 +305,10 @@ exports.lineWebhook = onRequest(
     for (const ev of events) {
       try {
         if (ev.type === 'follow' || ev.type === 'join') {
-          await client.replyMessage(ev.replyToken, {
+          await client.replyMessage(ev.replyToken, withQuickReply({
             type: 'text',
             text: getWelcomeText(ev.source?.type),
-          });
+          }));
         } else if (ev.type === 'unfollow' || ev.type === 'leave') {
           await removeBindingsForSource(getSourceId(ev));
         } else if (ev.type === 'message' && ev.message.type === 'text') {
@@ -167,9 +321,11 @@ exports.lineWebhook = onRequest(
             continue;
           }
           const text = ev.message.text.trim();
-          const m = text.match(/^綁定[\s　]+(\S+)$/);
-          if (m) {
-            const uid = m[1];
+          const bindMatch = text.match(/^綁定[\s　]+(\S+)$/);
+          const range = getRangeFromText(text);
+
+          if (bindMatch) {
+            const uid = bindMatch[1];
             await db()
               .collection('artifacts').doc(APP_ID)
               .collection('users').doc(uid)
@@ -181,23 +337,23 @@ exports.lineWebhook = onRequest(
                 },
                 { merge: true }
               );
-            await client.replyMessage(ev.replyToken, {
+            await client.replyMessage(ev.replyToken, withQuickReply({
               type: 'text',
               text: `✅ 綁定成功！\n之後 ${uid.substring(0, 6)}... 這組行事曆有變動或排程提醒都會推到這個聊天視窗。\n\n想取消綁定請傳：解除綁定`,
-            });
+            }));
           } else if (text === '解除綁定') {
             await removeBindingsForSource(sourceId);
             await client.replyMessage(ev.replyToken, {
               type: 'text',
               text: '已解除所有綁定。要重新綁定請再傳：綁定 <你的裝置 ID>',
             });
-          } else if (text === '今日行程' || text === '今天') {
-            await replyTodayAgenda(client, ev);
+          } else if (range) {
+            await replyAgenda(client, ev, range);
           } else {
-            await client.replyMessage(ev.replyToken, {
+            await client.replyMessage(ev.replyToken, withQuickReply({
               type: 'text',
-              text: '我聽得懂的指令：\n• 綁定 <你的裝置 ID>\n• 解除綁定\n• 今日行程',
-            });
+              text: getHelpText(),
+            }));
           }
         }
       } catch (err) {
