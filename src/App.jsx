@@ -512,23 +512,62 @@ const App = () => {
     if (distance < -minSwipeDistance) handlePrevMonth();
   };
 
-  const getEventSegments = (dateStr) => {
-    if (!dateStr) return [];
-    const dayEvents = events.filter(ev => dateStr >= ev.startDate && dateStr <= ev.endDate);
-    dayEvents.sort((a, b) => {
+  const eventLanes = useMemo(() => {
+    const sorted = [...events].sort((a, b) => {
+      if (a.startDate !== b.startDate) return a.startDate.localeCompare(b.startDate);
       const lenA = new Date(a.endDate).getTime() - new Date(a.startDate).getTime();
       const lenB = new Date(b.endDate).getTime() - new Date(b.startDate).getTime();
-      if (lenA !== lenB) return lenB - lenA; 
+      if (lenA !== lenB) return lenB - lenA;
       const timeA = a.startTime || '00:00';
       const timeB = b.startTime || '00:00';
       if (timeA !== timeB) return timeA.localeCompare(timeB);
       return a.id.localeCompare(b.id);
     });
+    const laneEvents = [];
+    const lanes = new Map();
+    for (const ev of sorted) {
+      let lane = 0;
+      while (lane < laneEvents.length) {
+        const conflict = laneEvents[lane].some(e =>
+          ev.startDate <= e.endDate && ev.endDate >= e.startDate
+        );
+        if (!conflict) break;
+        lane++;
+      }
+      if (lane === laneEvents.length) laneEvents.push([]);
+      laneEvents[lane].push(ev);
+      lanes.set(ev.id, lane);
+    }
+    return lanes;
+  }, [events]);
+
+  const getEventSegments = (dateStr) => {
+    if (!dateStr) return [];
+    const dayEvents = events.filter(ev => dateStr >= ev.startDate && dateStr <= ev.endDate);
     return dayEvents.map(ev => {
       const isStart = dateStr === ev.startDate;
       const isEnd = dateStr === ev.endDate;
-      const dayOfWeek = new Date(dateStr).getDay();
-      return { ...ev, isStart, isEnd, isSunday: dayOfWeek === 0, isSaturday: dayOfWeek === 6 };
+      const dayDate = new Date(dateStr + 'T00:00:00');
+      const dayOfWeek = dayDate.getDay();
+      const isSunday = dayOfWeek === 0;
+      const isSaturday = dayOfWeek === 6;
+      const isRunStart = isStart || isSunday;
+      let runLength = 0;
+      let runEndsAtEventEnd = false;
+      if (isRunStart) {
+        const evEnd = new Date(ev.endDate + 'T00:00:00');
+        const weekEnd = new Date(dayDate);
+        weekEnd.setDate(dayDate.getDate() + (6 - dayOfWeek));
+        const runEnd = evEnd.getTime() < weekEnd.getTime() ? evEnd : weekEnd;
+        runEndsAtEventEnd = evEnd.getTime() <= weekEnd.getTime();
+        runLength = Math.round((runEnd.getTime() - dayDate.getTime()) / 86400000) + 1;
+      }
+      return {
+        ...ev,
+        isStart, isEnd, isSunday, isSaturday,
+        isRunStart, runLength, runEndsAtEventEnd,
+        lane: eventLanes.get(ev.id) || 0,
+      };
     });
   };
 
@@ -757,40 +796,72 @@ const App = () => {
                    )}
                 </div>
               )}
-              <div className="flex-1 flex flex-col gap-[2px] w-full pb-1 px-0">
-                {segments.slice(0, 4).map((ev) => {
-                  const roundLeft = ev.isStart || ev.isSunday;
-                  const roundRight = ev.isEnd || ev.isSaturday;
-                  const colorObj = TECHO_COLORS[ev.color] || TECHO_COLORS.latte;
-                  
-                  let marginClass = '';
-                  if (!roundLeft) marginClass += ' -ml-[1px] rounded-l-none'; else marginClass += ' ml-1 rounded-l-md';
-                  if (!roundRight) marginClass += ' -mr-[1px] rounded-r-none'; else marginClass += ' mr-1 rounded-r-md';
+              <div className="flex-1 flex flex-col gap-[2px] w-full pb-1 px-0 min-w-0">
+                {(() => {
+                  const MAX_LANES = 4;
+                  const slots = new Array(MAX_LANES).fill(null);
+                  let maxOccupied = -1;
+                  segments.forEach((s) => {
+                    if (s.lane < MAX_LANES) {
+                      slots[s.lane] = s;
+                      if (s.lane > maxOccupied) maxOccupied = s.lane;
+                    }
+                  });
+                  const overflowCount = segments.filter((s) => s.lane >= MAX_LANES).length;
+                  const visibleSlots = slots.slice(0, maxOccupied + 1);
 
                   return (
-                    <div 
-                        key={ev.id} 
-                        onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }} 
-                        className={`text-[10px] font-bold font-num-naikai sm:text-xs h-[18px] sm:h-[20px] flex items-center px-1 transition-all hover:brightness-95 active:scale-95 relative z-10 ${marginClass}`}
-                        style={{ backgroundColor: colorObj.hex, color: colorObj.text }}
-                    >
-                      <span className="truncate w-full font-medium leading-none flex items-center gap-1">
-                        {ev.isStart && !ev.isAllDay && ev.startTime && (
-                          <span className="text-[10px] font-bold font-num-naikai mr-1">{ev.startTime}</span>
-                        )}
-                        {ev.title}
-                      </span>
-                    </div>
+                    <>
+                      {visibleSlots.map((ev, slotIdx) => {
+                        if (!ev || !ev.isRunStart) {
+                          return (
+                            <div
+                              key={ev ? `${ev.id}-cont` : `ph-${slotIdx}`}
+                              className="h-[18px] sm:h-[20px] invisible"
+                              aria-hidden
+                            />
+                          );
+                        }
+                        const colorObj = TECHO_COLORS[ev.color] || TECHO_COLORS.latte;
+                        const ml = 4;
+                        const mr = ev.runEndsAtEventEnd ? 4 : 0;
+                        return (
+                          <div
+                            key={ev.id}
+                            onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }}
+                            className="text-[10px] font-bold font-num-naikai sm:text-xs h-[18px] sm:h-[20px] flex items-center justify-center px-1 transition-all hover:brightness-95 active:scale-95 relative z-10 overflow-hidden"
+                            style={{
+                              backgroundColor: colorObj.hex,
+                              color: colorObj.text,
+                              marginLeft: `${ml}px`,
+                              marginRight: `${mr}px`,
+                              width: `calc(${ev.runLength * 100}% - ${ml + mr}px)`,
+                              borderTopLeftRadius: '6px',
+                              borderBottomLeftRadius: '6px',
+                              borderTopRightRadius: ev.runEndsAtEventEnd ? '6px' : '0',
+                              borderBottomRightRadius: ev.runEndsAtEventEnd ? '6px' : '0',
+                            }}
+                          >
+                            <span className="truncate font-medium leading-none flex items-center gap-1">
+                              {ev.isStart && !ev.isAllDay && ev.startTime && (
+                                <span className="text-[10px] font-bold font-num-naikai mr-1">{ev.startTime}</span>
+                              )}
+                              {ev.title}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {overflowCount > 0 && (
+                        <div
+                          className="text-[10px] font-num-naikai text-center leading-none mt-auto font-bold mx-1 py-0.5 rounded transition-colors"
+                          style={{ color: theme.colors.weekdayText, backgroundColor: theme.colors.gridHeaderBg }}
+                        >
+                          +{overflowCount} 個
+                        </div>
+                      )}
+                    </>
                   );
-                })}
-                {segments.length > 4 && (
-                  <div
-                    className="text-[10px] font-num-naikai text-center leading-none mt-auto font-bold mx-1 py-0.5 rounded transition-colors"
-                    style={{ color: theme.colors.weekdayText, backgroundColor: theme.colors.gridHeaderBg }}
-                  >
-                    +{segments.length - 4} 個
-                  </div>
-                )}
+                })()}
               </div>
             </div>
           )
