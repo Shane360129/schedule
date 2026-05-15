@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v6-no-composite-index';
+const BUILD_VERSION = '2026-05-15-v7-9am-week-range';
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
 
@@ -48,6 +48,21 @@ function taipeiMidnight(dateStr) {
 function taipeiEventStart(dateStr, timeStr) {
   // dateStr=YYYY-MM-DD, timeStr=HH:MM，都是 Taipei 當地時間
   return new Date(`${dateStr}T${timeStr}:00+08:00`);
+}
+
+function getDayOfWeekTaipei(d) {
+  // 0=Sun, 1=Mon, ..., 6=Sat (Taipei 當地)
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: TAIPEI_TZ,
+    weekday: 'short',
+  });
+  const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return map[fmt.format(d)];
+}
+
+function shortDateLabel(d) {
+  // 給 title 用的「5/13（一）」格式，已對齊 Taipei 時區
+  return formatDateLabel(d);
 }
 
 function formatEvent(ev) {
@@ -147,13 +162,30 @@ function getRangeFromText(text) {
     t.setDate(today.getDate() + 1);
     return { start: t, days: 1, title: '📅 明日行程' };
   }
+  // 本週 / 下週：以「週一」為一週起始，整段顯示週一 ~ 週日
+  const dow = getDayOfWeekTaipei(new Date()); // 0=日, 1=一, ...
+  const daysToMonday = (dow + 6) % 7; // 一→0, 二→1, ..., 日→6
   if (text === '本週' || text === '這週' || text === '這禮拜' || text === '本周') {
-    return { start: today, days: 7, title: '📅 本週行程（今天起 7 日）' };
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - daysToMonday);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return {
+      start: monday,
+      days: 7,
+      title: `📅 本週行程（${shortDateLabel(monday)} ~ ${shortDateLabel(sunday)}）`,
+    };
   }
   if (text === '下週' || text === '下周' || text === '下禮拜') {
-    const t = new Date(today);
-    t.setDate(today.getDate() + 7);
-    return { start: t, days: 7, title: '📅 下週行程' };
+    const nextMonday = new Date(today);
+    nextMonday.setDate(today.getDate() - daysToMonday + 7);
+    const nextSunday = new Date(nextMonday);
+    nextSunday.setDate(nextMonday.getDate() + 6);
+    return {
+      start: nextMonday,
+      days: 7,
+      title: `📅 下週行程（${shortDateLabel(nextMonday)} ~ ${shortDateLabel(nextSunday)}）`,
+    };
   }
   return null;
 }
@@ -471,8 +503,7 @@ exports.notifyOnEventDelete = onDocumentDeleted(
 // -------- Scheduled notifications --------
 exports.dailyMorningSummary = onSchedule(
   {
-    // TODO: 測試完改回 '0 8 * * *'
-    schedule: '30 11 * * *',
+    schedule: '0 9 * * *',
     timeZone: 'Asia/Taipei',
     secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   },
