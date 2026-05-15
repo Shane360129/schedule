@@ -143,7 +143,9 @@ const FALLBACK_HOLIDAYS = {
 };
 
 const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
-const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+// 統一週起始為「週一」，回傳值 0=Mon, 1=Tue, ..., 6=Sun
+const getFirstDayOfMonth = (year, month) => (new Date(year, month, 1).getDay() + 6) % 7;
+const dayOfWeekMonFirst = (date) => (date.getDay() + 6) % 7;
 const formatDate = (date) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -548,23 +550,25 @@ const App = () => {
       const isStart = dateStr === ev.startDate;
       const isEnd = dateStr === ev.endDate;
       const dayDate = new Date(dateStr + 'T00:00:00');
-      const dayOfWeek = dayDate.getDay();
-      const isSunday = dayOfWeek === 0;
-      const isSaturday = dayOfWeek === 6;
-      const isRunStart = isStart || isSunday;
+      const dowMonFirst = dayOfWeekMonFirst(dayDate); // 0=Mon, 6=Sun
+      const isMonday = dowMonFirst === 0;
+      const isSunday = dowMonFirst === 6;
+      // run 起始：事件本身的開始日 或 每週的週一
+      const isRunStart = isStart || isMonday;
       let runLength = 0;
       let runEndsAtEventEnd = false;
       if (isRunStart) {
         const evEnd = new Date(ev.endDate + 'T00:00:00');
+        // 本週結束 = 同週的週日
         const weekEnd = new Date(dayDate);
-        weekEnd.setDate(dayDate.getDate() + (6 - dayOfWeek));
+        weekEnd.setDate(dayDate.getDate() + (6 - dowMonFirst));
         const runEnd = evEnd.getTime() < weekEnd.getTime() ? evEnd : weekEnd;
         runEndsAtEventEnd = evEnd.getTime() <= weekEnd.getTime();
         runLength = Math.round((runEnd.getTime() - dayDate.getTime()) / 86400000) + 1;
       }
       return {
         ...ev,
-        isStart, isEnd, isSunday, isSaturday,
+        isStart, isEnd, isSunday, isMonday,
         isRunStart, runLength, runEndsAtEventEnd,
         lane: eventLanes.get(ev.id) || 0,
       };
@@ -691,17 +695,17 @@ const App = () => {
 
   const activeEvents = events.filter(ev => ev.endDate >= todayStr);
 
-  // 多日事件：用「以週 (週日~週六) 為單位」切段，每段在 upcoming 列表佔一筆，
+  // 多日事件：以週 (週一~週日) 為單位切段，每段在 upcoming 列表佔一筆，
   // 不再每天重複顯示。同一週的多日事件 → 一筆 (帶迄日)；跨週 → 一週一筆。
   const groupedUpcomingRaw = activeEvents.reduce((acc, ev) => {
     let segStartStr = ev.startDate < todayStr ? todayStr : ev.startDate;
     const evEnd = ev.endDate;
     while (segStartStr <= evEnd) {
       const startDate = new Date(segStartStr + 'T00:00:00');
-      const dow = startDate.getDay();
-      const daysToSat = 6 - dow;
+      const dowMon = dayOfWeekMonFirst(startDate); // 0=Mon, 6=Sun
+      const daysToSun = 6 - dowMon;
       const weekEnd = new Date(startDate);
-      weekEnd.setDate(startDate.getDate() + daysToSat);
+      weekEnd.setDate(startDate.getDate() + daysToSun);
       const weekEndStr = formatDate(weekEnd);
       const segEndStr = weekEndStr < evEnd ? weekEndStr : evEnd;
       if (!acc[segStartStr]) acc[segStartStr] = [];
@@ -767,8 +771,8 @@ const App = () => {
       </header>
 
       <div className="flex-none grid grid-cols-7" style={{ backgroundColor: theme.colors.gridHeaderBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
-        {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d, i) => (
-          <div key={i} className="py-2 text-center text-[12px] font-bold font-num-naikai tracking-widest" style={{ color: (i === 0 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
+        {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d, i) => (
+          <div key={i} className="py-2 text-center text-[12px] font-bold font-num-naikai tracking-widest" style={{ color: (i === 5 || i === 6) ? theme.colors.weekendText : theme.colors.weekdayText }}>{d}</div>
         ))}
       </div>
 
@@ -779,14 +783,15 @@ const App = () => {
           const isToday = hasDate && cell.fullDate === formatDate(new Date());
           const holidayInfo = hasDate ? holidayData[year]?.[cell.fullDate] : null;
           const isHoliday = holidayInfo?.isHoliday === true;
-          const dayOfWeek = idx % 7;
-          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-          
+          const dayOfWeek = idx % 7; // 0=Mon, 5=Sat, 6=Sun
+          const isWeekend = dayOfWeek === 5 || dayOfWeek === 6;
+
           let cellBg = theme.colors.gridBg;
           if (!hasDate) cellBg = theme.colors.gridEmptyBg;
           else if (isHoliday || isWeekend) cellBg = theme.colors.gridWeekendBg;
-          
-          const dateTextColor = (isHoliday || dayOfWeek === 0) ? theme.colors.weekendText : theme.colors.text;
+
+          // 國定假日 + 週日用 weekendText 色 (週六照常)
+          const dateTextColor = (isHoliday || dayOfWeek === 6) ? theme.colors.weekendText : theme.colors.text;
 
           return (
             <div 
