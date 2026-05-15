@@ -17,6 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
+const BUILD_VERSION = '2026-05-15-v3-quickreply-fix';
 const db = () => admin.firestore();
 
 function lineClient() {
@@ -86,7 +87,26 @@ function getQuickReplyItems() {
 }
 
 function withQuickReply(message) {
-  return { ...message, quickReply: { items: getQuickReplyItems() } };
+  // Defensive: 用 Object.assign 而非 spread，確保 quickReply 屬性能正確附加
+  return Object.assign({}, message, {
+    quickReply: { items: getQuickReplyItems() },
+  });
+}
+
+async function safeReply(client, replyToken, message) {
+  // 在 Firebase Functions log 印出送出去的 JSON 結構，方便驗證 quickReply 真的有加上
+  const preview = JSON.stringify({
+    type: message.type,
+    hasQuickReply: !!message.quickReply,
+    quickReplyItemCount: message.quickReply?.items?.length ?? 0,
+  });
+  console.log('[reply]', preview);
+  try {
+    return await client.replyMessage(replyToken, message);
+  } catch (err) {
+    console.error('[reply-failed]', err?.originalError?.response?.data || err?.message || err);
+    throw err;
+  }
 }
 
 function getRangeFromText(text) {
@@ -199,7 +219,7 @@ function buildAgendaFlex(title, dateGroups) {
 async function replyAgenda(client, ev, range) {
   const sourceId = getSourceId(ev);
   if (!sourceId) {
-    return client.replyMessage(ev.replyToken, {
+    return safeReply(client, ev.replyToken, {
       type: 'text',
       text: '無法辨識來源，請改回個人聊天視窗或重新邀請 Bot。',
     });
@@ -214,7 +234,7 @@ async function replyAgenda(client, ev, range) {
     if (uid) uids.add(uid);
   });
   if (uids.size === 0) {
-    return client.replyMessage(ev.replyToken, withQuickReply({
+    return safeReply(client, ev.replyToken, withQuickReply({
       type: 'text',
       text: '你還沒綁定任何行事曆。請先傳：綁定 <你的裝置 ID>',
     }));
@@ -254,7 +274,7 @@ async function replyAgenda(client, ev, range) {
     });
   }
 
-  return client.replyMessage(ev.replyToken, withQuickReply(buildAgendaFlex(range.title, dateGroups)));
+  return safeReply(client, ev.replyToken, withQuickReply(buildAgendaFlex(range.title, dateGroups)));
 }
 
 async function pushToBoundUsers(uid, message) {
@@ -282,6 +302,7 @@ function getHelpText() {
     '❓ 幫助　— 顯示這個說明',
     '',
     '提示：可使用下方按鈕快速查詢。',
+    `（版本 ${BUILD_VERSION}）`,
   ].join('\n');
 }
 
@@ -305,7 +326,7 @@ exports.lineWebhook = onRequest(
     for (const ev of events) {
       try {
         if (ev.type === 'follow' || ev.type === 'join') {
-          await client.replyMessage(ev.replyToken, withQuickReply({
+          await safeReply(client, ev.replyToken, withQuickReply({
             type: 'text',
             text: getWelcomeText(ev.source?.type),
           }));
@@ -314,7 +335,7 @@ exports.lineWebhook = onRequest(
         } else if (ev.type === 'message' && ev.message.type === 'text') {
           const sourceId = getSourceId(ev);
           if (!sourceId) {
-            await client.replyMessage(ev.replyToken, {
+            await safeReply(client, ev.replyToken, {
               type: 'text',
               text: '無法辨識訊息來源，請改用個人聊天或重新邀請 Bot。',
             });
@@ -337,20 +358,20 @@ exports.lineWebhook = onRequest(
                 },
                 { merge: true }
               );
-            await client.replyMessage(ev.replyToken, withQuickReply({
+            await safeReply(client, ev.replyToken, withQuickReply({
               type: 'text',
               text: `✅ 綁定成功！\n之後 ${uid.substring(0, 6)}... 這組行事曆有變動或排程提醒都會推到這個聊天視窗。\n\n想取消綁定請傳：解除綁定`,
             }));
           } else if (text === '解除綁定') {
             await removeBindingsForSource(sourceId);
-            await client.replyMessage(ev.replyToken, {
+            await safeReply(client, ev.replyToken, {
               type: 'text',
               text: '已解除所有綁定。要重新綁定請再傳：綁定 <你的裝置 ID>',
             });
           } else if (range) {
             await replyAgenda(client, ev, range);
           } else {
-            await client.replyMessage(ev.replyToken, withQuickReply({
+            await safeReply(client, ev.replyToken, withQuickReply({
               type: 'text',
               text: getHelpText(),
             }));
@@ -386,16 +407,22 @@ exports.notifyOnEventUpdate = onDocumentUpdated(
     const before = event.data.before.data();
     const after = event.data.after.data();
     const uid = event.params.uid;
-    if (
-      before.title === after.title &&
-      before.startDate === after.startDate &&
-      before.endDate === after.endDate &&
-      before.startTime === after.startTime &&
-      before.endTime === after.endTime &&
-      before.isAllDay === after.isAllDay
-    ) {
-      return;
+    const timeChanged =
+      before.startDate !== after.startDate ||
+      before.endDate !== after.endDate ||
+      before.startTime !== after.startTime ||
+      before.endTime !== after.endTime ||
+      before.isAllDay !== after.isAllDay;
+    const titleChanged = before.title !== after.title;
+    if (!timeChanged && !titleChanged) return;
+
+    // 時間有變動，要清掉「已提醒」記號才能在新時間重新提醒
+    if (timeChanged && after.reminderNotifiedAt) {
+      await event.data.after.ref.update({
+        reminderNotifiedAt: admin.firestore.FieldValue.delete(),
+      });
     }
+
     await pushToBoundUsers(uid, `✏️ 行程更新：${formatEvent(after)}`);
   }
 );
@@ -415,7 +442,8 @@ exports.notifyOnEventDelete = onDocumentDeleted(
 // -------- Scheduled notifications --------
 exports.dailyMorningSummary = onSchedule(
   {
-    schedule: '0 8 * * *',
+    // TODO: 測試完改回 '0 8 * * *'
+    schedule: '30 11 * * *',
     timeZone: 'Asia/Taipei',
     secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   },
@@ -469,8 +497,9 @@ exports.preEventReminder = onSchedule(
   },
   async () => {
     const now = new Date();
-    const inHalfHour = new Date(now.getTime() + 30 * 60 * 1000);
-    const inQuarter = new Date(now.getTime() + 15 * 60 * 1000);
+    // 把通知視窗放寬到 [now, now+45m]，再用 reminderNotifiedAt 去重，
+    // 避免邊界事件因 cron 延遲被漏掉，也避免重複推播。
+    const horizon = new Date(now.getTime() + 45 * 60 * 1000);
     const today = formatDateTW(now);
 
     const snap = await db()
@@ -482,16 +511,22 @@ exports.preEventReminder = onSchedule(
     for (const doc of snap.docs) {
       const ev = doc.data();
       if (!ev.startTime) continue;
+      if (ev.reminderNotifiedAt) continue; // 已通知過，跳過
       const [h, m] = ev.startTime.split(':').map(Number);
       const startTs = new Date(now);
       startTs.setHours(h, m, 0, 0);
-      if (startTs >= inQuarter && startTs < inHalfHour) {
+      // 只在「事件還沒開始」且「45 分內會開始」時推
+      if (startTs > now && startTs <= horizon) {
         const uid = doc.ref.parent.parent?.id;
         if (!uid) continue;
         await pushToBoundUsers(
           uid,
-          `⏰ 30 分鐘後開始：${ev.title}\n  ${ev.startTime} - ${ev.endTime}`
+          `⏰ 即將開始：${ev.title}\n  ${ev.startTime} - ${ev.endTime}`
         );
+        // 標記已通知，避免下一輪 cron 再推一次
+        await doc.ref.update({
+          reminderNotifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
       }
     }
   }
