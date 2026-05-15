@@ -3,11 +3,6 @@ name: Deploy Firebase Functions
 on:
   push:
     branches: [main]
-    paths:
-      - 'functions/**'
-      - 'firebase.json'
-      - '.firebaserc'
-      - '.github/workflows/deploy-functions.yml'
   workflow_dispatch:    # 也可在 Actions 頁手動觸發
 
 jobs:
