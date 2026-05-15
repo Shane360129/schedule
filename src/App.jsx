@@ -691,14 +691,29 @@ const App = () => {
 
   const activeEvents = events.filter(ev => ev.endDate >= todayStr);
 
+  // 多日事件：用「以週 (週日~週六) 為單位」切段，每段在 upcoming 列表佔一筆，
+  // 不再每天重複顯示。同一週的多日事件 → 一筆 (帶迄日)；跨週 → 一週一筆。
   const groupedUpcomingRaw = activeEvents.reduce((acc, ev) => {
-    const dates = getDatesInRange(ev.startDate, ev.endDate);
-    dates.forEach(date => {
-      if (date >= todayStr) { 
-        if (!acc[date]) acc[date] = [];
-        acc[date].push(ev);
-      }
-    });
+    let segStartStr = ev.startDate < todayStr ? todayStr : ev.startDate;
+    const evEnd = ev.endDate;
+    while (segStartStr <= evEnd) {
+      const startDate = new Date(segStartStr + 'T00:00:00');
+      const dow = startDate.getDay();
+      const daysToSat = 6 - dow;
+      const weekEnd = new Date(startDate);
+      weekEnd.setDate(startDate.getDate() + daysToSat);
+      const weekEndStr = formatDate(weekEnd);
+      const segEndStr = weekEndStr < evEnd ? weekEndStr : evEnd;
+      if (!acc[segStartStr]) acc[segStartStr] = [];
+      acc[segStartStr].push({
+        ...ev,
+        _segStartDate: segStartStr,
+        _segEndDate: segEndStr,
+      });
+      const nextStart = new Date(weekEnd);
+      nextStart.setDate(weekEnd.getDate() + 1);
+      segStartStr = formatDate(nextStart);
+    }
     return acc;
   }, {});
 
@@ -1149,16 +1164,22 @@ const App = () => {
                             else if (ev.eventType === 'partner') ownerLabel = roleSettings.role2;
                             else ownerLabel = '共同';
 
+                            const isMultiDaySeg = ev._segEndDate && ev._segEndDate !== ev._segStartDate;
                             return (
-                              <div key={ev.id} onClick={() => openEditModal(null, ev)} className="p-3 rounded-xl border shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }}>
+                              <div key={`${ev.id}-${ev._segStartDate}`} onClick={() => openEditModal(null, ev)} className="p-3 rounded-xl border shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border }}>
                                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: colorObj.hex }}></div>
                                  <div className="flex-1 min-w-0">
                                     <div className="flex justify-between items-start">
                                        <h4 className="font-bold truncate" style={{ color: theme.colors.text }}>{ev.title}</h4>
                                        <span className="text-[10px] px-1.5 py-0.5 rounded ml-2 whitespace-nowrap" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>{ownerLabel}</span>
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs" style={{ color: theme.colors.secondaryText }}>
+                                    <div className="flex items-center gap-2 text-xs flex-wrap" style={{ color: theme.colors.secondaryText }}>
                                       {ev.isAllDay ? <span className="px-1.5 rounded" style={{ backgroundColor: theme.colors.inputBorder, color: theme.colors.text }}>全天</span> : <span className="font-bold font-num-naikai text-sm">{ev.startTime} - {ev.endTime}</span>}
+                                      {isMultiDaySeg && (
+                                        <span className="px-1.5 rounded font-num-naikai" style={{ backgroundColor: colorObj.hex + '33', color: colorObj.text || theme.colors.text }}>
+                                          ～ {ev._segEndDate.slice(5).replace('-', '/')}
+                                        </span>
+                                      )}
                                     </div>
                                  </div>
                                  <Edit className="w-4 h-4" style={{ color: theme.colors.secondaryText }} />
