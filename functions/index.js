@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v16-morning-only';
+const BUILD_VERSION = '2026-05-15-v17-ux-expand';
 
 // 通知開關 (true=開, false=關，省 LINE push 額度)
 const NOTIFY_ON_CREATE = true;
@@ -94,6 +94,52 @@ function addMonthKey(key, delta) {
   return `${newY}-${String(newM).padStart(2, '0')}`;
 }
 
+function daysBetween(targetStr, baseStr) {
+  // 兩個 YYYY-MM-DD 之間相差天數 (target - base)
+  const t = new Date(targetStr + 'T00:00:00Z').getTime();
+  const b = new Date(baseStr + 'T00:00:00Z').getTime();
+  return Math.round((t - b) / 86400000);
+}
+
+function parseTimeRangeStr(str) {
+  // 「14:30」或「14:30-16:00」或「14時30」回傳 { startTime, endTime, isAllDay:false } 或 null
+  const re = /^(\d{1,2})[:時](\d{2})(?:\s*[\-~到至]\s*(\d{1,2})[:時](\d{2}))?$/;
+  const m = str.match(re);
+  if (!m) return null;
+  const sh = m[1].padStart(2, '0');
+  const sm = m[2];
+  const startTime = `${sh}:${sm}`;
+  let endTime;
+  if (m[3]) {
+    endTime = `${m[3].padStart(2, '0')}:${m[4]}`;
+  } else {
+    // 沒寫結束 → 預設 +1 小時，封頂 23:xx
+    const total = parseInt(sh) * 60 + parseInt(sm) + 60;
+    const eh = Math.min(23, Math.floor(total / 60));
+    const em = total % 60;
+    endTime = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
+  }
+  return { startTime, endTime, isAllDay: false };
+}
+
+async function findEventsByDateTitle(uid, dateStr, titleQuery) {
+  // 回傳含日期 dateStr 且 title 含 titleQuery 的所有事件 { ref, data }
+  const eventsSnap = await db()
+    .collection('artifacts').doc(APP_ID)
+    .collection('users').doc(uid)
+    .collection('bibi_events')
+    .where('startDate', '<=', dateStr)
+    .get();
+  const matches = [];
+  eventsSnap.forEach((d) => {
+    const e = d.data();
+    if (!e.endDate || e.endDate < dateStr) return;
+    if (titleQuery && e.title && !e.title.includes(titleQuery)) return;
+    matches.push({ ref: d.ref, data: e });
+  });
+  return matches;
+}
+
 function monthRangeForQuery(y, mo) {
   // 給「整月行程」/「2026/7」等查詢用
   const monthStartStr = `${y}-${String(mo).padStart(2, '0')}-01`;
@@ -124,6 +170,61 @@ function getSourceId(ev) {
 function getWelcomeText(sourceType) {
   const scope = sourceType === 'group' ? '這個群組' : sourceType === 'room' ? '這個聊天室' : '這個 LINE';
   return `哈囉！要把${scope}跟 BiBi 行事曆綁定，請打開行事曆 App → 設定 → LINE 通知，按「複製綁定指令」按鈕，再貼到這裡傳送即可。\n\n或是直接傳給我：\n綁定 <你的裝置 ID>`;
+}
+
+function buildWelcomeFlex(sourceType) {
+  const scope = sourceType === 'group' ? '這個群組' : sourceType === 'room' ? '這個聊天室' : '這個 LINE';
+  return {
+    type: 'flex',
+    altText: '哈囉！我是 BiBi 行事曆助手',
+    contents: {
+      type: 'bubble',
+      size: 'mega',
+      header: {
+        type: 'box', layout: 'vertical', paddingAll: 'lg',
+        backgroundColor: '#8D6E63',
+        contents: [
+          { type: 'text', text: '👋 哈囉，我是 BiBi！', weight: 'bold', color: '#FFFFFF', size: 'lg' },
+          { type: 'text', text: `要把${scope}跟行事曆綁定起來嗎？`, color: '#FFFFFF', size: 'xs', wrap: true, margin: 'sm' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', spacing: 'md', paddingAll: 'lg',
+        contents: [
+          { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+            { type: 'text', text: '①', weight: 'bold', color: '#8D6E63', size: 'sm', flex: 0 },
+            { type: 'box', layout: 'vertical', flex: 1, contents: [
+              { type: 'text', text: '綁定行事曆', weight: 'bold', size: 'sm' },
+              { type: 'text', text: '打開行事曆 App → 設定 → LINE 通知 → 按「複製綁定指令」貼到這裡傳送', size: 'xs', color: '#666', wrap: true, margin: 'xs' },
+            ]},
+          ]},
+          { type: 'separator' },
+          { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+            { type: 'text', text: '②', weight: 'bold', color: '#8D6E63', size: 'sm', flex: 0 },
+            { type: 'box', layout: 'vertical', flex: 1, contents: [
+              { type: 'text', text: '自我介紹', weight: 'bold', size: 'sm' },
+              { type: 'text', text: '傳「我是 <你在 App 設定的名字>」，之後你新增的行程會自動歸給你', size: 'xs', color: '#666', wrap: true, margin: 'xs' },
+            ]},
+          ]},
+          { type: 'separator' },
+          { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+            { type: 'text', text: '③', weight: 'bold', color: '#8D6E63', size: 'sm', flex: 0 },
+            { type: 'box', layout: 'vertical', flex: 1, contents: [
+              { type: 'text', text: '開始用', weight: 'bold', size: 'sm' },
+              { type: 'text', text: '查行程：今日／本週／7月／5/16 ｜ 新增：「新增 明天10點 看牙醫」', size: 'xs', color: '#666', wrap: true, margin: 'xs' },
+            ]},
+          ]},
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'horizontal', spacing: 'sm', paddingAll: 'sm',
+        contents: [
+          { type: 'button', style: 'primary', height: 'sm', color: '#8D6E63',
+            action: { type: 'message', label: '看完整指令', text: '幫助' } },
+        ],
+      },
+    },
+  };
 }
 
 async function removeBindingsForSource(sourceId) {
@@ -165,7 +266,9 @@ function getQuickReplyItems() {
     { type: 'action', action: { type: 'message', label: '今日', text: '今日' } },
     { type: 'action', action: { type: 'message', label: '明天', text: '明天' } },
     { type: 'action', action: { type: 'message', label: '本週', text: '本週' } },
-    { type: 'action', action: { type: 'message', label: '下週', text: '下週' } },
+    { type: 'action', action: { type: 'message', label: '本月', text: '本月' } },
+    { type: 'action', action: { type: 'message', label: '下一個', text: '下一個' } },
+    { type: 'action', action: { type: 'message', label: '幫助', text: '幫助' } },
   ];
 }
 
@@ -436,48 +539,65 @@ async function getRoleSettings(uid) {
 
 const COLOR_BY_TYPE = { me: 'tea', partner: 'sesame', common: 'latte' };
 
-function buildEventConfirmFlex(ev, ownerLabel) {
+function buildEventConfirmFlex(ev, ownerLabel, opts = {}) {
+  const { uid, eventId } = opts;
   const dateLine = ev.startDate === ev.endDate
     ? ev.startDate
     : `${ev.startDate} ~ ${ev.endDate}`;
   const timeLine = ev.isAllDay ? '全天' : `${ev.startTime} - ${ev.endTime}`;
-  return {
-    type: 'flex',
-    altText: `已新增：${ev.title}`,
-    contents: {
-      type: 'bubble',
-      size: 'kilo',
-      header: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [{ type: 'text', text: '✅ 已新增行程', weight: 'bold', color: '#FFFFFF' }],
-        backgroundColor: '#8D6E63',
-        paddingAll: 'md',
-      },
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'sm',
-        paddingAll: 'lg',
-        contents: [
-          { type: 'text', text: ev.title, weight: 'bold', size: 'lg', wrap: true },
-          { type: 'separator', margin: 'sm' },
-          { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
-            { type: 'text', text: '📅', flex: 1, size: 'xs' },
-            { type: 'text', text: dateLine, flex: 6, size: 'sm' },
-          ]},
-          { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
-            { type: 'text', text: '⏰', flex: 1, size: 'xs' },
-            { type: 'text', text: timeLine, flex: 6, size: 'sm' },
-          ]},
-          { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
-            { type: 'text', text: '👤', flex: 1, size: 'xs' },
-            { type: 'text', text: ownerLabel, flex: 6, size: 'sm' },
-          ]},
-        ],
-      },
+  const bubble = {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      contents: [{ type: 'text', text: '✅ 已新增行程', weight: 'bold', color: '#FFFFFF' }],
+      backgroundColor: '#8D6E63',
+      paddingAll: 'md',
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'sm',
+      paddingAll: 'lg',
+      contents: [
+        { type: 'text', text: ev.title, weight: 'bold', size: 'lg', wrap: true },
+        { type: 'separator', margin: 'sm' },
+        { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+          { type: 'text', text: '📅', flex: 1, size: 'xs' },
+          { type: 'text', text: dateLine, flex: 6, size: 'sm' },
+        ]},
+        { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+          { type: 'text', text: '⏰', flex: 1, size: 'xs' },
+          { type: 'text', text: timeLine, flex: 6, size: 'sm' },
+        ]},
+        { type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+          { type: 'text', text: '👤', flex: 1, size: 'xs' },
+          { type: 'text', text: ownerLabel, flex: 6, size: 'sm' },
+        ]},
+      ],
     },
   };
+  // 有帶 uid + eventId 才加 button (postback 需要事件位址)
+  if (uid && eventId) {
+    const editAction = ev.isAllDay
+      ? { type: 'datetimepicker', label: '✏️ 改日期', mode: 'date',
+          data: `act=edit-date&uid=${uid}&id=${eventId}` }
+      : { type: 'datetimepicker', label: '🕓 改時間', mode: 'datetime',
+          data: `act=edit-datetime&uid=${uid}&id=${eventId}`,
+          initial: `${ev.startDate}T${ev.startTime}` };
+    bubble.footer = {
+      type: 'box', layout: 'horizontal', spacing: 'sm', paddingAll: 'sm',
+      contents: [
+        { type: 'button', style: 'secondary', height: 'sm',
+          action: { type: 'postback', label: '🗑️ 刪除',
+            data: `act=delete&uid=${uid}&id=${eventId}`,
+            displayText: `刪除：${ev.title}` } },
+        { type: 'button', style: 'secondary', height: 'sm', action: editAction },
+      ],
+    };
+  }
+  return { type: 'flex', altText: `已新增：${ev.title}`, contents: bubble };
 }
 
 // -------- 自然語言事件解析 --------
@@ -906,6 +1026,106 @@ async function replyIdentityMap(client, ev) {
   }));
 }
 
+async function replyNextEvents(client, ev, count = 5) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '尚未綁定行事曆',
+    }));
+  }
+  const todayStr = formatDateTW(new Date());
+  const now = new Date();
+  const allFuture = [];
+  for (const uid of uids) {
+    const snap = await db()
+      .collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid)
+      .collection('bibi_events')
+      .where('startDate', '>=', todayStr)
+      .get();
+    snap.forEach((d) => {
+      const e = d.data();
+      // 當天事件如果已過 startTime 就跳過
+      if (e.startDate === todayStr && !e.isAllDay && e.startTime) {
+        if (taipeiEventStart(e.startDate, e.startTime) < now) return;
+      }
+      allFuture.push(e);
+    });
+  }
+  allFuture.sort((a, b) => {
+    if (a.startDate !== b.startDate) return a.startDate.localeCompare(b.startDate);
+    if (a.isAllDay !== b.isAllDay) return a.isAllDay ? -1 : 1;
+    return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
+  });
+  const slice = allFuture.slice(0, count);
+  if (slice.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '🌤️ 接下來沒有任何行程，好好放鬆 ☕',
+    }));
+  }
+  const title = count === 1 ? '⏰ 下一個行程' : `📅 即將到來（${slice.length} 件）`;
+  const lines = [title, ''];
+  slice.forEach((e, i) => {
+    const days = daysBetween(e.startDate, todayStr);
+    const dayLabel = days === 0 ? '今天'
+      : days === 1 ? '明天'
+      : days === 2 ? '後天'
+      : `${days} 天後`;
+    const timeLabel = e.isAllDay ? '全天' : `${e.startTime}-${e.endTime}`;
+    lines.push(`${i + 1}. ${e.title}`);
+    lines.push(`   📅 ${dayLabel} ${e.startDate} ${timeLabel}`);
+  });
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: lines.join('\n'),
+  }));
+}
+
+async function replySearch(client, ev, query) {
+  if (!query) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '請輸入要搜尋的關鍵字。例：「找 媽媽」',
+    }));
+  }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '尚未綁定行事曆',
+    }));
+  }
+  const matches = [];
+  for (const uid of uids) {
+    const snap = await db()
+      .collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid)
+      .collection('bibi_events')
+      .get();
+    snap.forEach((d) => {
+      const e = d.data();
+      if (e.title && e.title.includes(query)) matches.push(e);
+    });
+  }
+  if (matches.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `🔍 找不到含「${query}」的事件`,
+    }));
+  }
+  matches.sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const top = matches.slice(0, 20);
+  const lines = [`🔍 「${query}」搜尋結果（${matches.length} 件）`, ''];
+  top.forEach((e, i) => {
+    const range = e.startDate === e.endDate ? e.startDate : `${e.startDate}~${e.endDate}`;
+    const timeLabel = e.isAllDay ? '全天' : (e.startTime || '');
+    lines.push(`${i + 1}. ${e.title}`);
+    lines.push(`   ${range} ${timeLabel}`);
+  });
+  if (matches.length > 20) lines.push('', `（共 ${matches.length} 件，只顯示前 20）`);
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: lines.join('\n'),
+  }));
+}
+
 async function tryCreateExplicit(client, ev, text) {
   // 由「新增 X」指令明確觸發，所以可以對所有錯誤狀態都回覆
   if (!text) {
@@ -953,7 +1173,7 @@ async function tryCreateExplicit(client, ev, text) {
     parsed.color = COLOR_BY_TYPE[senderRole] || COLOR_BY_TYPE.common;
   }
 
-  await db()
+  const added = await db()
     .collection('artifacts').doc(APP_ID)
     .collection('users').doc(targetUid)
     .collection('bibi_events')
@@ -963,8 +1183,262 @@ async function tryCreateExplicit(client, ev, text) {
     : parsed.eventType === 'partner' ? (roles.role2 || '夥伴')
     : '共同';
   await safeReply(client, ev.replyToken, withQuickReply(
-    buildEventConfirmFlex(parsed, ownerLabel)
+    buildEventConfirmFlex(parsed, ownerLabel, { uid: targetUid, eventId: added.id })
   ));
+}
+
+async function tryRoleFilteredQuery(client, ev, text) {
+  // 「Shane 今天」「阿花 本週」「共同 明天」這類 prefix
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) return false;
+  const roles = await getRoleSettings(uids[0]);
+  const r1 = (roles.role1 || '').trim();
+  const r2 = (roles.role2 || '').trim();
+
+  let filterType = null;
+  let remaining = null;
+  if (r1 && r1 !== '我' && text.startsWith(r1)) {
+    filterType = 'me';
+    remaining = text.slice(r1.length).trim();
+  } else if (r2 && r2 !== '夥伴' && text.startsWith(r2)) {
+    filterType = 'partner';
+    remaining = text.slice(r2.length).trim();
+  } else if (text.startsWith('只看共同') || text.startsWith('共同 ') ||
+             text.startsWith('一起 ')) {
+    filterType = 'common';
+    remaining = text.replace(/^(只看共同|共同|一起)[\s　]*/, '');
+  } else if (text.startsWith('只看我') || text.startsWith('我的 ')) {
+    filterType = 'me';
+    remaining = text.replace(/^(只看我|我的)[\s　]*/, '');
+  }
+  if (!filterType || !remaining) return false;
+
+  const range = getRangeFromText(remaining);
+  if (!range) return false;
+  // 把角色標籤插進 title
+  const label = filterType === 'me' ? (r1 || '我')
+    : filterType === 'partner' ? (r2 || '夥伴') : '共同';
+  range.title = range.title.replace(/^📅\s?/, `📅 ${label}・`);
+  range.filterType = filterType;
+  await replyAgenda(client, ev, range);
+  return true;
+}
+
+async function tryEditEvent(client, ev, text) {
+  // 三種子指令：改日期 / 改時間 / 改名稱（也可以「改」當改日期簡寫）
+  let mode, body;
+  if (text.startsWith('改日期')) {
+    mode = 'date'; body = text.replace(/^改日期[\s　]*/, '').trim();
+  } else if (text.startsWith('改時間')) {
+    mode = 'time'; body = text.replace(/^改時間[\s　]*/, '').trim();
+  } else if (text.startsWith('改名稱') || text.startsWith('改標題')) {
+    mode = 'title'; body = text.replace(/^改(名稱|標題)[\s　]*/, '').trim();
+  } else {
+    mode = 'date'; body = text.replace(/^改[\s　]*/, '').trim();
+  }
+  if (!body) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '請依以下格式：\n　改日期 5/20 媽媽生日 5/21\n　改時間 5/20 看牙醫 14:30\n　改名稱 5/20 媽媽生日 媽媽77大壽',
+    }));
+    return;
+  }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '尚未綁定行事曆',
+    }));
+    return;
+  }
+  const todayStr = formatDateTW(new Date());
+  const todayDow = getDayOfWeekTaipei(new Date());
+
+  // 第一個 token 必須是舊日期
+  const oldDateToken = parseDateToken(body, todayStr, todayDow);
+  if (!oldDateToken) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '抓不到舊日期。例：「改日期 5/20 媽媽生日 5/21」',
+    }));
+    return;
+  }
+  const afterDate = body.slice(oldDateToken.consumed.length).trim();
+
+  // 解析「舊標題 + 新值」
+  let oldTitle, newValue;
+  if (mode === 'date') {
+    // 最後一個 token 應該是新日期
+    const lastSpace = afterDate.lastIndexOf(' ');
+    if (lastSpace === -1) {
+      await safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: '少了新日期。例：「改日期 5/20 媽媽生日 5/21」',
+      }));
+      return;
+    }
+    oldTitle = afterDate.slice(0, lastSpace).trim();
+    const newDateStr = afterDate.slice(lastSpace + 1).trim();
+    const newDateToken = parseDateToken(newDateStr, todayStr, todayDow);
+    if (!newDateToken || newDateStr !== newDateToken.consumed) {
+      await safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: `新日期格式錯誤：「${newDateStr}」`,
+      }));
+      return;
+    }
+    newValue = newDateToken.date;
+  } else if (mode === 'time') {
+    const lastSpace = afterDate.lastIndexOf(' ');
+    if (lastSpace === -1) {
+      await safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: '少了新時間。例：「改時間 5/20 看牙醫 14:30」',
+      }));
+      return;
+    }
+    oldTitle = afterDate.slice(0, lastSpace).trim();
+    const newTimeStr = afterDate.slice(lastSpace + 1).trim();
+    const parsed = parseTimeRangeStr(newTimeStr);
+    if (!parsed) {
+      await safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: `時間格式錯誤：「${newTimeStr}」(例 14:30 或 14:30-16:00)`,
+      }));
+      return;
+    }
+    newValue = parsed;
+  } else { // title
+    // 用 → 當分隔符 (新標題可能有空格)
+    const m = afterDate.match(/^(.+?)\s*[→\->]\s*(.+)$/);
+    if (m) {
+      oldTitle = m[1].trim();
+      newValue = m[2].trim();
+    } else {
+      const lastSpace = afterDate.lastIndexOf(' ');
+      if (lastSpace === -1) {
+        await safeReply(client, ev.replyToken, withQuickReply({
+          type: 'text', text: '少了新名稱。例：「改名稱 5/20 媽媽生日 媽媽77大壽」\n如果新名稱有空格請用「→」分隔：「改名稱 5/20 X → 新 名 稱」',
+        }));
+        return;
+      }
+      oldTitle = afterDate.slice(0, lastSpace).trim();
+      newValue = afterDate.slice(lastSpace + 1).trim();
+    }
+  }
+  if (!oldTitle) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '請補上要修改的事件名稱關鍵字',
+    }));
+    return;
+  }
+
+  // 找事件
+  const targetUid = uids[0];
+  const matches = await findEventsByDateTitle(targetUid, oldDateToken.date, oldTitle);
+  if (matches.length === 0) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `${oldDateToken.date} 找不到包含「${oldTitle}」的事件`,
+    }));
+    return;
+  }
+  if (matches.length > 1) {
+    const list = matches.map((m, i) => `${i + 1}. ${m.data.title}`).join('\n');
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `找到 ${matches.length} 筆相符，請補更精準關鍵字：\n${list}`,
+    }));
+    return;
+  }
+  const match = matches[0];
+  const updates = {};
+  if (mode === 'date') {
+    const dayDiff = daysBetween(newValue, match.data.startDate);
+    updates.startDate = newValue;
+    updates.endDate = addDaysStr(match.data.endDate, dayDiff);
+    updates.reminderNotifiedAt = admin.firestore.FieldValue.delete();
+  } else if (mode === 'time') {
+    Object.assign(updates, newValue);
+    updates.reminderNotifiedAt = admin.firestore.FieldValue.delete();
+  } else if (mode === 'title') {
+    updates.title = newValue;
+  }
+  await match.ref.update(updates);
+
+  // 顯示更新後的事件
+  const after = { ...match.data, ...updates };
+  const roles = await getRoleSettings(targetUid);
+  const ownerLabel = after.eventType === 'me' ? (roles.role1 || '我')
+    : after.eventType === 'partner' ? (roles.role2 || '夥伴') : '共同';
+  const flex = buildEventConfirmFlex(after, ownerLabel);
+  flex.contents.header.contents[0].text = '✏️ 已更新行程';
+  flex.altText = `✏️ 已更新：${after.title}`;
+  await safeReply(client, ev.replyToken, withQuickReply(flex));
+}
+
+async function handlePostback(client, ev) {
+  const dataStr = ev.postback?.data || '';
+  const params = new URLSearchParams(dataStr);
+  const act = params.get('act');
+  const uid = params.get('uid');
+  const eventId = params.get('id');
+  if (!act || !uid || !eventId) return;
+
+  const ref = db()
+    .collection('artifacts').doc(APP_ID)
+    .collection('users').doc(uid)
+    .collection('bibi_events').doc(eventId);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '⚠️ 找不到事件 (可能已被刪除)',
+    }));
+    return;
+  }
+  const data = snap.data();
+
+  if (act === 'delete') {
+    await ref.delete();
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `🗑️ 已刪除：${data.title}`,
+    }));
+    return;
+  }
+
+  if (act === 'edit-date' || act === 'edit-datetime') {
+    // datetimepicker 觸發的 postback 帶 params.datetime / params.date / params.time
+    const pickedDate = ev.postback?.params?.date;
+    const pickedDateTime = ev.postback?.params?.datetime;
+    const updates = { reminderNotifiedAt: admin.firestore.FieldValue.delete() };
+
+    if (act === 'edit-date' && pickedDate) {
+      const dayDiff = daysBetween(pickedDate, data.startDate);
+      updates.startDate = pickedDate;
+      updates.endDate = addDaysStr(data.endDate, dayDiff);
+    } else if (act === 'edit-datetime' && pickedDateTime) {
+      // pickedDateTime = "YYYY-MM-DDTHH:MM"
+      const [datePart, timePart] = pickedDateTime.split('T');
+      const dayDiff = daysBetween(datePart, data.startDate);
+      updates.startDate = datePart;
+      updates.endDate = addDaysStr(data.endDate, dayDiff);
+      updates.startTime = timePart;
+      updates.isAllDay = false;
+      // 預設 +1hr
+      const [h, m] = timePart.split(':').map(Number);
+      const endTotal = h * 60 + m + 60;
+      const eh = Math.min(23, Math.floor(endTotal / 60));
+      const em = endTotal % 60;
+      updates.endTime = `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
+    } else {
+      return; // 沒帶 datetime 就忽略
+    }
+
+    await ref.update(updates);
+    const after = { ...data, ...updates };
+    const roles = await getRoleSettings(uid);
+    const ownerLabel = after.eventType === 'me' ? (roles.role1 || '我')
+      : after.eventType === 'partner' ? (roles.role2 || '夥伴') : '共同';
+    const flex = buildEventConfirmFlex(after, ownerLabel, { uid, eventId });
+    flex.contents.header.contents[0].text = '✏️ 已更新行程';
+    flex.altText = `✏️ 已更新：${after.title}`;
+    await safeReply(client, ev.replyToken, withQuickReply(flex));
+    return;
+  }
 }
 
 async function tryDeleteEvent(client, ev, text) {
@@ -1094,6 +1568,7 @@ async function replyAgenda(client, ev, range) {
     eventsSnap.forEach((doc) => {
       const e = doc.data();
       if (!e.endDate || e.endDate < rangeStartStr) return;
+      if (range.filterType && e.eventType !== range.filterType) return;
       if (compactMode) {
         // 只在「範圍內的第一天」列出一次，避免多日事件填滿整張卡片
         const firstInRange = e.startDate < rangeStartStr ? rangeStartStr : e.startDate;
@@ -1180,20 +1655,26 @@ function getHelpText() {
     '　今日／明天／後天／大後天',
     '　本週／下週／下下週／週末',
     '　整月行程／本月／7月／2026/7',
+    '　下一個 / 最近（接下來 5 件）',
     '　直接傳日期：「5/16」「週三」「下週一」',
+    '　依角色：「Shane 今天」「阿花 本週」「只看共同 明天」',
     '',
-    '➕ 新增行程（必須以「新增」開頭）：',
+    '🔍 找 / 搜尋 <關鍵字>　— 搜尋事件標題',
+    '',
+    '➕ 新增（必須以「新增」開頭）：',
     '　「新增 明天10點 看牙醫」',
     '　「新增 5/20 全天 媽媽生日」',
-    '　「新增 7/10-7/22 加州旅遊」← 多日',
-    '　「新增 今晚 阿花生日趴」← 模糊時段',
+    '　「新增 7/10-7/22 加州旅遊」',
     '',
-    '🗑️ 刪除行程：',
-    '　「刪除 5/20 媽媽生日」',
+    '✏️ 編輯：',
+    '　「改日期 5/20 媽媽生日 5/21」',
+    '　「改時間 5/20 看牙醫 14:30-16:00」',
+    '　「改名稱 5/20 媽媽生日 媽媽77大壽」',
+    '　(或從事件卡片底部按鈕直接改／刪)',
     '',
-    '⏰ 自動通知（已開啟）：',
-    '　• 每日 09:00 早安行程摘要',
-    '　• 新增事件即時通知',
+    '🗑️ 「刪除 5/20 媽媽生日」',
+    '',
+    '⏰ 自動通知：每日 09:00 早安摘要 + 新增事件 Flex 卡片',
     '',
     `（版本 ${BUILD_VERSION}）`,
   ].join('\n');
@@ -1219,12 +1700,13 @@ exports.lineWebhook = onRequest(
     for (const ev of events) {
       try {
         if (ev.type === 'follow' || ev.type === 'join') {
-          await safeReply(client, ev.replyToken, withQuickReply({
-            type: 'text',
-            text: getWelcomeText(ev.source?.type),
-          }));
+          await safeReply(client, ev.replyToken, withQuickReply(
+            buildWelcomeFlex(ev.source?.type)
+          ));
         } else if (ev.type === 'unfollow' || ev.type === 'leave') {
           await removeBindingsForSource(getSourceId(ev));
+        } else if (ev.type === 'postback') {
+          await handlePostback(client, ev);
         } else if (ev.type === 'message' && ev.message.type === 'text') {
           const sourceId = getSourceId(ev);
           if (!sourceId) {
@@ -1269,20 +1751,28 @@ exports.lineWebhook = onRequest(
             await replyIdentityMap(client, ev);
           } else if (text === '幫助' || text === '說明' || text === '指令' ||
                      text.toLowerCase() === 'help') {
-            // 明確的 help 指令，連群組也要回
             await safeReply(client, ev.replyToken, withQuickReply({
-              type: 'text',
-              text: getHelpText(),
+              type: 'text', text: getHelpText(),
             }));
+          } else if (text === '下一個' || text === '下個' || text === 'next') {
+            await replyNextEvents(client, ev, 1);
+          } else if (text === '最近' || text === '即將' || text === '即將到來') {
+            await replyNextEvents(client, ev, 5);
+          } else if (text.startsWith('找') || text.startsWith('搜尋') || text.startsWith('查')) {
+            const q = text.replace(/^(搜尋|找|查)[\s　]*/, '').trim();
+            await replySearch(client, ev, q);
           } else if (text.startsWith('我是') && await handleIdentitySet(client, ev, text)) {
             // 已處理「我是 X」自我介紹
+          } else if (text.startsWith('改')) {
+            await tryEditEvent(client, ev, text);
           } else if (text.startsWith('新增')) {
-            // 明確的新增指令，要求 prefix 避免誤觸
             const body = text.replace(/^新增[\s　]*/, '').trim();
             await tryCreateExplicit(client, ev, body);
           } else if (text.startsWith('刪除') || text.startsWith('刪 ') || text === '刪') {
             const body = text.replace(/^刪除?[\s　]*/, '').trim();
             await tryDeleteEvent(client, ev, body);
+          } else if (await tryRoleFilteredQuery(client, ev, text)) {
+            // 已處理角色過濾 (Shane 今天 / 阿花 本週 / 只看共同 等)
           } else if (range) {
             await replyAgenda(client, ev, range);
           } else if (ev.source?.type === 'group' || ev.source?.type === 'room') {
@@ -1312,13 +1802,12 @@ exports.notifyOnEventCreate = onDocumentCreated(
     if (!NOTIFY_ON_CREATE) return;
     const ev = event.data.data();
     const uid = event.params.uid;
+    const eventId = event.params.eventId;
     const roles = await getRoleSettings(uid);
     const ownerLabel = ev.eventType === 'me' ? (roles.role1 || '我')
       : ev.eventType === 'partner' ? (roles.role2 || '夥伴')
       : '共同';
-    const flex = buildEventConfirmFlex(ev, ownerLabel);
-    // 從 App 新增 vs 從 LINE 新增都會走這個 trigger，
-    // 把卡片標題從「✅ 已新增行程」改成「📝 新增行程」做差異化
+    const flex = buildEventConfirmFlex(ev, ownerLabel, { uid, eventId });
     flex.contents.header.contents[0].text = '📝 新增行程';
     flex.altText = `📝 新增行程：${ev.title}`;
     await pushToBoundUsers(uid, flex);
