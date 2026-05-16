@@ -17,14 +17,14 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v15-usage-quiet';
+const BUILD_VERSION = '2026-05-15-v16-morning-only';
 
 // 通知開關 (true=開, false=關，省 LINE push 額度)
 const NOTIFY_ON_CREATE = true;
 const NOTIFY_ON_UPDATE = false;
 const NOTIFY_ON_DELETE = false;
 const NOTIFY_DAILY_SUMMARY = true;
-const NOTIFY_PRE_EVENT_REMINDER = true;
+const NOTIFY_PRE_EVENT_REMINDER = false;
 const NOTIFY_WEEKLY_SUNDAY_PREVIEW = false;
 const TAIPEI_TZ = 'Asia/Taipei';
 const db = () => admin.firestore();
@@ -1193,7 +1193,6 @@ function getHelpText() {
     '',
     '⏰ 自動通知（已開啟）：',
     '　• 每日 09:00 早安行程摘要',
-    '　• 事件開始前 15-45 分提醒',
     '　• 新增事件即時通知',
     '',
     `（版本 ${BUILD_VERSION}）`,
