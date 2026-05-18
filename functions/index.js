@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v17-ux-expand';
+const BUILD_VERSION = '2026-05-15-v18-quota-api';
 
 // 通知開關 (true=開, false=關，省 LINE push 額度)
 const NOTIFY_ON_CREATE = true;
@@ -33,6 +33,17 @@ function lineClient() {
   return new line.Client({
     channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN.value(),
   });
+}
+
+async function lineApiGet(path) {
+  const res = await fetch(`https://api.line.me${path}`, {
+    headers: { Authorization: `Bearer ${LINE_CHANNEL_ACCESS_TOKEN.value()}` },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`LINE API ${path} ${res.status}: ${body.slice(0, 200)}`);
+  }
+  return res.json();
 }
 
 // Firebase Functions runtime is UTC. 所有日期計算都要明確指定 Asia/Taipei，
@@ -872,9 +883,38 @@ async function replyUsage(client, ev) {
       text: '尚未綁定行事曆',
     }));
   }
-  const monthKey = formatDateTW(new Date()).slice(0, 7); // YYYY-MM
+  const lines = [];
+
+  // 1) LINE 官方計費數字 (整個 channel 共用)
+  try {
+    const [quota, consumption] = await Promise.all([
+      lineApiGet('/v2/bot/message/quota'),
+      lineApiGet('/v2/bot/message/quota/consumption'),
+    ]);
+    const limit = quota.type === 'limited' ? quota.value
+      : (quota.type === 'none' ? '無限' : (quota.value ?? '未知'));
+    const used = consumption.totalUsage ?? 0;
+    lines.push('📊 LINE 官方計費 (整個 Bot)');
+    lines.push(`方案：${quota.type}`);
+    lines.push(`本月已用：${used} 則`);
+    lines.push(`配額：${limit}${typeof limit === 'number' ? ' 則' : ''}`);
+    if (typeof limit === 'number') {
+      if (used >= limit) {
+        lines.push(`⚠️ 已超額 ${used - limit} 則`);
+      } else {
+        lines.push(`還剩：${limit - used} 則`);
+      }
+    }
+  } catch (err) {
+    lines.push('📊 LINE 官方計費');
+    lines.push(`⚠️ 查詢失敗：${String(err.message || err).slice(0, 80)}`);
+  }
+  lines.push('');
+
+  // 2) 內部分類計數 (此綁定的個別來源)
+  const monthKey = formatDateTW(new Date()).slice(0, 7);
   const prevMonthKey = addMonthKey(monthKey, -1);
-  const lines = ['📊 LINE 推播用量', ''];
+  lines.push('📋 內部計數 (參考)');
   for (const uid of uids) {
     const usageDoc = await db()
       .collection('artifacts').doc(APP_ID)
@@ -884,19 +924,22 @@ async function replyUsage(client, ev) {
     const data = usageDoc.exists ? usageDoc.data() : {};
     const thisMonth = data[monthKey] || 0;
     const prevMonth = data[prevMonthKey] || 0;
-    lines.push(`📋 ${uid.substring(0, 8)}…`);
+    const cat = data[`${monthKey}_categories`] || {};
     lines.push(`本月（${monthKey}）：${thisMonth} 則`);
-    lines.push(`上月（${prevMonthKey}）：${prevMonth} 則`);
-    lines.push(`免費額度：200 則／月`);
-    if (thisMonth >= 200) {
-      lines.push(`⚠️ 本月已超額 ${thisMonth - 200} 則`);
-    } else {
-      lines.push(`還剩：${200 - thisMonth} 則`);
+    if (Object.keys(cat).length > 0) {
+      const parts = [];
+      if (cat.morning) parts.push(`早安 ${cat.morning}`);
+      if (cat.reminder) parts.push(`提醒 ${cat.reminder}`);
+      if (cat.event_create) parts.push(`新增 ${cat.event_create}`);
+      if (cat.event_update) parts.push(`異動 ${cat.event_update}`);
+      if (cat.other) parts.push(`其他 ${cat.other}`);
+      if (parts.length) lines.push(`　└ ${parts.join('｜')}`);
     }
-    lines.push('');
+    lines.push(`上月（${prevMonthKey}）：${prevMonth} 則`);
   }
-  lines.push('註：只算主動推播 (早安/提醒/事件變動)，');
-  lines.push('　你跟我互動的回覆不算。');
+  lines.push('');
+  lines.push('註：reply (回覆你的訊息) 不計費，');
+  lines.push('　只有主動 push 才會算入官方配額。');
   return safeReply(client, ev.replyToken, withQuickReply({
     type: 'text',
     text: lines.join('\n'),
@@ -1596,7 +1639,7 @@ async function replyAgenda(client, ev, range) {
   ));
 }
 
-async function incrementPushCount(uid, count = 1) {
+async function incrementPushCount(uid, count = 1, category = 'other') {
   if (!count || count < 1) return;
   const monthKey = formatDateTW(new Date()).slice(0, 7); // YYYY-MM
   try {
@@ -1606,6 +1649,9 @@ async function incrementPushCount(uid, count = 1) {
       .collection('bibi_settings').doc('usage')
       .set({
         [monthKey]: admin.firestore.FieldValue.increment(count),
+        [`${monthKey}_categories`]: {
+          [category]: admin.firestore.FieldValue.increment(count),
+        },
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
   } catch (err) {
@@ -1613,7 +1659,7 @@ async function incrementPushCount(uid, count = 1) {
   }
 }
 
-async function pushToTargets(uid, lineUserIds, message) {
+async function pushToTargets(uid, lineUserIds, message, category = 'other') {
   if (!lineUserIds || lineUserIds.length === 0) return;
   const msgObject = typeof message === 'string'
     ? { type: 'text', text: message }
@@ -1631,17 +1677,17 @@ async function pushToTargets(uid, lineUserIds, message) {
     }
   });
   const successCount = results.filter((r) => r.status === 'fulfilled').length;
-  if (successCount > 0) await incrementPushCount(uid, successCount);
+  if (successCount > 0) await incrementPushCount(uid, successCount, category);
 }
 
-async function pushToBoundUsers(uid, message) {
+async function pushToBoundUsers(uid, message, category = 'other') {
   const doc = await db()
     .collection('artifacts').doc(APP_ID)
     .collection('users').doc(uid)
     .collection('bibi_settings').doc('line')
     .get();
   const lineUserIds = (doc.exists ? doc.data().lineUserIds : []) || [];
-  await pushToTargets(uid, lineUserIds, message);
+  await pushToTargets(uid, lineUserIds, message, category);
 }
 
 function getHelpText() {
@@ -1810,7 +1856,7 @@ exports.notifyOnEventCreate = onDocumentCreated(
     const flex = buildEventConfirmFlex(ev, ownerLabel, { uid, eventId });
     flex.contents.header.contents[0].text = '📝 新增行程';
     flex.altText = `📝 新增行程：${ev.title}`;
-    await pushToBoundUsers(uid, flex);
+    await pushToBoundUsers(uid, flex, 'event_create');
   }
 );
 
@@ -1842,7 +1888,7 @@ exports.notifyOnEventUpdate = onDocumentUpdated(
 
     if (!NOTIFY_ON_UPDATE) return;
     const uid = event.params.uid;
-    await pushToBoundUsers(uid, `✏️ 行程更新：${formatEvent(after)}`);
+    await pushToBoundUsers(uid, `✏️ 行程更新：${formatEvent(after)}`, 'event_update');
   }
 );
 
@@ -1855,7 +1901,7 @@ exports.notifyOnEventDelete = onDocumentDeleted(
     if (!NOTIFY_ON_DELETE) return;
     const ev = event.data.data();
     const uid = event.params.uid;
-    await pushToBoundUsers(uid, `🗑️ 行程刪除：${ev.title}`);
+    await pushToBoundUsers(uid, `🗑️ 行程刪除：${ev.title}`, 'event_update');
   }
 );
 
@@ -1909,7 +1955,7 @@ exports.dailyMorningSummary = onSchedule(
             ? `☀️ 早安！${today} 今天沒有排程，好好享受 ☕`
             : lines.join('\n');
 
-        await pushToTargets(uid, lineUserIds, message);
+        await pushToTargets(uid, lineUserIds, message, 'morning');
       } catch (err) {
         console.error('[dailyMorningSummary] user error', { path: doc.ref.path, err: err?.message || err });
       }
@@ -1964,7 +2010,8 @@ exports.preEventReminder = onSchedule(
             console.log('[preEventReminder] pushing', { uid, title: ev.title, startTime: ev.startTime });
             await pushToBoundUsers(
               uid,
-              `⏰ 即將開始：${ev.title}\n  ${ev.startTime} - ${ev.endTime}`
+              `⏰ 即將開始：${ev.title}\n  ${ev.startTime} - ${ev.endTime}`,
+              'reminder'
             );
             await doc.ref.update({
               reminderNotifiedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -2055,7 +2102,7 @@ exports.weeklySundayPreview = onSchedule(
           ? `🌙 下週 (${nextMondayStr} ~ ${nextSundayStr}) 沒有排程，可以好好放鬆 ☕`
           : lines.join('\n').trim();
 
-        await pushToTargets(uid, lineUserIds, message);
+        await pushToTargets(uid, lineUserIds, message, 'weekly');
       } catch (err) {
         console.error('[weeklySundayPreview] user error', {
           path: settingDoc.ref.path, err: err?.message || err,
