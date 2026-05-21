@@ -1867,7 +1867,8 @@ function aiCalendarToolDefs() {
       type: 'function',
       name: 'create_event',
       description:
-        '新增一筆行程。\n' +
+        '【新增行程的唯一方法】要在行事曆建立任何事件都必須呼叫這個 tool，' +
+        '不可以僅用文字回「已新增」假裝完成。\n' +
         'eventType: me=role1 的、partner=role2 的、common=兩人共同 (沒明說就 common)。\n' +
         '預設顏色：me→smokedPlum (莫蘭迪紅)，partner→pastelCream (莫蘭迪奶油)，common→latte。\n' +
         '可選擇傳入 color 覆寫，common 行程建議依標題語意挑選 color (見下方清單)。',
@@ -1897,7 +1898,9 @@ function aiCalendarToolDefs() {
     {
       type: 'function',
       name: 'update_event',
-      description: '更新已存在的行程。請先用 get_events / search_events 取得 _uid 跟 _eventId。',
+      description:
+        '【修改行程的唯一方法】不可以僅用文字回「已修改」假裝完成。' +
+        '請先用 get_events / search_events 取得 _uid 跟 _eventId 再呼叫。',
       parameters: {
         type: 'object',
         properties: {
@@ -1925,7 +1928,9 @@ function aiCalendarToolDefs() {
     {
       type: 'function',
       name: 'delete_event',
-      description: '刪除一筆行程。請先用 get_events / search_events 確認哪一筆。',
+      description:
+        '【刪除行程的唯一方法】不可以僅用文字回「已刪除」假裝完成。' +
+        '請先用 get_events / search_events 確認哪一筆再呼叫。',
       parameters: {
         type: 'object',
         properties: {
@@ -2040,6 +2045,16 @@ function buildAISystemPrompt(today, dow, uidRoles, primaryUid, senderRole, sende
 2. 需最新外部資料（天氣/股市/新聞/查地點/即時匯率/比賽結果）→ web_search
 3. 常識 / 算數 / 純對話 → **直接答，別呼叫任何工具**（web_search 是付費的，
    問「番茄炒蛋怎麼做」不要去搜）。
+
+# 🚨 重要：行程動作一定要呼叫 tool，不能只回文字
+- 要新增 → **必須**呼叫 create_event
+- 要修改 → **必須**呼叫 update_event
+- 要刪除 → **必須**呼叫 delete_event
+- 要查詢 → **必須**呼叫 get_events 或 search_events
+**絕對不要在沒呼叫 tool 的情況下回「✅ 已新增…」「✏️ 已修改…」之類的話。**
+沒呼叫 tool 就 = 沒做事，就算文字寫得很完整也是在騙人。
+這是最常見錯誤，請自我檢查：每次回覆「已新增 / 已修改 / 已刪除」之前，
+本輪 output 一定要有對應的 function_call。
 
 # 三、日期解析（最常踩雷，務必照規則）
 所有相對日期都轉成 YYYY-MM-DD 再呼叫 tool。
