@@ -17,7 +17,7 @@ const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v18-quota-api';
+const BUILD_VERSION = '2026-05-15-v19-midnight';
 
 // 通知開關 (true=開, false=關，省 LINE push 額度)
 const NOTIFY_ON_CREATE = true;
@@ -928,7 +928,7 @@ async function replyUsage(client, ev) {
     lines.push(`本月（${monthKey}）：${thisMonth} 則`);
     if (Object.keys(cat).length > 0) {
       const parts = [];
-      if (cat.morning) parts.push(`早安 ${cat.morning}`);
+      if (cat.morning) parts.push(`每日 ${cat.morning}`);
       if (cat.reminder) parts.push(`提醒 ${cat.reminder}`);
       if (cat.event_create) parts.push(`新增 ${cat.event_create}`);
       if (cat.event_update) parts.push(`異動 ${cat.event_update}`);
@@ -1720,7 +1720,7 @@ function getHelpText() {
     '',
     '🗑️ 「刪除 5/20 媽媽生日」',
     '',
-    '⏰ 自動通知：每日 09:00 早安摘要 + 新增事件 Flex 卡片',
+    '⏰ 自動通知：每日 00:00 當日行程預覽 + 新增事件 Flex 卡片',
     '',
     `（版本 ${BUILD_VERSION}）`,
   ].join('\n');
@@ -1908,7 +1908,7 @@ exports.notifyOnEventDelete = onDocumentDeleted(
 // -------- Scheduled notifications --------
 exports.dailyMorningSummary = onSchedule(
   {
-    schedule: '0 9 * * *',
+    schedule: '0 0 * * *',
     timeZone: 'Asia/Taipei',
     secrets: [LINE_CHANNEL_ACCESS_TOKEN],
   },
@@ -1943,7 +1943,7 @@ exports.dailyMorningSummary = onSchedule(
           .where('startDate', '<=', today)
           .get();
 
-        const lines = [`☀️ 早安！今天 (${today}) 的行程：`];
+        const lines = [`🌙 今日 (${today}) 行程：`];
         eventsSnap.forEach((d) => {
           const e = d.data();
           if (!e.endDate || e.endDate < today) return; // 已結束的略過
@@ -1952,7 +1952,7 @@ exports.dailyMorningSummary = onSchedule(
 
         const message =
           lines.length === 1
-            ? `☀️ 早安！${today} 今天沒有排程，好好享受 ☕`
+            ? `🌙 今天 (${today}) 沒有排程，好好休息 💤`
             : lines.join('\n');
 
         await pushToTargets(uid, lineUserIds, message, 'morning');
