@@ -2400,8 +2400,6 @@ exports.lineWebhook = onRequest(
     secrets: [LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, OPENAI_API_KEY],
     cors: false,
     timeoutSeconds: 60, // AI agent 多輪 function call + web_search 最多會跑 20-40 秒
-    minInstances: 1,    // 永遠保留 1 個 warm instance，避免冷啟動的 5-10 秒延遲
-                        // 月費約 $5，要省可以拿掉
   },
   async (req, res) => {
     const signature = req.get('x-line-signature');
