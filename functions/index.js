@@ -1780,7 +1780,7 @@ async function replyAskGPT(client, ev, question) {
   if (!question) {
     return safeReply(client, ev.replyToken, withQuickReply({
       type: 'text',
-      text: '請帶上要問 / 要做的事。\n例：\n　「問 我下週有幾件事」\n　「問 明天3點和小美喝咖啡幫我加進去」\n　「問 把5/20牙醫改到5/22」\n　「問 台北明天會下雨嗎」',
+      text: '請帶上要問 / 要做的事。\n例：\n　「親 我下週有幾件事」\n　「親 明天3點和小美喝咖啡幫我加進去」\n　「親 把5/20牙醫改到5/22」\n　「親 台北明天會下雨嗎」',
     }));
   }
   const sourceId = getSourceId(ev);
@@ -2070,12 +2070,12 @@ function getHelpText() {
     '🗑️ 「刪除 5/20 媽媽生日」',
     '',
     '🤖 AI 助理（會自己操作行事曆 + 上網查資料）：',
-    '　「問 我下週有幾件事」',
-    '　「問 明天3點和小美喝咖啡幫我加進去」',
-    '　「問 把5/20牙醫改到5/22同時間」',
-    '　「問 刪掉這週末所有共同行程」',
-    '　「問 台北明天會下雨嗎」',
-    '　「問 今天美股漲跌如何」',
+    '　「親 我下週有幾件事」',
+    '　「親 明天3點和小美喝咖啡幫我加進去」',
+    '　「親 把5/20牙醫改到5/22同時間」',
+    '　「親 刪掉這週末所有共同行程」',
+    '　「親 台北明天會下雨嗎」',
+    '　「親 今天美股漲跌如何」',
     '',
     '⏰ 自動通知：每日 00:00 當日行程預覽 + 新增事件 Flex 卡片',
     '',
@@ -2162,9 +2162,9 @@ exports.lineWebhook = onRequest(
             await replyNextEvents(client, ev, 1);
           } else if (text === '最近' || text === '即將' || text === '即將到來') {
             await replyNextEvents(client, ev, 5);
-          } else if (/^(問|AI|ai)[\s　:：]/.test(text) || text === '問' || text.toLowerCase() === 'ai') {
-            // 收緊判斷，避免「問題」這種以問開頭的非指令被誤觸
-            const q = text.replace(/^(問|AI|ai)[\s　:：]*/, '').trim();
+          } else if (/^(親|AI|ai)[\s　:：]/.test(text) || text === '親' || text.toLowerCase() === 'ai') {
+            // 收緊判斷，避免「親愛的」「親自」這種以親開頭的非指令被誤觸
+            const q = text.replace(/^(親|AI|ai)[\s　:：]*/, '').trim();
             await replyAskGPT(client, ev, q);
           } else if (text.startsWith('找') || text.startsWith('搜尋') || text.startsWith('查')) {
             const q = text.replace(/^(搜尋|找|查)[\s　]*/, '').trim();
