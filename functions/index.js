@@ -15,9 +15,11 @@ setGlobalOptions({ region: 'asia-east1', maxInstances: 10 });
 
 const LINE_CHANNEL_ACCESS_TOKEN = defineSecret('LINE_CHANNEL_ACCESS_TOKEN');
 const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
+const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-15-v19-midnight';
+const STORAGE_BUCKET = 'schdule-f5cda.firebasestorage.app';
+const BUILD_VERSION = '2026-05-21-v20-ai';
 
 // 通知開關 (true=開, false=關，省 LINE push 額度)
 const NOTIFY_ON_CREATE = true;
@@ -44,6 +46,87 @@ async function lineApiGet(path) {
     throw new Error(`LINE API ${path} ${res.status}: ${body.slice(0, 200)}`);
   }
   return res.json();
+}
+
+// -------- OpenAI API helpers --------
+async function openaiChat(systemPrompt, userMessage) {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY.value()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      max_tokens: 800,
+      temperature: 0.7,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`OpenAI chat ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  return (data.choices?.[0]?.message?.content || '').trim();
+}
+
+async function openaiImage(prompt) {
+  const res = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY.value()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'dall-e-3',
+      prompt,
+      n: 1,
+      size: '1024x1024',
+      quality: 'standard',
+      response_format: 'b64_json',
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`OpenAI image ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  return data.data?.[0]?.b64_json;
+}
+
+// 上傳到 Firebase Storage 並回傳長期可用的下載 URL (含 token，不會過期)
+async function uploadGalleryImage(uid, b64Image, prompt) {
+  const buffer = Buffer.from(b64Image, 'base64');
+  const docRef = db().collection('artifacts').doc(APP_ID)
+    .collection('users').doc(uid).collection('bibi_gallery').doc();
+  const docId = docRef.id;
+  const storagePath = `gallery/${uid}/${docId}.png`;
+  const bucket = admin.storage().bucket(STORAGE_BUCKET);
+  const file = bucket.file(storagePath);
+  // firebaseStorageDownloadTokens 是 Firebase 慣例，加了之後可以用 ?token= 公開讀取
+  const { randomUUID } = require('crypto');
+  const token = randomUUID();
+  await file.save(buffer, {
+    metadata: {
+      contentType: 'image/png',
+      metadata: { firebaseStorageDownloadTokens: token },
+    },
+    resumable: false,
+  });
+  const downloadUrl =
+    `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}` +
+    `/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+  await docRef.set({
+    prompt,
+    storagePath,
+    downloadUrl,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { docId, downloadUrl };
 }
 
 // Firebase Functions runtime is UTC. 所有日期計算都要明確指定 Asia/Taipei，
@@ -1438,6 +1521,12 @@ async function handlePostback(client, ev) {
   const eventId = params.get('id');
   if (!act || !uid || !eventId) return;
 
+  // 圖庫刪除走另一個 collection，先攔截
+  if (act === 'del_img') {
+    await deleteGalleryImage(client, ev, uid, eventId);
+    return;
+  }
+
   const ref = db()
     .collection('artifacts').doc(APP_ID)
     .collection('users').doc(uid)
@@ -1497,6 +1586,165 @@ async function handlePostback(client, ev) {
     flex.altText = `✏️ 已更新：${after.title}`;
     await safeReply(client, ev.replyToken, withQuickReply(flex));
     return;
+  }
+}
+
+// -------- AI 指令：問答 / 生成圖片 / 圖庫 / 刪除圖片 --------
+async function replyAskGPT(client, ev, question) {
+  if (!question) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '請帶上要問的問題。\n例：「問 今天台北會下雨嗎？」\n　　「問 番茄炒蛋怎麼做」',
+    }));
+  }
+  try {
+    const today = formatDateTW(new Date());
+    const dow = ['一', '二', '三', '四', '五', '六', '日'][(getDayOfWeekTaipei(new Date()) - 1 + 7) % 7];
+    const answer = await openaiChat(
+      `你是 BiBi 行事曆裡的 AI 小幫手，講中文（台灣用語）。今天是 ${today} (星期${dow})。\n回答要簡潔、口語、不超過 3 段。可以適度用 emoji。\n如果是行事曆相關的事 (查詢/修改行程)，請提醒使用者使用對應指令而不是直接幫他改。`,
+      question,
+    );
+    const text = (answer || '🤔 想不到耶').slice(0, 4900);
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text }));
+  } catch (err) {
+    console.error('[ask] failed', err?.message || err);
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: `❌ AI 回答失敗，等等再試\n${String(err?.message || '').slice(0, 120)}`,
+    }));
+  }
+}
+
+async function replyGenerateImage(client, ev, prompt) {
+  if (!prompt) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '請補上提示詞。\n例：「生成圖片 一隻彈鋼琴的橘貓 水彩風」',
+    }));
+  }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '尚未綁定行事曆，無法存圖庫。先傳：綁定 <你的裝置 ID>',
+    }));
+  }
+  const targetUid = uids[0];
+  // 先告知正在繪製，避免使用者乾等 (DALL-E 一般 8-20 秒)
+  // 用 reply token 一次只能回一次，所以這裡直接做完一次回，不發中間狀態
+  try {
+    const b64 = await openaiImage(prompt);
+    if (!b64) throw new Error('API 回傳空圖片');
+    const { downloadUrl } = await uploadGalleryImage(targetUid, b64, prompt);
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'image',
+      originalContentUrl: downloadUrl,
+      previewImageUrl: downloadUrl,
+    }));
+  } catch (err) {
+    console.error('[gen_img] failed', err?.message || err);
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: `❌ 生圖失敗：${String(err?.message || '').slice(0, 150)}`,
+    }));
+  }
+}
+
+async function replyGallery(client, ev) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '尚未綁定行事曆',
+    }));
+  }
+  const items = [];
+  for (const uid of uids) {
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('bibi_gallery')
+      .orderBy('createdAt', 'desc').limit(10).get();
+    snap.forEach((d) => items.push({ id: d.id, uid, ...d.data() }));
+  }
+  if (items.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '📷 圖庫是空的。用「生成圖片 <提示詞>」開始畫圖！',
+    }));
+  }
+  items.sort((a, b) =>
+    (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  const top = items.slice(0, 10);
+  const bubbles = top.map((item) => ({
+    type: 'bubble',
+    size: 'kilo',
+    hero: {
+      type: 'image',
+      url: item.downloadUrl,
+      size: 'full',
+      aspectRatio: '1:1',
+      aspectMode: 'cover',
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'sm',
+      contents: [{
+        type: 'text',
+        text: (item.prompt || '').slice(0, 60) || '(無提示詞)',
+        size: 'xs',
+        wrap: true,
+        color: '#5D4037',
+      }],
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      contents: [{
+        type: 'button',
+        style: 'secondary',
+        height: 'sm',
+        action: {
+          type: 'postback',
+          label: '🗑️ 刪除',
+          data: `act=del_img&uid=${item.uid}&id=${item.id}`,
+          displayText: `刪除圖片：${(item.prompt || '').slice(0, 20)}`,
+        },
+      }],
+    },
+  }));
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'flex',
+    altText: `📷 圖庫（${top.length} 張）`,
+    contents: { type: 'carousel', contents: bubbles },
+  }));
+}
+
+async function deleteGalleryImage(client, ev, uid, id) {
+  try {
+    const ref = db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('bibi_gallery').doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: '⚠️ 找不到圖片 (可能已刪除)',
+      }));
+    }
+    const data = snap.data();
+    try {
+      await admin.storage().bucket(STORAGE_BUCKET).file(data.storagePath).delete();
+    } catch (e) {
+      // Storage 刪不到不擋整個刪除，Firestore 記錄還是清掉
+      console.warn('[del_img] storage delete failed', e?.message || e);
+    }
+    await ref.delete();
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `🗑️ 已刪除圖片：${(data.prompt || '').slice(0, 30)}`,
+    }));
+  } catch (err) {
+    console.error('[del_img] failed', err?.message || err);
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '❌ 刪除失敗',
+    }));
   }
 }
 
@@ -1739,6 +1987,11 @@ function getHelpText() {
     '',
     '🗑️ 「刪除 5/20 媽媽生日」',
     '',
+    '🤖 AI 助理：',
+    '　「問 番茄炒蛋怎麼做」',
+    '　「生成圖片 一隻彈鋼琴的橘貓」',
+    '　「圖庫」— 翻歷史圖、可刪除',
+    '',
     '⏰ 自動通知：每日 00:00 當日行程預覽 + 新增事件 Flex 卡片',
     '',
     `（版本 ${BUILD_VERSION}）`,
@@ -1748,8 +2001,9 @@ function getHelpText() {
 // -------- Webhook: handle messages received by the bot --------
 exports.lineWebhook = onRequest(
   {
-    secrets: [LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET],
+    secrets: [LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, OPENAI_API_KEY],
     cors: false,
+    timeoutSeconds: 60, // DALL-E 生圖可能要 10-20 秒，留多點 buffer
   },
   async (req, res) => {
     const signature = req.get('x-line-signature');
@@ -1823,6 +2077,15 @@ exports.lineWebhook = onRequest(
             await replyNextEvents(client, ev, 1);
           } else if (text === '最近' || text === '即將' || text === '即將到來') {
             await replyNextEvents(client, ev, 5);
+          } else if (text === '圖庫' || text === '相簿' || text.toLowerCase() === 'gallery') {
+            await replyGallery(client, ev);
+          } else if (text.startsWith('生成圖片') || text.startsWith('畫圖') || text.startsWith('畫一張')) {
+            const p = text.replace(/^(生成圖片|畫一張|畫圖)[\s　:：]*/, '').trim();
+            await replyGenerateImage(client, ev, p);
+          } else if (/^(問|AI|ai)[\s　:：]/.test(text) || text === '問' || text.toLowerCase() === 'ai') {
+            // 收緊判斷，避免「問題」這種以問開頭的非指令被誤觸
+            const q = text.replace(/^(問|AI|ai)[\s　:：]*/, '').trim();
+            await replyAskGPT(client, ev, q);
           } else if (text.startsWith('找') || text.startsWith('搜尋') || text.startsWith('查')) {
             const q = text.replace(/^(搜尋|找|查)[\s　]*/, '').trim();
             await replySearch(client, ev, q);
