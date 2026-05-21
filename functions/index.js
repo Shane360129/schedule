@@ -877,7 +877,15 @@ function parseNaturalEvent(text, roleSettings, todayStr, todayDow) {
   // -- 4. 角色辨識 --
   const r1 = (roleSettings?.role1 || '').trim();
   const r2 = (roleSettings?.role2 || '').trim();
-  if (r1 && r1 !== '我' && remaining.includes(r1)) {
+  // 4a. 「共同 / 一起 / 我們 / 兩個人」這類關鍵字 → 鎖死 common，後續 senderRole fallback 不能覆蓋
+  const commonKeywords = ['共同', '一起', '我們', '我倆', '兩個人', '兩人'];
+  const hasCommonKeyword = commonKeywords.some((kw) => remaining.includes(kw));
+  if (hasCommonKeyword) {
+    result.eventType = 'common';
+    result.color = COLOR_BY_TYPE.common;
+    result._explicitCommon = true; // 讓 tryCreateExplicit 知道這是「使用者明確要共同」
+    commonKeywords.forEach((kw) => { remaining = remaining.split(kw).join(' ').trim(); });
+  } else if (r1 && r1 !== '我' && remaining.includes(r1)) {
     result.eventType = 'me';
     result.color = COLOR_BY_TYPE.me;
     remaining = remaining.split(r1).join('').trim();
@@ -1279,11 +1287,13 @@ async function tryCreateExplicit(client, ev, text) {
     return;
   }
 
-  // 用戶沒明確提到角色名稱 → fallback 用寄件人角色
-  if (parsed.eventType === 'common' && senderRole) {
+  // 用戶沒明確提到角色名稱、也沒講「共同/一起」這類關鍵字 → fallback 用寄件人角色
+  if (parsed.eventType === 'common' && senderRole && !parsed._explicitCommon) {
     parsed.eventType = senderRole;
     parsed.color = COLOR_BY_TYPE[senderRole] || COLOR_BY_TYPE.common;
   }
+  // 清掉 internal flag，不要存進 Firestore
+  delete parsed._explicitCommon;
 
   const added = await db()
     .collection('artifacts').doc(APP_ID)
@@ -1989,12 +1999,19 @@ async function downloadLineImageAsBase64(messageId) {
   return { b64: buf.toString('base64'), mimeType: 'image/jpeg' };
 }
 
-function buildAISystemPrompt(today, dow, uidRoles, primaryUid) {
+function buildAISystemPrompt(today, dow, uidRoles, primaryUid, senderRole, senderName) {
   const roleStrs = Object.keys(uidRoles).map((uid) => {
     const r = uidRoles[uid];
     return `  - uid="${uid}": me="${r.role1 || '我'}", partner="${r.role2 || '夥伴'}"`;
   }).join('\n');
   const colorList = AI_COLOR_HINTS.map((c) => `  - ${c.key} — ${c.use}`).join('\n');
+
+  // 「現在發訊息的人」對應到哪個 role：用來決定預設 eventType
+  // - 已綁定 (透過「我是 Shane」) → senderRole = 'me' 或 'partner'
+  // - 未綁定 → senderRole = null，預設 common
+  const senderLine = senderRole
+    ? `**現在發這則訊息的人 = ${senderName} (對應 ${senderRole})**`
+    : `**現在發訊息的人未綁定 role**（沒打過「我是 XXX」）`;
 
   // 計算本週/下週/下下週每天的日期 (週起始 = 週一)
   // 直接寫死給 AI 查，避免它自己算錯（曾踩雷：「這禮拜天」被誤判成今天）
@@ -2087,10 +2104,21 @@ function buildAISystemPrompt(today, dow, uidRoles, primaryUid) {
 # 顏色色票 (僅 common 行程可選傳 color)
 ${colorList}
 
-# 角色 / 顏色預設
-- 沒提到具體人名 → eventType=common → latte (深咖啡)
-- 提到 role1 名字 → eventType=me → smokedPlum (莫蘭迪紅)
-- 提到 role2 名字 → eventType=partner → pastelCream (莫蘭迪奶油)
+# 角色歸屬 / 顏色預設（重要）
+${senderLine}
+
+判斷 eventType 的優先順序：
+1. 使用者明確說「共同 / 一起 / 我們 / 兩個人 / 兩人 / 我倆」 → eventType=common → latte (深咖啡)
+2. 使用者明確提到 role1 (對方 role1 名字) → eventType=me → smokedPlum (莫蘭迪紅)
+3. 使用者明確提到 role2 (對方 role2 名字) → eventType=partner → pastelCream (莫蘭迪奶油)
+4. 都沒明說、且**發訊息的人有綁 role** → eventType=senderRole (歸這個發訊息的人)
+5. 都沒明說、發訊息的人也沒綁 role → eventType=common (fallback)
+
+範例（假設 senderRole=me，使用者叫 "Shane"）：
+- 「明天健身房」 → me (歸 Shane，因為沒講別人)
+- 「明天我們一起看電影」 → common (有「我們/一起」關鍵字)
+- 「明天阿花要去看牙醫」 → partner (明確說阿花)
+- 「明天 Shane 跟阿花要去吃飯」 → common (兩個人都提到 = 共同)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 十、本次對話的即時資訊（每次不同）
@@ -2159,7 +2187,14 @@ async function replyAskGPT(client, ev, question, options = {}) {
     const uidRoles = {};
     for (const uid of uids) uidRoles[uid] = await getRoleSettings(uid);
 
-    const systemPrompt = buildAISystemPrompt(today, dow, uidRoles, primaryUid);
+    // 抓「發這則訊息的人」對應到哪個 role (透過「我是 XXX」綁定的)
+    const senderRole = await getSenderRoleForUid(primaryUid, ev.source?.userId);
+    const primaryRoles = uidRoles[primaryUid] || {};
+    const senderName = senderRole === 'me' ? (primaryRoles.role1 || '我')
+      : senderRole === 'partner' ? (primaryRoles.role2 || '夥伴')
+      : '訪客';
+
+    const systemPrompt = buildAISystemPrompt(today, dow, uidRoles, primaryUid, senderRole, senderName);
 
     // 載入對話歷史 (短期記憶)
     const history = await loadAIConversation(sourceId);
