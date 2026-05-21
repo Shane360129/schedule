@@ -641,9 +641,10 @@ const App = () => {
      setFormStartTime(event ? (event.startTime || '09:00') : '09:00');
      setFormEndTime(event ? (event.endTime || '10:00') : '10:00');
      
-     const colorKey = event ? event.color : 'smokedPlum'; 
+     // 預設色與 eventType 對齊：common→latte、me→smokedPlum、partner→pastelCream
+     const colorKey = event ? event.color : 'latte';
      setFormColor(colorKey);
-     
+
      setFormEventType(event ? event.eventType : 'common');
      setIsDayViewModalOpen(false); 
      setIsEditModalOpen(true);
@@ -950,6 +951,23 @@ const App = () => {
         })}
       </div>
 
+      {/* 浮動 + 新增按鈕（右下角）— 點開「新增行程」直接給今天 */}
+      <button
+        onClick={() => openEditModal(formatDate(new Date()))}
+        className="fixed z-40 rounded-full shadow-xl flex items-center justify-center active:scale-95 transition-all hover:brightness-110"
+        style={{
+          right: 'max(16px, env(safe-area-inset-right))',
+          bottom: 'calc(max(16px, env(safe-area-inset-bottom)) + 8px)',
+          width: 56,
+          height: 56,
+          backgroundColor: theme.colors.accent,
+          color: '#FFF',
+        }}
+        aria-label="新增行程"
+      >
+        <Plus className="w-7 h-7" />
+      </button>
+
       {/* iOS Safari Install Guide */}
       {showIOSInstallGuide && (
         <div
@@ -1237,7 +1255,7 @@ const App = () => {
             <div className="p-6 space-y-5 overflow-y-auto flex-1">
               <div className="flex gap-2 p-1 rounded-xl" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
                  {['me', 'partner', 'common'].map(type => (
-                    <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('tea'); if(type === 'partner') setFormColor('sesame'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'shadow' : 'opacity-60'}`} style={{ backgroundColor: formEventType === type ? theme.colors.modalBg : 'transparent', color: formEventType === type ? theme.colors.text : theme.colors.secondaryText }}>
+                    <button key={type} onClick={() => { setFormEventType(type); if(type === 'me') setFormColor('smokedPlum'); if(type === 'partner') setFormColor('pastelCream'); if(type === 'common') setFormColor('latte'); }} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${formEventType === type ? 'shadow' : 'opacity-60'}`} style={{ backgroundColor: formEventType === type ? theme.colors.modalBg : 'transparent', color: formEventType === type ? theme.colors.text : theme.colors.secondaryText }}>
                       {type === 'me' ? roleSettings.role1 : type === 'partner' ? roleSettings.role2 : '共同'}
                     </button>
                  ))}
