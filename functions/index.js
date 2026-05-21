@@ -49,7 +49,7 @@ async function lineApiGet(path) {
 
 // -------- OpenAI Responses API agent (function calling + 即時上網搜尋) --------
 // Responses API 內建 web_search 工具，省下另外接搜尋 API 的麻煩。
-async function openaiResponses(input, tools, model = 'gpt-4o-mini') {
+async function openaiResponses(input, tools, model = 'gpt-4o-mini', toolChoice = 'auto') {
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
@@ -60,7 +60,7 @@ async function openaiResponses(input, tools, model = 'gpt-4o-mini') {
       model,
       input,
       tools,
-      tool_choice: 'auto',
+      tool_choice: toolChoice,
       max_output_tokens: 2000,
     }),
   });
@@ -1945,6 +1945,28 @@ function aiCalendarToolDefs() {
 }
 
 // AI Agent：吃完整 input (含歷史)，輸出 {text, toolCalls}
+// 偵測使用者輸入是不是「該執行某 tool」的意圖，避免 LLM 用文字假裝完成
+// 命中後第一輪呼叫會用 tool_choice='required' 強制 model 必須呼叫至少一個 tool
+function detectActionIntent(text) {
+  if (!text || text.length < 2) return false;
+  // 動詞關鍵字
+  const verbs = [
+    '新增', '加', '建立', '排程', '排', '訂', '預約', '安排',
+    '改', '修改', '換', '挪', '搬', '延', '提前',
+    '刪', '取消', '拿掉', '移除',
+    '查', '看', '幾件', '哪天', '哪幾天', '多少',
+    '幫我', '幫忙', '記一下', '記得'
+  ];
+  if (verbs.some((v) => text.includes(v))) return true;
+  // 純查詢字
+  if (['什麼', '哪'].some((w) => text.includes(w))) return true;
+  // 短句 + 含時間 → 大多是「明天 X」「週日 X」這種隱含 create
+  const timeKeys = ['今天', '明天', '後天', '大後天', '週', '禮拜', '星期', '日', '月', '號', '點', '凌晨', '早上', '中午', '下午', '傍晚', '晚上'];
+  const hasTime = timeKeys.some((k) => text.includes(k));
+  if (hasTime && text.length <= 30) return true;
+  return false;
+}
+
 async function runAIAgent(input, ctx, maxIterations = 8) {
   const tools = [
     { type: 'web_search' }, // OpenAI 內建工具，可上網拿即時資訊 (天氣/新聞/查資料)
@@ -1953,7 +1975,10 @@ async function runAIAgent(input, ctx, maxIterations = 8) {
   const toolCalls = [];
   let allInput = [...input];
   for (let i = 0; i < maxIterations; i++) {
-    const data = await openaiResponses(allInput, tools);
+    // 第一輪：若使用者輸入像 CRUD 意圖，強制 tool_choice='required'
+    // 後續輪：用 'auto' 讓 model 自己決定要不要再呼叫
+    const toolChoice = (i === 0 && ctx.forceTool) ? 'required' : 'auto';
+    const data = await openaiResponses(allInput, tools, 'gpt-4o-mini', toolChoice);
     const output = data.output || [];
     allInput = allInput.concat(output);
     let hadFunctionCall = false;
@@ -2222,9 +2247,24 @@ async function replyAskGPT(client, ev, question, options = {}) {
       { role: 'user', content: userContent },
     ];
 
-    const result = await runAIAgent(input, { uids, primaryUid, uidRoles });
+    // 若使用者輸入像 CRUD 意圖 (含時間/動詞)，強制 model 第一輪必須呼叫 tool
+    // 避免 hallucination：用文字假裝完成新增/修改/刪除
+    const forceTool = typeof question === 'string' && detectActionIntent(question);
+    const result = await runAIAgent(input, { uids, primaryUid, uidRoles, forceTool });
     finalText = result.text;
     toolCalls = result.toolCalls;
+
+    // 安全網：若 AI 文字宣稱完成 CRUD 但實際沒呼叫對應 tool → 改成警告，
+    // 避免使用者以為操作成功
+    const claimedMutation = /已(新增|加入|建立|加好|排好|修改|更動|改|刪除|刪掉|取消|拿掉)/.test(finalText);
+    const actuallyMutated = toolCalls.some((t) =>
+      ['create_event', 'update_event', 'delete_event'].includes(t.name));
+    if (claimedMutation && !actuallyMutated) {
+      console.warn('[ai_hallucination]', { question, finalText, toolCalls });
+      finalText = '⚠️ 抱歉，我剛剛回覆裡的「已完成」是錯的，' +
+        '實際上沒寫到行事曆。請改用更明確的句子重講一次，' +
+        '例如「親 幫我加 5/22 20:00 慢跑」。';
+    }
 
     // 存對話歷史 (只存 user / assistant 純文字，不存 tool call)
     // user content 如果是多模態，存純文字摘要
