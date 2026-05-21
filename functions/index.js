@@ -877,7 +877,15 @@ function parseNaturalEvent(text, roleSettings, todayStr, todayDow) {
   // -- 4. 角色辨識 --
   const r1 = (roleSettings?.role1 || '').trim();
   const r2 = (roleSettings?.role2 || '').trim();
-  if (r1 && r1 !== '我' && remaining.includes(r1)) {
+  // 4a. 「共同 / 一起 / 我們 / 兩個人」這類關鍵字 → 鎖死 common，後續 senderRole fallback 不能覆蓋
+  const commonKeywords = ['共同', '一起', '我們', '我倆', '兩個人', '兩人'];
+  const hasCommonKeyword = commonKeywords.some((kw) => remaining.includes(kw));
+  if (hasCommonKeyword) {
+    result.eventType = 'common';
+    result.color = COLOR_BY_TYPE.common;
+    result._explicitCommon = true; // 讓 tryCreateExplicit 知道這是「使用者明確要共同」
+    commonKeywords.forEach((kw) => { remaining = remaining.split(kw).join(' ').trim(); });
+  } else if (r1 && r1 !== '我' && remaining.includes(r1)) {
     result.eventType = 'me';
     result.color = COLOR_BY_TYPE.me;
     remaining = remaining.split(r1).join('').trim();
@@ -1279,11 +1287,13 @@ async function tryCreateExplicit(client, ev, text) {
     return;
   }
 
-  // 用戶沒明確提到角色名稱 → fallback 用寄件人角色
-  if (parsed.eventType === 'common' && senderRole) {
+  // 用戶沒明確提到角色名稱、也沒講「共同/一起」這類關鍵字 → fallback 用寄件人角色
+  if (parsed.eventType === 'common' && senderRole && !parsed._explicitCommon) {
     parsed.eventType = senderRole;
     parsed.color = COLOR_BY_TYPE[senderRole] || COLOR_BY_TYPE.common;
   }
+  // 清掉 internal flag，不要存進 Firestore
+  delete parsed._explicitCommon;
 
   const added = await db()
     .collection('artifacts').doc(APP_ID)
@@ -1680,6 +1690,21 @@ async function loadAIConversation(sourceId) {
   }
 }
 
+// 判斷 sourceId 是不是在 AI 對話追問期 (5 分鐘內有對話記錄)
+// 用來讓使用者後續回「不用」「對」等不帶「親」前綴的話也能進到 AI agent
+async function hasRecentAIConversation(sourceId, withinMinutes = 5) {
+  if (!sourceId) return false;
+  try {
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('ai_conversations').doc(sourceId).get();
+    if (!snap.exists) return false;
+    const updatedAt = snap.data().updatedAt?.toMillis?.() || 0;
+    return Date.now() - updatedAt < withinMinutes * 60 * 1000;
+  } catch {
+    return false;
+  }
+}
+
 async function saveAIConversation(sourceId, messages) {
   if (!sourceId) return;
   try {
@@ -1974,31 +1999,144 @@ async function downloadLineImageAsBase64(messageId) {
   return { b64: buf.toString('base64'), mimeType: 'image/jpeg' };
 }
 
-function buildAISystemPrompt(today, dow, uidRoles, primaryUid) {
+function buildAISystemPrompt(today, dow, uidRoles, primaryUid, senderRole, senderName) {
   const roleStrs = Object.keys(uidRoles).map((uid) => {
     const r = uidRoles[uid];
     return `  - uid="${uid}": me="${r.role1 || '我'}", partner="${r.role2 || '夥伴'}"`;
   }).join('\n');
-  const colorList = AI_COLOR_HINTS.map((c) => `  - ${c.key} (${c.name}) — ${c.use}`).join('\n');
-  return `你是 BiBi 行事曆的 AI 助理。講台灣中文、口語自然、回覆簡潔。
-今天是 ${today} (星期${dow})，台北時區。
+  const colorList = AI_COLOR_HINTS.map((c) => `  - ${c.key} — ${c.use}`).join('\n');
 
-綁定的行事曆 uid 與角色名稱：
+  // 「現在發訊息的人」對應到哪個 role：用來決定預設 eventType
+  // - 已綁定 (透過「我是 Shane」) → senderRole = 'me' 或 'partner'
+  // - 未綁定 → senderRole = null，預設 common
+  const senderLine = senderRole
+    ? `**現在發這則訊息的人 = ${senderName} (對應 ${senderRole})**`
+    : `**現在發訊息的人未綁定 role**（沒打過「我是 XXX」）`;
+
+  // 計算本週/下週/下下週每天的日期 (週起始 = 週一)
+  // 直接寫死給 AI 查，避免它自己算錯（曾踩雷：「這禮拜天」被誤判成今天）
+  const dowSun = getDayOfWeekTaipei(new Date(today + 'T00:00:00')); // 0=Sun~6=Sat
+  const dowMonFirst = (dowSun + 6) % 7; // 0=Mon~6=Sun
+  const labels = ['一', '二', '三', '四', '五', '六', '天']; // Mon~Sun
+  const weekRows = (offsetWeeks) => labels.map((lbl, i) => {
+    const offset = (i - dowMonFirst) + offsetWeeks * 7;
+    return `  禮拜${lbl} = ${addDaysStr(today, offset)}`;
+  }).join('\n');
+
+  // ============================================================
+  // 結構說明：
+  // 上半部 (# 一 ~ # 九) 完全靜態，讓 OpenAI prompt caching 命中
+  // 下半部 (# 十) 才放動態日期/角色，每次不同
+  // ============================================================
+  return `你是 BiBi 行事曆的 AI 助理「親」，幫一對伴侶管理共同行程。
+
+# 一、人格 & 講話風格
+- 像安靜可靠的私人秘書：不囉嗦、不雞婆、不諂媚。
+- 台灣口語中文，平輩語氣，emoji 適度別氾濫。
+- 預設使用者很忙：每句話都有目的，能 1 行解決就不要 3 行。
+
+# 二、工具選用 (順序就是判斷邏輯)
+1. 行事曆相關 → get_events / search_events / create_event / update_event / delete_event
+2. 需最新外部資料（天氣/股市/新聞/查地點/即時匯率/比賽結果）→ web_search
+3. 常識 / 算數 / 純對話 → **直接答，別呼叫任何工具**（web_search 是付費的，
+   問「番茄炒蛋怎麼做」不要去搜）。
+
+# 三、日期解析（最常踩雷，務必照規則）
+所有相對日期都轉成 YYYY-MM-DD 再呼叫 tool。
+- 禮拜天 / 週日 / 星期天 / 星期日 = **Sunday**，不是「今天」也不是「任一天」
+- 禮拜一~禮拜六 對應 Mon~Sat
+- 「這禮拜X / 這週X」→ 直接查〈本週日期〉表，**不要自己算**
+- 「下禮拜X / 下週X」→ 查〈下週日期〉表
+- 「下下禮拜X / 下下週X」→ 查〈下下週日期〉表
+- 「明天 / 後天 / 大後天」= today + 1 / 2 / 3 天
+- 「N 天後 / N 天前」= today ± N 天
+- 「禮拜X 中午」這種日期+時間 → 先抓日期再附時間
+
+# 四、時間預設（使用者沒明說時直接用，不要追問）
+- 早上 = 09:00、中午 = 12:00、下午 = 14:00、傍晚 = 18:00、晚上 = 20:00
+- 凌晨 = 02:00、半夜 = 23:00
+- 沒講時長 → 預設 1 小時
+- 沒講時間 + 沒講全天 → 預設 isAllDay=true (全天)
+
+# 五、果斷原則（最重要）
+有「事 + 大概時間」就**直接 create_event**，不要追問細節：
+- ✅ 「明天健身房」 → 直接建明天全天「健身房」
+- ✅ 「這禮拜天中午甜點店」 → 直接建那天 12:00-13:00「甜點店」
+- ✅ 「6/1 全家旅遊三天」 → 直接建 6/1-6/3 全天「全家旅遊」
+- ❌ 不要回「請問你要新增嗎？店名是？地址是？要幾點？」
+只有完全模糊（例「幫我加個東西」沒時間沒事）才追問，且只問**一個關鍵點**。
+
+# 六、追問接話（依上下文判斷，不要又重問）
+- 「不用 / 不需要 / 算了」 → 用預設值直接執行
+- 「對 / 是 / 好 / ok / 確認」 → 直接執行剛才提的動作
+- 「不對 / 不是 / 取消」 → 停下、不要動，等下一個指示
+
+# 七、修改 / 刪除安全流程
+1. 先 get_events 或 search_events 拿到 _eventId + _uid
+2. 找到 **1 筆** → 直接動
+3. 找到 **2 筆以上** → 列出讓使用者選，**這輪不要動**
+4. 找不到 → 老實說「沒找到 XXX，我搜過 5/15~5/25 共 0 筆」
+
+# 八、回覆格式（短、可掃讀）
+完成操作的標準範本（1~2 行就好）：
+- 新增： ✅ 已加 5/24 (日) 12:00 甜點店 (共同)
+- 修改： ✏️ 5/20 牙醫 → 5/22 14:00
+- 刪除： 🗑️ 已刪 5/20 牙醫
+- 多筆候選： 找到 2 筆「牙醫」：
+            1. 5/20 (二) 14:00 (我)
+            2. 5/27 (二) 14:00 (我)
+            要動哪一個？
+- 列行程： 📅 5/24 (日)
+            • 全天 媽媽生日 (共同)
+            • 12:00 甜點店 (共同)
+            • 18:00 晚餐 (夥伴)
+- 上網結果： 1-2 句總結即可
+整個回覆 **< 400 字**（LINE 上太長反而看不下去）。
+
+# 九、嚴格禁止
+- ❌ 不編造行程，沒查到就老實說
+- ❌ 不主動雞婆建議（「順便要不要…」「我幫你也…」）
+- ❌ 不複述使用者剛說的話（「好的關於你說的 5/24 中午…」← 浪費字數）
+- ❌ 不自我介紹 / 不解釋你是 AI / 不說「我是大型語言模型…」
+- ❌ 不過度道歉
+- ❌ 不在 common 行程之外亂選 color，me / partner 用預設色就好
+
+# 顏色色票 (僅 common 行程可選傳 color)
+${colorList}
+
+# 角色歸屬 / 顏色預設（重要）
+${senderLine}
+
+判斷 eventType 的優先順序：
+1. 使用者明確說「共同 / 一起 / 我們 / 兩個人 / 兩人 / 我倆」 → eventType=common → latte (深咖啡)
+2. 使用者明確提到 role1 (對方 role1 名字) → eventType=me → smokedPlum (莫蘭迪紅)
+3. 使用者明確提到 role2 (對方 role2 名字) → eventType=partner → pastelCream (莫蘭迪奶油)
+4. 都沒明說、且**發訊息的人有綁 role** → eventType=senderRole (歸這個發訊息的人)
+5. 都沒明說、發訊息的人也沒綁 role → eventType=common (fallback)
+
+範例（假設 senderRole=me，使用者叫 "Shane"）：
+- 「明天健身房」 → me (歸 Shane，因為沒講別人)
+- 「明天我們一起看電影」 → common (有「我們/一起」關鍵字)
+- 「明天阿花要去看牙醫」 → partner (明確說阿花)
+- 「明天 Shane 跟阿花要去吃飯」 → common (兩個人都提到 = 共同)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 十、本次對話的即時資訊（每次不同）
+
+今天：${today} (星期${dow})、台北時區。
+
+📅 本週日期（Mon→Sun）：
+${weekRows(0)}
+
+📅 下週日期：
+${weekRows(1)}
+
+📅 下下週日期：
+${weekRows(2)}
+
+📋 綁定的行事曆 uid 與角色名：
 ${roleStrs}
-建立新行程預設寫到 primaryUid="${primaryUid}"。
-
-行為規則：
-- 相對日期 (今天/明天/下週三/三天後) 都轉成 YYYY-MM-DD 再呼叫 tool。
-- 新行程 eventType 預設 common (兩人共同)，使用者明確提到 role 名字才設 me / partner。
-- 修改 / 刪除前，**一定**先用 get_events 或 search_events 找出對應的 _eventId 跟 _uid。
-- 若搜出多筆候選 (同一天兩個牙醫之類)，列出讓使用者選，**先不要動**。
-- 完成操作後簡潔回報，例：「✅ 已新增 5/20 牙醫 14:00」、「✏️ 已把 5/20 牙醫改到 5/22」。
-- 即時資訊 (天氣 / 新聞 / 股市 / 查餐廳 / 翻譯時事) 用 web_search 工具查。
-- 不要編造行程，找不到就老實說。
-- 整個回覆 < 600 字 (LINE 訊息限制)。
-
-顏色規則 (建立 common 行程時 AI 可自選 color 欄位，me / partner 自動套用角色預設色，AI 不需要設定 color)：
-${colorList}`;
+建立新行程預設寫到 primaryUid="${primaryUid}"。`;
 }
 
 async function replyAskGPT(client, ev, question, options = {}) {
@@ -2049,7 +2187,14 @@ async function replyAskGPT(client, ev, question, options = {}) {
     const uidRoles = {};
     for (const uid of uids) uidRoles[uid] = await getRoleSettings(uid);
 
-    const systemPrompt = buildAISystemPrompt(today, dow, uidRoles, primaryUid);
+    // 抓「發這則訊息的人」對應到哪個 role (透過「我是 XXX」綁定的)
+    const senderRole = await getSenderRoleForUid(primaryUid, ev.source?.userId);
+    const primaryRoles = uidRoles[primaryUid] || {};
+    const senderName = senderRole === 'me' ? (primaryRoles.role1 || '我')
+      : senderRole === 'partner' ? (primaryRoles.role2 || '夥伴')
+      : '訪客';
+
+    const systemPrompt = buildAISystemPrompt(today, dow, uidRoles, primaryUid, senderRole, senderName);
 
     // 載入對話歷史 (短期記憶)
     const history = await loadAIConversation(sourceId);
@@ -2503,7 +2648,11 @@ exports.lineWebhook = onRequest(
           } else if (range) {
             await replyAgenda(client, ev, range);
           } else if (ev.source?.type === 'group' || ev.source?.type === 'room') {
-            // 群組／多人聊天室：非指令訊息保持安靜
+            // 群組／多人聊天室：非指令訊息保持安靜，避免 AI 被亂觸發
+          } else if (text.length >= 2 && await hasRecentAIConversation(sourceId)) {
+            // 1-on-1 對話追問：5 分鐘內剛跟 AI 對話過 → 沒前綴的話也視為 AI 對話延續
+            // 例：使用者「親 這禮拜天中午要去甜點店」→ AI 問細節 → 使用者「不用」
+            await replyAskGPT(client, ev, text);
           } else {
             await safeReply(client, ev.replyToken, withQuickReply({
               type: 'text',
