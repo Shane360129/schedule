@@ -1680,6 +1680,21 @@ async function loadAIConversation(sourceId) {
   }
 }
 
+// 判斷 sourceId 是不是在 AI 對話追問期 (5 分鐘內有對話記錄)
+// 用來讓使用者後續回「不用」「對」等不帶「親」前綴的話也能進到 AI agent
+async function hasRecentAIConversation(sourceId, withinMinutes = 5) {
+  if (!sourceId) return false;
+  try {
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('ai_conversations').doc(sourceId).get();
+    if (!snap.exists) return false;
+    const updatedAt = snap.data().updatedAt?.toMillis?.() || 0;
+    return Date.now() - updatedAt < withinMinutes * 60 * 1000;
+  } catch {
+    return false;
+  }
+}
+
 async function saveAIConversation(sourceId, messages) {
   if (!sourceId) return;
   try {
@@ -1988,13 +2003,23 @@ ${roleStrs}
 建立新行程預設寫到 primaryUid="${primaryUid}"。
 
 行為規則：
-- 相對日期 (今天/明天/下週三/三天後) 都轉成 YYYY-MM-DD 再呼叫 tool。
+- 相對日期 (今天/明天/下週三/三天後/這週日) 都轉成 YYYY-MM-DD 再呼叫 tool。
+- 模糊時間用合理預設：早上=09:00、中午=12:00、下午=14:00、傍晚=18:00、晚上=20:00。
+  時長預設 1 小時 (eg 12:00-13:00)，使用者另有說明再覆蓋。
+- **果斷一點，不要問太多細節**：只要有「大概的事 + 大概的時間」就直接建立。
+  例：「這禮拜天中午要去甜點店」 → 直接 create_event「去甜點店」這週日 12:00-13:00，
+  不要追問店名/地址/精確時間。使用者要補細節會自己再講。
+- 完全模糊 (例「幫我加個東西」沒時間沒內容) 才需要問。
 - 新行程 eventType 預設 common (兩人共同)，使用者明確提到 role 名字才設 me / partner。
 - 修改 / 刪除前，**一定**先用 get_events 或 search_events 找出對應的 _eventId 跟 _uid。
 - 若搜出多筆候選 (同一天兩個牙醫之類)，列出讓使用者選，**先不要動**。
-- 完成操作後簡潔回報，例：「✅ 已新增 5/20 牙醫 14:00」、「✏️ 已把 5/20 牙醫改到 5/22」。
+- 完成操作後簡潔回報，例：「✅ 已新增 5/25 (日) 12:00 去甜點店」、「✏️ 已把 5/20 牙醫改到 5/22」。
 - 即時資訊 (天氣 / 新聞 / 股市 / 查餐廳 / 翻譯時事) 用 web_search 工具查。
 - 不要編造行程，找不到就老實說。
+- 對話追問時 (使用者短回「不用」「對」「就那個」「ok」之類)，請依上下文判斷：
+  - 你剛問「要補細節嗎」對方說「不用」/「不用了」 → 用合理預設直接 create_event，不要又重問
+  - 你剛問「確定刪除嗎」對方說「對」/「是」 → 直接執行 delete_event
+  - 真的看不懂上下文才回問。
 - 整個回覆 < 600 字 (LINE 訊息限制)。
 
 顏色規則 (建立 common 行程時 AI 可自選 color 欄位，me / partner 自動套用角色預設色，AI 不需要設定 color)：
@@ -2503,7 +2528,11 @@ exports.lineWebhook = onRequest(
           } else if (range) {
             await replyAgenda(client, ev, range);
           } else if (ev.source?.type === 'group' || ev.source?.type === 'room') {
-            // 群組／多人聊天室：非指令訊息保持安靜
+            // 群組／多人聊天室：非指令訊息保持安靜，避免 AI 被亂觸發
+          } else if (text.length >= 2 && await hasRecentAIConversation(sourceId)) {
+            // 1-on-1 對話追問：5 分鐘內剛跟 AI 對話過 → 沒前綴的話也視為 AI 對話延續
+            // 例：使用者「親 這禮拜天中午要去甜點店」→ AI 問細節 → 使用者「不用」
+            await replyAskGPT(client, ev, text);
           } else {
             await safeReply(client, ev.replyToken, withQuickReply({
               type: 'text',
