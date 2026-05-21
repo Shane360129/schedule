@@ -290,6 +290,9 @@ const App = () => {
   const [tempRole2, setTempRole2] = useState('');
 
   const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isIOSSafari, setIsIOSSafari] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [showIOSInstallGuide, setShowIOSInstallGuide] = useState(false);
 
   const touchStartX = useRef(null);
   const touchEndX = useRef(null);
@@ -327,9 +330,22 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    const ua = window.navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+    // iOS Safari = WebKit on iOS, exclude Chrome/Firefox/Edge for iOS
+    const isSafari = isIOS && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+    const standalone =
+      window.navigator.standalone === true ||
+      window.matchMedia('(display-mode: standalone)').matches;
+    setIsIOSSafari(isSafari);
+    setIsStandalone(standalone);
+  }, []);
+
+  useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
-      if (isEditModalOpen) setIsEditModalOpen(false);
+      if (showIOSInstallGuide) setShowIOSInstallGuide(false);
+      else if (isEditModalOpen) setIsEditModalOpen(false);
       else if (isUpcomingModalOpen) setIsUpcomingModalOpen(false);
       else if (isDayViewModalOpen) setIsDayViewModalOpen(false);
       else if (isSettingsModalOpen) setIsSettingsModalOpen(false);
@@ -337,7 +353,7 @@ const App = () => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isEditModalOpen, isUpcomingModalOpen, isDayViewModalOpen, isSettingsModalOpen, holidayType]);
+  }, [isEditModalOpen, isUpcomingModalOpen, isDayViewModalOpen, isSettingsModalOpen, holidayType, showIOSInstallGuide]);
 
   const handleInstallApp = async () => {
     if (!deferredPrompt) return;
@@ -903,6 +919,74 @@ const App = () => {
         })}
       </div>
 
+      {/* iOS Safari Install Guide */}
+      {showIOSInstallGuide && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center backdrop-blur-[2px] p-4"
+          style={{ backgroundColor: theme.colors.text + '40' }}
+          onClick={() => setShowIOSInstallGuide(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden border modal-enter"
+            style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b flex justify-between items-center" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+              <h3 className="font-bold flex items-center gap-2" style={{ color: theme.colors.text }}>
+                <Download className="w-5 h-5"/> 加入 iPhone 桌面
+              </h3>
+              <button onClick={() => setShowIOSInstallGuide(false)} className="p-1 rounded-full hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-xs leading-relaxed" style={{ color: theme.colors.secondaryText }}>
+                iOS Safari 不能直接安裝，需要 3 步驟手動加：
+              </p>
+              <div className="space-y-3">
+                <div className="flex gap-3 items-start">
+                  <div className="rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm text-white shrink-0" style={{ backgroundColor: theme.colors.accent }}>1</div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold" style={{ color: theme.colors.text }}>點分享按鈕</p>
+                    <p className="text-xs mt-1 flex items-center gap-1" style={{ color: theme.colors.secondaryText }}>
+                      畫面下方中央
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded border" style={{ borderColor: theme.colors.border }}>
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: theme.colors.accent }}>
+                          <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+                          <polyline points="16 6 12 2 8 6"/>
+                          <line x1="12" y1="2" x2="12" y2="15"/>
+                        </svg>
+                      </span>
+                      圖示
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-3 items-start">
+                  <div className="rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm text-white shrink-0" style={{ backgroundColor: theme.colors.accent }}>2</div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold" style={{ color: theme.colors.text }}>選「加入主畫面」</p>
+                    <p className="text-xs mt-1" style={{ color: theme.colors.secondaryText }}>往下捲一點找到 ➕「加入主畫面」</p>
+                  </div>
+                </div>
+                <div className="flex gap-3 items-start">
+                  <div className="rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm text-white shrink-0" style={{ backgroundColor: theme.colors.accent }}>3</div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold" style={{ color: theme.colors.text }}>點右上「加入」</p>
+                    <p className="text-xs mt-1" style={{ color: theme.colors.secondaryText }}>主畫面就會出現 BiBi 圖示，跟原生 App 一樣用</p>
+                  </div>
+                </div>
+              </div>
+              <div className="text-[10px] p-2 rounded-lg" style={{ color: theme.colors.secondaryText, backgroundColor: theme.colors.gridHeaderBg }}>
+                💡 注意：必須用 <b>Safari</b> 開啟才能加。Chrome / LINE 內建瀏覽器都不行。
+              </div>
+              <button onClick={() => setShowIOSInstallGuide(false)} className="w-full py-2.5 text-xs font-bold text-white rounded-lg shadow-sm active:scale-95 transition-transform" style={{ backgroundColor: theme.colors.accent }}>
+                知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Settings Modal - Floating Centered */}
       {isSettingsModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
@@ -937,13 +1021,28 @@ const App = () => {
 
                 <hr style={{ borderColor: theme.colors.border }} />
 
-                {/* Install PWA Button (Android/Chrome) */}
-                {deferredPrompt && (
+                {/* Install PWA Button */}
+                {!isStandalone && (deferredPrompt || isIOSSafari) && (
                   <div className="space-y-2">
                     <label className="text-xs font-bold uppercase flex items-center gap-1" style={{ color: theme.colors.secondaryText }}><Download className="w-3 h-3"/> 安裝應用程式</label>
-                    <button onClick={handleInstallApp} className="w-full py-2.5 text-xs font-bold text-white rounded-lg shadow-sm transition-transform active:scale-95 hover:opacity-90 flex items-center justify-center gap-2" style={{ backgroundColor: theme.colors.accent }}>
-                      <Download className="w-4 h-4" /> 安裝到主畫面
+                    <button
+                      onClick={() => {
+                        if (deferredPrompt) handleInstallApp();
+                        else if (isIOSSafari) setShowIOSInstallGuide(true);
+                      }}
+                      className="w-full py-2.5 text-xs font-bold text-white rounded-lg shadow-sm transition-transform active:scale-95 hover:opacity-90 flex items-center justify-center gap-2"
+                      style={{ backgroundColor: theme.colors.accent }}
+                    >
+                      <Download className="w-4 h-4" /> 加入桌面
                     </button>
+                    <hr style={{ borderColor: theme.colors.border }} />
+                  </div>
+                )}
+                {isStandalone && (
+                  <div className="space-y-2">
+                    <div className="w-full py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-2" style={{ color: theme.colors.secondaryText, backgroundColor: theme.colors.gridHeaderBg }}>
+                      <Check className="w-4 h-4" /> 已加入桌面
+                    </div>
                     <hr style={{ borderColor: theme.colors.border }} />
                   </div>
                 )}
