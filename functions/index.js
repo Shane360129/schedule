@@ -409,7 +409,8 @@ function getRangeFromText(text) {
   return null;
 }
 
-function buildAgendaFlex(title, dateGroups, { compact = false } = {}) {
+function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } = {}) {
+  const ownerOf = (ev) => computeOwnerLabel(ev.eventType, uidRoles[ev._uid]);
   const todayStr = formatDateTW(new Date());
   const showDateHeader = dateGroups.length > 1;
   const bodyContents = [];
@@ -450,9 +451,10 @@ function buildAgendaFlex(title, dateGroups, { compact = false } = {}) {
       // 多日事件在 compact 模式下顯示「→ 結束日」標示，
       // 因為這版只在起始日列出一次，看不到範圍會困惑
       const isMulti = ev.startDate !== ev.endDate;
-      const titleText = isMulti && compact
+      const baseTitle = isMulti && compact
         ? `${ev.title || '(未命名)'} → ${ev.endDate.slice(5).replace('-', '/')}`
         : (ev.title || '(未命名)');
+      const titleText = `${baseTitle}（${ownerOf(ev)}）`;
       bodyContents.push({
         type: 'box',
         layout: 'horizontal',
@@ -467,9 +469,10 @@ function buildAgendaFlex(title, dateGroups, { compact = false } = {}) {
     });
     timedEvents.forEach((ev) => {
       const isMulti = ev.startDate !== ev.endDate;
-      const titleText = isMulti && compact
+      const baseTitle = isMulti && compact
         ? `${ev.title || '(未命名)'} → ${ev.endDate.slice(5).replace('-', '/')}`
         : (ev.title || '(未命名)');
+      const titleText = `${baseTitle}（${ownerOf(ev)}）`;
       bodyContents.push({
         type: 'box',
         layout: 'horizontal',
@@ -546,6 +549,13 @@ async function getRoleSettings(uid) {
     .collection('bibi_settings').doc('roles')
     .get();
   return doc.exists ? doc.data() : { role1: '我', role2: '夥伴' };
+}
+
+// 每個 event 後面要標示「誰的行程」，跟 App 端 dayViewEvents 規則一致
+function computeOwnerLabel(eventType, roles) {
+  if (eventType === 'me') return (roles?.role1 || '我').trim() || '我';
+  if (eventType === 'partner') return (roles?.role2 || '夥伴').trim() || '夥伴';
+  return '共同';
 }
 
 const COLOR_BY_TYPE = { me: 'tea', partner: 'sesame', common: 'latte' };
@@ -1080,7 +1090,9 @@ async function replyNextEvents(client, ev, count = 5) {
   const todayStr = formatDateTW(new Date());
   const now = new Date();
   const allFuture = [];
+  const uidRoles = {};
   for (const uid of uids) {
+    uidRoles[uid] = await getRoleSettings(uid);
     const snap = await db()
       .collection('artifacts').doc(APP_ID)
       .collection('users').doc(uid)
@@ -1093,7 +1105,7 @@ async function replyNextEvents(client, ev, count = 5) {
       if (e.startDate === todayStr && !e.isAllDay && e.startTime) {
         if (taipeiEventStart(e.startDate, e.startTime) < now) return;
       }
-      allFuture.push(e);
+      allFuture.push({ ...e, _uid: uid });
     });
   }
   allFuture.sort((a, b) => {
@@ -1116,7 +1128,8 @@ async function replyNextEvents(client, ev, count = 5) {
       : days === 2 ? '後天'
       : `${days} 天後`;
     const timeLabel = e.isAllDay ? '全天' : `${e.startTime}-${e.endTime}`;
-    lines.push(`${i + 1}. ${e.title}`);
+    const ownerLabel = computeOwnerLabel(e.eventType, uidRoles[e._uid]);
+    lines.push(`${i + 1}. ${e.title}（${ownerLabel}）`);
     lines.push(`   📅 ${dayLabel} ${e.startDate} ${timeLabel}`);
   });
   return safeReply(client, ev.replyToken, withQuickReply({
@@ -1138,7 +1151,9 @@ async function replySearch(client, ev, query) {
     }));
   }
   const matches = [];
+  const uidRoles = {};
   for (const uid of uids) {
+    uidRoles[uid] = await getRoleSettings(uid);
     const snap = await db()
       .collection('artifacts').doc(APP_ID)
       .collection('users').doc(uid)
@@ -1146,7 +1161,7 @@ async function replySearch(client, ev, query) {
       .get();
     snap.forEach((d) => {
       const e = d.data();
-      if (e.title && e.title.includes(query)) matches.push(e);
+      if (e.title && e.title.includes(query)) matches.push({ ...e, _uid: uid });
     });
   }
   if (matches.length === 0) {
@@ -1160,7 +1175,8 @@ async function replySearch(client, ev, query) {
   top.forEach((e, i) => {
     const range = e.startDate === e.endDate ? e.startDate : `${e.startDate}~${e.endDate}`;
     const timeLabel = e.isAllDay ? '全天' : (e.startTime || '');
-    lines.push(`${i + 1}. ${e.title}`);
+    const ownerLabel = computeOwnerLabel(e.eventType, uidRoles[e._uid]);
+    lines.push(`${i + 1}. ${e.title}（${ownerLabel}）`);
     lines.push(`   ${range} ${timeLabel}`);
   });
   if (matches.length > 20) lines.push('', `（共 ${matches.length} 件，只顯示前 20）`);
@@ -1601,7 +1617,9 @@ async function replyAgenda(client, ev, range) {
   const rangeStartStr = dateGroups[0].dateStr;
   const rangeEndStr = dateGroups[dateGroups.length - 1].dateStr;
 
+  const uidRoles = {};
   for (const uid of uids) {
+    uidRoles[uid] = await getRoleSettings(uid);
     const eventsSnap = await db()
       .collection('artifacts').doc(APP_ID)
       .collection('users').doc(uid)
@@ -1612,15 +1630,16 @@ async function replyAgenda(client, ev, range) {
       const e = doc.data();
       if (!e.endDate || e.endDate < rangeStartStr) return;
       if (range.filterType && e.eventType !== range.filterType) return;
+      const tagged = { ...e, _uid: uid };
       if (compactMode) {
         // 只在「範圍內的第一天」列出一次，避免多日事件填滿整張卡片
         const firstInRange = e.startDate < rangeStartStr ? rangeStartStr : e.startDate;
         const g = dateGroups.find((g) => g.dateStr === firstInRange);
-        if (g) g.events.push(e);
+        if (g) g.events.push(tagged);
       } else {
         for (const g of dateGroups) {
           if (g.dateStr >= e.startDate && g.dateStr <= e.endDate) {
-            g.events.push(e);
+            g.events.push(tagged);
           }
         }
       }
@@ -1635,7 +1654,7 @@ async function replyAgenda(client, ev, range) {
   }
 
   return safeReply(client, ev.replyToken, withQuickReply(
-    buildAgendaFlex(range.title, dateGroups, { compact: compactMode })
+    buildAgendaFlex(range.title, dateGroups, { compact: compactMode, uidRoles })
   ));
 }
 
@@ -1943,11 +1962,13 @@ exports.dailyMorningSummary = onSchedule(
           .where('startDate', '<=', today)
           .get();
 
+        const roles = await getRoleSettings(uid);
         const lines = [`🌙 今日 (${today}) 行程：`];
         eventsSnap.forEach((d) => {
           const e = d.data();
           if (!e.endDate || e.endDate < today) return; // 已結束的略過
-          lines.push(`• ${e.isAllDay ? '全天' : (e.startTime || '')} ${e.title}`);
+          const ownerLabel = computeOwnerLabel(e.eventType, roles);
+          lines.push(`• ${e.isAllDay ? '全天' : (e.startTime || '')} ${e.title}（${ownerLabel}）`);
         });
 
         const message =
@@ -2064,6 +2085,8 @@ exports.weeklySundayPreview = onSchedule(
           .where('startDate', '<=', nextSundayStr)
           .get();
 
+        const roles = await getRoleSettings(uid);
+
         // 依日期分組
         const byDate = {};
         for (let i = 0; i < 7; i++) {
@@ -2094,7 +2117,8 @@ exports.weeklySundayPreview = onSchedule(
             return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
           });
           events.forEach((e) => {
-            lines.push(`  • ${e.isAllDay ? '全天' : e.startTime || ''} ${e.title}`);
+            const ownerLabel = computeOwnerLabel(e.eventType, roles);
+            lines.push(`  • ${e.isAllDay ? '全天' : e.startTime || ''} ${e.title}（${ownerLabel}）`);
           });
           lines.push('');
         }
