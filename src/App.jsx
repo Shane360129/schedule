@@ -4,8 +4,9 @@ import {
   Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle, Calendar
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, onAuthStateChanged, signInAnonymously 
+import {
+  getAuth, onAuthStateChanged, signInAnonymously,
+  setPersistence, browserLocalPersistence, inMemoryPersistence
 } from 'firebase/auth';
 import { 
   getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, arrayUnion
@@ -29,8 +30,21 @@ const appId = 'schdule-f5cda';
 // --- Helper: Haptic Feedback ---
 const triggerHaptic = () => {
   if (navigator.vibrate) {
-    navigator.vibrate(10); 
+    navigator.vibrate(10);
   }
+};
+
+// --- Safe localStorage (iOS Safari Private 模式 / 強隱私瀏覽器會 throw) ---
+const safeStorage = {
+  getItem(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  },
+  setItem(key, value) {
+    try { localStorage.setItem(key, value); } catch {}
+  },
+  removeItem(key) {
+    try { localStorage.removeItem(key); } catch {}
+  },
 };
 
 // --- Fonts ---
@@ -161,7 +175,7 @@ class ErrorBoundary extends React.Component {
   }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
   componentDidCatch(error, errorInfo) { console.error("UI Crash:", error, errorInfo); }
-  handleReset = () => { localStorage.clear(); window.location.reload(); }
+  handleReset = () => { try { localStorage.clear(); } catch {} window.location.reload(); }
   render() {
     if (this.state.hasError) {
       return (
@@ -231,10 +245,10 @@ const HolidayAnimation = ({ type, onDismiss }) => {
 
 const App = () => {
   const [user, setUser] = useState(null);
-  const [customUserId, setCustomUserId] = useState(localStorage.getItem('bibi_custom_uid') || '');
-  
+  const [customUserId, setCustomUserId] = useState(safeStorage.getItem('bibi_custom_uid') || '');
+
   const [currentDate, setCurrentDate] = useState(() => {
-      const savedDate = localStorage.getItem('bibi_last_view_date');
+      const savedDate = safeStorage.getItem('bibi_last_view_date');
       return savedDate && !isNaN(new Date(savedDate).getTime()) ? new Date(savedDate) : new Date();
   });
 
@@ -245,7 +259,7 @@ const App = () => {
   const [roleSettings, setRoleSettings] = useState({ role1: '我', role2: '夥伴' });
   
   // Theme State
-  const [currentThemeId, setCurrentThemeId] = useState(localStorage.getItem('bibi_theme') || 'original');
+  const [currentThemeId, setCurrentThemeId] = useState(safeStorage.getItem('bibi_theme') || 'original');
   const theme = THEMES[currentThemeId] || THEMES.original;
 
   // Font State (Locked to NaikaiFont)
@@ -306,20 +320,33 @@ const App = () => {
   };
   
   useEffect(() => {
-    localStorage.setItem('bibi_last_view_date', currentDate.toISOString());
+    safeStorage.setItem('bibi_last_view_date', currentDate.toISOString());
   }, [currentDate]);
 
   useEffect(() => {
     const initAuth = async () => {
-      try { await signInAnonymously(auth); } 
-      catch (e) { console.error("Auth Failed:", e); setLoading(false); addToast('登入失敗，請檢查網路連線', 'error'); }
+      try {
+        // 預設 IndexedDB persist；在無痕模式 / iOS Private Browsing 會 throw → 退回 in-memory
+        try {
+          await setPersistence(auth, browserLocalPersistence);
+        } catch (persistErr) {
+          console.warn('IndexedDB persistence unavailable, falling back to in-memory:', persistErr);
+          try { await setPersistence(auth, inMemoryPersistence); } catch {}
+        }
+        await signInAnonymously(auth);
+      } catch (e) {
+        console.error("Auth Failed:", e);
+        setLoading(false);
+        addToast('登入失敗，請檢查網路連線', 'error');
+      }
     };
     initAuth();
     return onAuthStateChanged(auth, (u) => { setUser(u); if(u) setLoading(false); });
   }, []);
-  
+
   useEffect(() => {
-    const timer = setTimeout(() => { if(loading) { console.warn("Forced loading stop due to timeout"); setLoading(false); } }, 8000);
+    // 5 秒沒登入成功就先放使用者進來看畫面 (即使無法同步 Firestore 也至少不會卡 spinner)
+    const timer = setTimeout(() => { if(loading) { console.warn("Forced loading stop due to timeout"); setLoading(false); } }, 5000);
     return () => clearTimeout(timer);
   }, [loading]);
 
@@ -459,8 +486,8 @@ const App = () => {
     return () => { unsubEvents(); unsubSettings(); };
   }, [user, customUserId]);
 
-  const handleSaveCustomUid = () => { localStorage.setItem('bibi_custom_uid', customUserId); window.location.reload(); };
-  const handleResetUid = () => { localStorage.removeItem('bibi_custom_uid'); window.location.reload(); };
+  const handleSaveCustomUid = () => { safeStorage.setItem('bibi_custom_uid', customUserId); window.location.reload(); };
+  const handleResetUid = () => { safeStorage.removeItem('bibi_custom_uid'); window.location.reload(); };
   const handleCopyId = () => {
     const text = user?.uid;
     if (!text) return;
@@ -484,7 +511,7 @@ const App = () => {
 
   const changeTheme = (newThemeId) => {
     setCurrentThemeId(newThemeId);
-    localStorage.setItem('bibi_theme', newThemeId);
+    safeStorage.setItem('bibi_theme', newThemeId);
     addToast('主題切換成功 🎨');
   };
 
