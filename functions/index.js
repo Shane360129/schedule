@@ -1246,6 +1246,907 @@ async function replySearch(client, ev, query) {
   }));
 }
 
+// ============================================================
+// Batch 1 規則式增強：唯讀統計 / 倒數 / 篩選
+// ============================================================
+
+// 倒數 / 還剩：找標題符合的最近未來事件，回剩餘天數
+async function replyCountdown(client, ev, query) {
+  if (!query) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '請帶上要倒數的事，例：「倒數 中秋」「倒數 阿花生日」',
+    }));
+  }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const todayStr = formatDateTW(new Date());
+  const matches = [];
+  for (const uid of uids) {
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('bibi_events').get();
+    snap.forEach((d) => {
+      const e = d.data();
+      if (e.title && e.title.includes(query) && e.startDate >= todayStr) {
+        matches.push(e);
+      }
+    });
+  }
+  if (matches.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `🔍 找不到含「${query}」的未來行程`,
+    }));
+  }
+  matches.sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const nearest = matches[0];
+  const days = daysBetween(nearest.startDate, todayStr);
+  const dayLabel = days === 0 ? '就是今天 🎉'
+    : days === 1 ? '明天 ⏰'
+    : days <= 7 ? `還剩 ${days} 天`
+    : days <= 30 ? `還剩 ${days} 天（約 ${Math.round(days / 7)} 週）`
+    : `還剩 ${days} 天（約 ${Math.round(days / 30)} 個月）`;
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text',
+    text: `⏳ ${nearest.title}\n📅 ${nearest.startDate}\n${dayLabel}`,
+  }));
+}
+
+// 剩下 / 今天剩：今天還沒過的行程
+async function replyRemainingToday(client, ev) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const todayStr = formatDateTW(new Date());
+  const now = new Date();
+  const remaining = [];
+  const uidRoles = {};
+  for (const uid of uids) {
+    uidRoles[uid] = await getRoleSettings(uid);
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('bibi_events')
+      .where('startDate', '<=', todayStr).get();
+    snap.forEach((d) => {
+      const e = d.data();
+      if (!e.endDate || e.endDate < todayStr) return;
+      // 全天事件還沒結束就算，有時間事件還沒過開始時間才算
+      if (!e.isAllDay && e.startTime) {
+        if (taipeiEventStart(e.startDate, e.startTime) < now) return;
+      }
+      remaining.push({ ...e, _uid: uid });
+    });
+  }
+  if (remaining.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '🍵 今天剩下的行程沒有了，可以放鬆～',
+    }));
+  }
+  remaining.sort((a, b) => {
+    if (a.isAllDay !== b.isAllDay) return a.isAllDay ? -1 : 1;
+    return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
+  });
+  const lines = [`⏳ 今天剩下 ${remaining.length} 件：`, ''];
+  remaining.forEach((e, i) => {
+    const t = e.isAllDay ? '全天' : (e.startTime || '');
+    const owner = computeOwnerLabel(e.eventType, uidRoles[e._uid]);
+    lines.push(`${i + 1}. ${t} ${e.title}（${owner}）`);
+  });
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: lines.join('\n'),
+  }));
+}
+
+// 本月統計：總數 + 按 owner 拆解 + 最忙日
+async function replyMonthlyStats(client, ev) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+  const monthStart = `${y}-${String(m).padStart(2, '0')}-01`;
+  const monthEnd = `${y}-${String(m).padStart(2, '0')}-31`;
+
+  const events = [];
+  const uidRoles = {};
+  for (const uid of uids) {
+    uidRoles[uid] = await getRoleSettings(uid);
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('bibi_events')
+      .where('startDate', '<=', monthEnd).get();
+    snap.forEach((d) => {
+      const e = d.data();
+      if (!e.endDate || e.endDate < monthStart) return;
+      events.push({ ...e, _uid: uid });
+    });
+  }
+  if (events.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `📊 ${y}/${m} 還沒有任何行程`,
+    }));
+  }
+  const byType = { me: 0, partner: 0, common: 0 };
+  const byDate = {};
+  events.forEach((e) => {
+    byType[e.eventType] = (byType[e.eventType] || 0) + 1;
+    byDate[e.startDate] = (byDate[e.startDate] || 0) + 1;
+  });
+  const sampleRoles = uidRoles[uids[0]] || {};
+  const role1 = sampleRoles.role1 || '我';
+  const role2 = sampleRoles.role2 || '夥伴';
+  const busyDays = Object.entries(byDate)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+  const lines = [
+    `📊 ${y}/${m} 統計`,
+    '',
+    `共 ${events.length} 件`,
+    `  • ${role1}：${byType.me || 0} 件`,
+    `  • ${role2}：${byType.partner || 0} 件`,
+    `  • 共同：${byType.common || 0} 件`,
+  ];
+  if (busyDays.length) {
+    lines.push('', '🔥 最忙 Top 3：');
+    busyDays.forEach(([d, n]) => lines.push(`  ${d}（${n} 件）`));
+  }
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: lines.join('\n'),
+  }));
+}
+
+// 衝突：掃描未來 3 個月內所有撞時間的事件對
+async function replyConflicts(client, ev) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const todayStr = formatDateTW(new Date());
+  const horizonStr = addDaysStr(todayStr, 90);
+  const events = [];
+  const uidRoles = {};
+  for (const uid of uids) {
+    uidRoles[uid] = await getRoleSettings(uid);
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('bibi_events')
+      .where('startDate', '<=', horizonStr).get();
+    snap.forEach((d) => {
+      const e = d.data();
+      if (!e.endDate || e.endDate < todayStr) return;
+      events.push({ ...e, _uid: uid });
+    });
+  }
+  // 找撞時間的 pair (O(n²) 但 n 通常 < 100)
+  const conflicts = [];
+  for (let i = 0; i < events.length; i++) {
+    for (let j = i + 1; j < events.length; j++) {
+      const a = events[i]; const b = events[j];
+      // 日期沒重疊就跳過
+      if (a.endDate < b.startDate || b.endDate < a.startDate) continue;
+      // 全天 → 算衝突
+      if (a.isAllDay || b.isAllDay) {
+        conflicts.push([a, b]);
+        continue;
+      }
+      // 有時間 → 看時間重疊
+      if (a.startTime && a.endTime && b.startTime && b.endTime) {
+        if (a.endTime <= b.startTime || b.endTime <= a.startTime) continue;
+        conflicts.push([a, b]);
+      }
+    }
+  }
+  if (conflicts.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '✨ 未來 3 個月沒有撞時間的行程',
+    }));
+  }
+  const lines = [`⚠️ 未來 3 個月有 ${conflicts.length} 組撞時間：`, ''];
+  conflicts.slice(0, 10).forEach(([a, b], i) => {
+    const tA = a.isAllDay ? '全天' : `${a.startTime}-${a.endTime}`;
+    const tB = b.isAllDay ? '全天' : `${b.startTime}-${b.endTime}`;
+    const ownerA = computeOwnerLabel(a.eventType, uidRoles[a._uid]);
+    const ownerB = computeOwnerLabel(b.eventType, uidRoles[b._uid]);
+    lines.push(`${i + 1}. ${a.startDate}`);
+    lines.push(`   ${tA} ${a.title} (${ownerA})`);
+    lines.push(`   ${tB} ${b.title} (${ownerB})`);
+    lines.push('');
+  });
+  if (conflicts.length > 10) lines.push(`（共 ${conflicts.length} 組，只列前 10）`);
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: lines.join('\n').trim(),
+  }));
+}
+
+// 第幾週：ISO 8601 週數
+function getISOWeekNumber(d) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+}
+async function replyWeekNumber(client, ev) {
+  const today = new Date();
+  const todayStr = formatDateTW(today);
+  const week = getISOWeekNumber(today);
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: `📅 今天 ${todayStr} 是 ${today.getFullYear()} 年第 ${week} 週`,
+  }));
+}
+
+// 從 TaiwanCalendar CDN 撈今年 + 明年的假日，快取在 module scope (cold start 後第一次撈)
+let _holidayCache = null;
+let _holidayCacheYear = null;
+async function fetchHolidaysForYear(year) {
+  const res = await fetch(`https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/${year}.json`);
+  if (!res.ok) throw new Error(`holiday api ${res.status}`);
+  return res.json();
+}
+async function getHolidayList() {
+  const now = new Date();
+  const y = now.getFullYear();
+  if (_holidayCache && _holidayCacheYear === y) return _holidayCache;
+  try {
+    const [thisYear, nextYear] = await Promise.all([
+      fetchHolidaysForYear(y),
+      fetchHolidaysForYear(y + 1).catch(() => []),
+    ]);
+    const merged = [...thisYear, ...nextYear]
+      .filter((d) => d.isHoliday && d.date && d.date.length === 8)
+      .map((d) => ({
+        date: `${d.date.slice(0, 4)}-${d.date.slice(4, 6)}-${d.date.slice(6, 8)}`,
+        name: d.description || d.holidayCategory || '假日',
+      }));
+    _holidayCache = merged;
+    _holidayCacheYear = y;
+    return merged;
+  } catch (e) {
+    console.warn('[holidays] fetch failed', e?.message);
+    return [];
+  }
+}
+
+// 下個假日 / 假日清單
+async function replyNextHoliday(client, ev) {
+  const holidays = await getHolidayList();
+  const todayStr = formatDateTW(new Date());
+  const future = holidays.filter((h) => h.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date));
+  if (future.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '⚠️ 查不到接下來的國定假日資料',
+    }));
+  }
+  const lines = ['🇹🇼 接下來的國定假日：', ''];
+  future.slice(0, 8).forEach((h) => {
+    const days = daysBetween(h.date, todayStr);
+    const dLabel = days === 0 ? '今天' : days === 1 ? '明天' : `${days} 天後`;
+    lines.push(`${h.date}（${dLabel}）— ${h.name}`);
+  });
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: lines.join('\n'),
+  }));
+}
+
+// 標題關鍵字過濾清單 (生日 / 休假 等通用 helper)
+async function replyTitleFilteredList(client, ev, keywords, displayName) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const todayStr = formatDateTW(new Date());
+  const items = [];
+  const uidRoles = {};
+  for (const uid of uids) {
+    uidRoles[uid] = await getRoleSettings(uid);
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('bibi_events').get();
+    snap.forEach((d) => {
+      const e = d.data();
+      if (!e.endDate || e.endDate < todayStr) return;
+      const hay = `${e.title || ''} ${e.description || ''}`;
+      if (keywords.some((k) => hay.includes(k))) items.push({ ...e, _uid: uid });
+    });
+  }
+  if (items.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `🔍 沒有找到「${displayName}」相關的未來行程`,
+    }));
+  }
+  items.sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const lines = [`📋 ${displayName}（${items.length} 件）`, ''];
+  items.slice(0, 20).forEach((e, i) => {
+    const days = daysBetween(e.startDate, todayStr);
+    const dLabel = days === 0 ? '今天' : days === 1 ? '明天' : `${days} 天後`;
+    const owner = computeOwnerLabel(e.eventType, uidRoles[e._uid]);
+    lines.push(`${i + 1}. ${e.startDate}（${dLabel}）${e.title}（${owner}）`);
+  });
+  if (items.length > 20) lines.push(`（共 ${items.length}，只列前 20）`);
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: lines.join('\n'),
+  }));
+}
+
+// ============================================================
+// Batch 5: 空檔 / 便利貼 / 打卡 / 節氣
+// ============================================================
+
+// 空檔：找出今天 / 明天 / 本週剩下時段沒排程的區段
+// 只考慮非全天事件，全天事件視為「忙整天」直接跳過
+async function replyFreeSlots(client, ev, scope = 'tomorrow') {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  // 解析範圍
+  const todayStr = formatDateTW(new Date());
+  let targetDates = [];
+  if (scope === 'today') targetDates = [todayStr];
+  else if (scope === 'tomorrow') targetDates = [addDaysStr(todayStr, 1)];
+  else if (scope === 'week') {
+    for (let i = 0; i < 7; i++) targetDates.push(addDaysStr(todayStr, i));
+  }
+  const eventsByDate = {};
+  for (const ds of targetDates) eventsByDate[ds] = [];
+  for (const uid of uids) {
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('bibi_events')
+      .where('startDate', '<=', targetDates[targetDates.length - 1]).get();
+    snap.forEach((d) => {
+      const e = d.data();
+      for (const ds of targetDates) {
+        if (e.startDate <= ds && (e.endDate || e.startDate) >= ds) {
+          eventsByDate[ds].push(e);
+        }
+      }
+    });
+  }
+  const lines = [`🟢 空檔 (${scope === 'today' ? '今天' : scope === 'tomorrow' ? '明天' : '本週'})：`, ''];
+  let totalFree = 0;
+  for (const ds of targetDates) {
+    const evs = eventsByDate[ds];
+    const isAllDayBusy = evs.some((e) => e.isAllDay);
+    if (isAllDayBusy) {
+      lines.push(`${ds} ⛔ 全天有事`);
+      continue;
+    }
+    // 把時間事件排好，找空檔（09:00-22:00 為主要活動時段）
+    const timed = evs.filter((e) => !e.isAllDay && e.startTime && e.endTime)
+      .map((e) => ({ s: e.startTime, e: e.endTime }))
+      .sort((a, b) => a.s.localeCompare(b.s));
+    const freeSlots = [];
+    let cursor = '09:00';
+    for (const { s, e } of timed) {
+      if (s > cursor) freeSlots.push([cursor, s]);
+      if (e > cursor) cursor = e;
+    }
+    if (cursor < '22:00') freeSlots.push([cursor, '22:00']);
+    if (freeSlots.length === 0) {
+      lines.push(`${ds} ⛔ 整天滿`);
+    } else {
+      lines.push(`${ds}`);
+      freeSlots.forEach(([s, e]) => lines.push(`  • ${s} - ${e}`));
+      totalFree += freeSlots.length;
+    }
+  }
+  if (totalFree === 0 && lines.length <= 2) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '😵 沒有空檔',
+    }));
+  }
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: lines.join('\n'),
+  }));
+}
+
+// 便利貼：純文字短備忘，存到 sticky_notes collection (不放 events 避免汙染日曆)
+async function trySticky(client, ev, text) {
+  if (!text) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '請帶內容，例：「便利貼 買牛奶」',
+    }));
+  }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const targetUid = uids[0];
+  await db().collection('artifacts').doc(APP_ID)
+    .collection('users').doc(targetUid)
+    .collection('sticky_notes').add({
+      text: text.slice(0, 500),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: `📝 已記下：${text}`,
+  }));
+}
+
+// 看便利貼清單
+async function replyStickyList(client, ev) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const all = [];
+  for (const uid of uids) {
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('sticky_notes')
+      .orderBy('createdAt', 'desc').limit(20).get();
+    snap.forEach((d) => all.push({ id: d.id, uid, ...d.data() }));
+  }
+  if (all.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '📝 便利貼空的。用「便利貼 XXX」隨手記',
+    }));
+  }
+  const lines = [`📝 便利貼（${all.length} 張）`, ''];
+  all.slice(0, 20).forEach((s, i) => lines.push(`${i + 1}. ${s.text}`));
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: lines.join('\n'),
+  }));
+}
+
+// 打卡：當下時間建一筆 X 行程
+async function tryCheckin(client, ev, text) {
+  if (!text) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '請帶事項，例：「打卡 跑步」',
+    }));
+  }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const targetUid = uids[0];
+  const now = new Date();
+  const dateStr = formatDateTW(now);
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const startTime = `${hh}:${mm}`;
+  const endTotal = now.getHours() * 60 + now.getMinutes() + 30;
+  const eh = String(Math.min(23, Math.floor(endTotal / 60))).padStart(2, '0');
+  const em = String(endTotal % 60).padStart(2, '0');
+  const senderRole = await getSenderRoleForUid(targetUid, ev.source?.userId);
+  const eventType = senderRole || 'common';
+  const ref = await db().collection('artifacts').doc(APP_ID)
+    .collection('users').doc(targetUid).collection('bibi_events').add({
+      title: text.slice(0, 200),
+      description: '',
+      startDate: dateStr,
+      endDate: dateStr,
+      isAllDay: false,
+      startTime,
+      endTime: `${eh}:${em}`,
+      color: COLOR_BY_TYPE[eventType] || 'latte',
+      eventType,
+      done: true, // 打卡本身就是完成
+    });
+  await recordLastOp(targetUid, { type: 'create', eventId: ref.id });
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: `✅ 打卡：${text}\n　${dateStr} ${startTime}`,
+  }));
+}
+
+// 24 節氣（粗略 — 用每年固定日期 ±1 天的近似值，足以給 LINE 顯示「下個節氣」）
+const SOLAR_TERMS = [
+  { name: '小寒', m: 1, d: 6 }, { name: '大寒', m: 1, d: 20 },
+  { name: '立春', m: 2, d: 4 }, { name: '雨水', m: 2, d: 19 },
+  { name: '驚蟄', m: 3, d: 6 }, { name: '春分', m: 3, d: 21 },
+  { name: '清明', m: 4, d: 5 }, { name: '穀雨', m: 4, d: 20 },
+  { name: '立夏', m: 5, d: 6 }, { name: '小滿', m: 5, d: 21 },
+  { name: '芒種', m: 6, d: 6 }, { name: '夏至', m: 6, d: 21 },
+  { name: '小暑', m: 7, d: 7 }, { name: '大暑', m: 7, d: 23 },
+  { name: '立秋', m: 8, d: 8 }, { name: '處暑', m: 8, d: 23 },
+  { name: '白露', m: 9, d: 8 }, { name: '秋分', m: 9, d: 23 },
+  { name: '寒露', m: 10, d: 8 }, { name: '霜降', m: 10, d: 24 },
+  { name: '立冬', m: 11, d: 7 }, { name: '小雪', m: 11, d: 22 },
+  { name: '大雪', m: 12, d: 7 }, { name: '冬至', m: 12, d: 22 },
+];
+async function replyNextSolarTerm(client, ev) {
+  const todayStr = formatDateTW(new Date());
+  const y = new Date().getFullYear();
+  const allWithDates = [];
+  for (const yr of [y, y + 1]) {
+    SOLAR_TERMS.forEach((t) => {
+      allWithDates.push({
+        date: `${yr}-${String(t.m).padStart(2, '0')}-${String(t.d).padStart(2, '0')}`,
+        name: t.name,
+      });
+    });
+  }
+  const future = allWithDates.filter((t) => t.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date));
+  if (future.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '查不到節氣' }));
+  }
+  const lines = ['🌿 接下來的節氣：', ''];
+  future.slice(0, 6).forEach((t) => {
+    const days = daysBetween(t.date, todayStr);
+    const dLabel = days === 0 ? '今天' : days === 1 ? '明天' : `${days} 天後`;
+    lines.push(`${t.date}（${dLabel}）— ${t.name}`);
+  });
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: lines.join('\n'),
+  }));
+}
+
+// ============================================================
+// Batch 4: 撤回 / 稍後提醒 helpers
+// ============================================================
+
+// 撤回 helper：記錄最近一次操作 (create / update / delete) 給「撤回」用
+// 存在 users/{uid}/bibi_settings/lastop 單一 doc，每次 CRUD 覆蓋
+async function recordLastOp(uid, op) {
+  if (!uid || !op) return;
+  try {
+    await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid)
+      .collection('bibi_settings').doc('lastop')
+      .set({ ...op, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+  } catch (e) {
+    console.warn('[lastop] failed', e?.message);
+  }
+}
+
+async function tryUndoLastOp(client, ev) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const targetUid = uids[0];
+  const ref = db().collection('artifacts').doc(APP_ID)
+    .collection('users').doc(targetUid)
+    .collection('bibi_settings').doc('lastop');
+  const snap = await ref.get();
+  if (!snap.exists) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '⚠️ 沒有可撤回的操作',
+    }));
+  }
+  const op = snap.data();
+  const eventsCol = db().collection('artifacts').doc(APP_ID)
+    .collection('users').doc(targetUid).collection('bibi_events');
+  try {
+    if (op.type === 'create' && op.eventId) {
+      await eventsCol.doc(op.eventId).delete();
+      await ref.delete();
+      return safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: `↩️ 已撤回新增：${op.after?.title || ''}`,
+      }));
+    }
+    if (op.type === 'update' && op.eventId && op.before) {
+      await eventsCol.doc(op.eventId).set(op.before);
+      await ref.delete();
+      return safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: `↩️ 已撤回修改：${op.before.title || ''}`,
+      }));
+    }
+    if (op.type === 'delete' && op.before) {
+      await eventsCol.add(op.before);
+      await ref.delete();
+      return safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: `↩️ 已撤回刪除：${op.before.title || ''}`,
+      }));
+    }
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '⚠️ 上個操作無法撤回',
+    }));
+  } catch (e) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `❌ 撤回失敗：${e?.message || ''}`,
+    }));
+  }
+}
+
+// 稍後提醒：寫到 pending_reminders collection，每 5 分鐘 cron 撈出已到期的推播
+// 格式偵測：「30 分鐘後提醒 X」「1 小時後提醒 X」「2 小時後 X」
+async function tryDelayedReminder(client, ev, text) {
+  if (!text) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '格式：「30 分鐘後提醒 倒垃圾」「1 小時後 接小孩」',
+    }));
+  }
+  // 解析延遲時間
+  const m = text.match(/^(\d+)[\s　]*(分鐘?|小時|時|hr|min)[\s　]*(?:後|之後)?[\s　]*(?:提醒[\s　]*(?:我)?)?[\s　]*(.+?)$/);
+  if (!m) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '解析不出來。例：「30 分鐘後提醒 倒垃圾」',
+    }));
+  }
+  const amount = parseInt(m[1], 10);
+  const unit = m[2];
+  const reminderText = m[3].trim();
+  const minutes = (unit.startsWith('小') || unit === '時' || unit === 'hr')
+    ? amount * 60 : amount;
+  if (minutes < 1 || minutes > 24 * 60 * 7) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '提醒時間範圍：1 分鐘 ~ 7 天',
+    }));
+  }
+  const sourceId = getSourceId(ev);
+  if (!sourceId) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '無法辨識聊天視窗',
+    }));
+  }
+  const triggerAt = admin.firestore.Timestamp.fromMillis(Date.now() + minutes * 60 * 1000);
+  await db().collection('artifacts').doc(APP_ID)
+    .collection('pending_reminders').add({
+      sourceId,
+      text: reminderText.slice(0, 200),
+      triggerAt,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  const triggerDate = new Date(Date.now() + minutes * 60 * 1000);
+  const hh = String(triggerDate.getHours()).padStart(2, '0');
+  const mm = String(triggerDate.getMinutes()).padStart(2, '0');
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text',
+    text: `⏰ ${minutes >= 60 ? `${Math.floor(minutes / 60)} 小時 ${minutes % 60} 分後` : `${minutes} 分鐘後`} (${hh}:${mm}) 提醒你：\n　${reminderText}`,
+  }));
+}
+
+// 產出 iCal 格式 .ics 字串
+function buildICS(events) {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//BiBi-Schedule//ZH-TW',
+    'X-WR-CALNAME:BiBi 行事曆',
+    'X-WR-TIMEZONE:Asia/Taipei',
+  ];
+  for (const e of events) {
+    if (!e.title || !e.startDate) continue;
+    const uid = `${e._eventId || Math.random().toString(36).slice(2)}@bibi-schedule`;
+    const dtstamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    lines.push('BEGIN:VEVENT');
+    lines.push(`UID:${uid}`);
+    lines.push(`DTSTAMP:${dtstamp}`);
+    lines.push(`SUMMARY:${(e.title || '').replace(/[\r\n,;]/g, ' ')}`);
+    if (e.description) {
+      lines.push(`DESCRIPTION:${e.description.replace(/[\r\n,;]/g, ' ').slice(0, 500)}`);
+    }
+    if (e.isAllDay) {
+      const dtStart = e.startDate.replace(/-/g, '');
+      // iCal DTEND 是 exclusive，要 +1 天
+      const endNext = addDaysStr(e.endDate || e.startDate, 1).replace(/-/g, '');
+      lines.push(`DTSTART;VALUE=DATE:${dtStart}`);
+      lines.push(`DTEND;VALUE=DATE:${endNext}`);
+    } else {
+      const dtStart = `${e.startDate.replace(/-/g, '')}T${(e.startTime || '09:00').replace(':', '')}00`;
+      const dtEnd = `${(e.endDate || e.startDate).replace(/-/g, '')}T${(e.endTime || '10:00').replace(':', '')}00`;
+      lines.push(`DTSTART;TZID=Asia/Taipei:${dtStart}`);
+      lines.push(`DTEND;TZID=Asia/Taipei:${dtEnd}`);
+    }
+    lines.push('END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+// 匯出指令：產生 .ics 下載 URL (用 token 防別人偷拿)
+async function tryExportICS(client, ev, text) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const targetUid = uids[0];
+  // 先確保有匯出 token，沒有就生一個存到 settings
+  const settingsRef = db().collection('artifacts').doc(APP_ID)
+    .collection('users').doc(targetUid)
+    .collection('bibi_settings').doc('export');
+  let snap = await settingsRef.get();
+  let token = snap.exists ? snap.data().icalToken : null;
+  if (!token) {
+    const { randomUUID } = require('crypto');
+    token = randomUUID();
+    await settingsRef.set({ icalToken: token, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+  }
+  // 解析範圍：「匯出 5月」「匯出 本月」「匯出」(全部未來)
+  let rangeLabel = '未來全部';
+  let queryStr = '';
+  if (text) {
+    const range = getRangeFromText('整月行程 ' + text) || getRangeFromText(text);
+    if (range) {
+      rangeLabel = range.title;
+      queryStr = `&start=${formatDateTW(range.start)}&days=${range.days}`;
+    }
+  }
+  const url = `https://exportical-${process.env.FUNCTION_REGION || 'asia-east1'}-${APP_ID}.cloudfunctions.net/exportIcal?uid=${targetUid}&token=${token}${queryStr}`;
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text',
+    text:
+      `📤 iCal 匯出連結（${rangeLabel}）：\n${url}\n\n` +
+      '貼到 Google / Apple Calendar 的「從 URL 訂閱」即可同步。\n' +
+      '⚠️ URL 內含 token，請勿外流。',
+  }));
+}
+
+// ============================================================
+// Batch 3: 批量新增 + 重複行程
+// ============================================================
+
+// 批量新增：「新增 5/20, 5/22, 5/25 牙醫」一次建三筆相同事件
+// 偵測規則：第一段含「,」或「、」分隔的多個日期
+async function tryBatchCreate(client, ev, text) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '尚未綁定行事曆',
+    }));
+  }
+  // 把日期段抓出來：開頭一直到「最後一個逗號分隔的日期」
+  const m = text.match(/^([\d\/\-,\s、，]+)\s+(.+)$/);
+  if (!m) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '格式：「批量 5/20, 5/22, 5/25 牙醫」',
+    }));
+  }
+  const datePart = m[1];
+  const titlePart = m[2].trim();
+  const dateStrs = datePart.split(/[,，、\s]+/).filter(Boolean);
+  const todayStr = formatDateTW(new Date());
+  const todayDow = getDayOfWeekTaipei(new Date());
+  const targetUid = uids[0];
+  const roles = await getRoleSettings(targetUid);
+  const senderRole = await getSenderRoleForUid(targetUid, ev.source?.userId);
+  const created = [];
+  for (const ds of dateStrs) {
+    const tok = parseDateToken(ds, todayStr, todayDow);
+    if (!tok) continue;
+    // 用 parseNaturalEvent 處理標題 + 顏色，但日期套用本筆
+    const fakeText = `${tok.consumed} ${titlePart}`;
+    const parsed = parseNaturalEvent(fakeText, roles, todayStr, todayDow);
+    if (!parsed || parsed.error) continue;
+    if (parsed.eventType === 'common' && senderRole && !parsed._explicitCommon) {
+      parsed.eventType = senderRole;
+      parsed.color = COLOR_BY_TYPE[senderRole] || COLOR_BY_TYPE.common;
+    }
+    delete parsed._explicitCommon;
+    const ref = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(targetUid).collection('bibi_events').add(parsed);
+    created.push({ date: parsed.startDate, id: ref.id });
+  }
+  if (created.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '所有日期都解析失敗',
+    }));
+  }
+  const lines = [`📋 已批量新增 ${created.length} 筆「${titlePart}」`, ''];
+  created.forEach((c) => lines.push(`  • ${c.date}`));
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: lines.join('\n'),
+  }));
+}
+
+// 重複行程：「重複 每週一 10:00 開會 共 8 次」「重複 每月 15 號 房租 12 次」「重複 每天 22:00 吃藥 30 次」
+async function tryRecurringCreate(client, ev, text) {
+  if (!text) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '格式：\n「重複 每週一 10:00 開會 共 8 次」\n「重複 每月 15 號 房租 12 次」\n「重複 每天 22:00 吃藥 30 次」',
+    }));
+  }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  // 抓出「共 N 次 / N 次」當作 count，預設 12
+  let count = 12;
+  const countMatch = text.match(/(?:共[\s　]*)?(\d+)[\s　]*次/);
+  if (countMatch) count = parseInt(countMatch[1], 10);
+  if (count > 60) count = 60;
+  if (count < 1) count = 1;
+  let working = countMatch ? text.replace(countMatch[0], '').trim() : text;
+
+  // 偵測週期
+  const todayStr = formatDateTW(new Date());
+  const todayDow = getDayOfWeekTaipei(new Date());
+  const dowMap = { '日': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 };
+  let startDates = [];
+  let intervalDays = null;
+
+  let mMatch;
+  if ((mMatch = working.match(/每週([日一二三四五六])/))) {
+    const targetDow = dowMap[mMatch[1]];
+    // 找到第一個 >= today 的 targetDow
+    let d = new Date(todayStr + 'T00:00:00');
+    while (d.getDay() !== targetDow) d.setDate(d.getDate() + 1);
+    for (let i = 0; i < count; i++) {
+      const ds = new Date(d);
+      ds.setDate(d.getDate() + i * 7);
+      startDates.push(formatDateTW(ds));
+    }
+    working = working.replace(mMatch[0], '').trim();
+    intervalDays = 7;
+  } else if ((mMatch = working.match(/每月[\s　]*(\d{1,2})[\s　]*(?:號|日)?/))) {
+    const day = parseInt(mMatch[1], 10);
+    if (day < 1 || day > 31) {
+      return safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: '每月日期要 1-31',
+      }));
+    }
+    const now = new Date(todayStr + 'T00:00:00');
+    let y = now.getFullYear();
+    let m = now.getMonth();
+    // 如果本月那天已過，從下個月開始
+    if (now.getDate() > day) m += 1;
+    for (let i = 0; i < count; i++) {
+      const ds = new Date(y, m + i, day);
+      startDates.push(formatDateTW(ds));
+    }
+    working = working.replace(mMatch[0], '').trim();
+  } else if (working.match(/^每天/)) {
+    for (let i = 0; i < count; i++) {
+      startDates.push(addDaysStr(todayStr, i));
+    }
+    working = working.replace(/^每天[\s　]*/, '').trim();
+    intervalDays = 1;
+  } else {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '抓不到週期。格式：\n「每週X」「每月 N 號」「每天」\n例：「重複 每週一 10:00 開會 共 8 次」',
+    }));
+  }
+
+  // 解析時間 + 標題：剩下的 working 餵給 parseNaturalEvent（用第一個日期）
+  const targetUid = uids[0];
+  const roles = await getRoleSettings(targetUid);
+  const senderRole = await getSenderRoleForUid(targetUid, ev.source?.userId);
+  const fakeText = `${startDates[0].replace(/-/g, '/').replace(/^\d{4}\//, '')} ${working}`;
+  const sample = parseNaturalEvent(fakeText, roles, todayStr, todayDow);
+  if (!sample || sample.error) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '抓不到時間 / 標題。\n例：「重複 每週一 10:00 開會 共 8 次」',
+    }));
+  }
+  // 套用 senderRole fallback
+  if (sample.eventType === 'common' && senderRole && !sample._explicitCommon) {
+    sample.eventType = senderRole;
+    sample.color = COLOR_BY_TYPE[senderRole] || COLOR_BY_TYPE.common;
+  }
+  delete sample._explicitCommon;
+
+  // 為每個日期建一筆 (用 sample 的 title/time/owner)
+  const batch = db().batch();
+  for (const ds of startDates) {
+    const ref = db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(targetUid).collection('bibi_events').doc();
+    batch.set(ref, {
+      title: sample.title,
+      description: sample.description || '',
+      startDate: ds,
+      endDate: ds,
+      isAllDay: sample.isAllDay,
+      startTime: sample.startTime || '',
+      endTime: sample.endTime || '',
+      color: sample.color,
+      eventType: sample.eventType,
+      recurringGroup: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    });
+  }
+  await batch.commit();
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text',
+    text: `🔁 已建立重複行程「${sample.title}」共 ${startDates.length} 筆\n　${startDates[0]} ～ ${startDates[startDates.length - 1]}`,
+  }));
+}
+
 async function tryCreateExplicit(client, ev, text) {
   // 由「新增 X」指令明確觸發，所以可以對所有錯誤狀態都回覆
   if (!text) {
@@ -1803,6 +2704,7 @@ const aiToolHandlers = {
     const ref = await db().collection('artifacts').doc(APP_ID)
       .collection('users').doc(ctx.primaryUid).collection('bibi_events').add(data);
     const roles = ctx.uidRoles[ctx.primaryUid] || {};
+    await recordLastOp(ctx.primaryUid, { type: 'create', eventId: ref.id, after: data });
     return {
       ok: true, _eventId: ref.id, _uid: ctx.primaryUid,
       ...data,
@@ -1821,6 +2723,7 @@ const aiToolHandlers = {
     for (const k of allowed) if (updates && updates[k] !== undefined) safe[k] = updates[k];
     if (safe.eventType && COLOR_BY_TYPE[safe.eventType]) safe.color = COLOR_BY_TYPE[safe.eventType];
     await ref.update(safe);
+    await recordLastOp(uid, { type: 'update', eventId, before: before.data(), after: { ...before.data(), ...safe } });
     return { ok: true, _eventId: eventId, _uid: uid, updates: safe };
   },
 
@@ -1831,6 +2734,7 @@ const aiToolHandlers = {
     const before = await ref.get();
     if (!before.exists) return { error: '事件不存在' };
     const title = before.data().title;
+    await recordLastOp(uid, { type: 'delete', eventId, before: before.data() });
     await ref.delete();
     return { ok: true, deletedTitle: title };
   },
@@ -2092,16 +2996,25 @@ function buildAISystemPrompt(today, dow, uidRoles, primaryUid, senderRole, sende
 - 「N 天後 / N 天前」= today ± N 天
 - 「禮拜X 中午」這種日期+時間 → 先抓日期再附時間
 
-# 四、時間預設（使用者沒明說時直接用，不要追問）
-- 早上 = 09:00、中午 = 12:00、下午 = 14:00、傍晚 = 18:00、晚上 = 20:00
-- 凌晨 = 02:00、半夜 = 23:00
-- 沒講時長 → 預設 1 小時
-- 沒講時間 + 沒講全天 → 預設 isAllDay=true (全天)
+# 四、時間預設（重要：沒寫具體時間就是全天）
+- **規則**：使用者沒寫具體時間點 → isAllDay=true (全天) 直接建立。
+- 「具體時間」= 含數字的時間，例：3 點、14:00、八點半、晚上 8 點、下午 3 點半
+- 「模糊時段詞」（早上 / 中午 / 下午 / 傍晚 / 晚上 / 凌晨 / 半夜）單獨出現 → 仍視為全天，不要硬塞時間
+- 模糊詞 + 具體數字（例「下午 3 點」「晚上 8 點」）→ 用該時間
+- 時長預設 1 小時（除非使用者另說）
+
+範例：
+- 「明天健身房」 → 全天 ✅
+- 「明天晚上健身房」 → 全天 ✅（晚上是模糊詞）
+- 「明天晚上 8 點健身房」 → 20:00-21:00 ✅
+- 「明天 14:00 開會」 → 14:00-15:00 ✅
+- 「明天下午 3 點看醫生」 → 15:00-16:00 ✅
 
 # 五、果斷原則（最重要）
-有「事 + 大概時間」就**直接 create_event**，不要追問細節：
+有「事 + 日期」就**直接 create_event**，不要追問細節：
 - ✅ 「明天健身房」 → 直接建明天全天「健身房」
-- ✅ 「這禮拜天中午甜點店」 → 直接建那天 12:00-13:00「甜點店」
+- ✅ 「這禮拜天甜點店」 → 直接建那天全天「甜點店」
+- ✅ 「這禮拜天 12 點甜點店」 → 直接建那天 12:00-13:00「甜點店」
 - ✅ 「6/1 全家旅遊三天」 → 直接建 6/1-6/3 全天「全家旅遊」
 - ❌ 不要回「請問你要新增嗎？店名是？地址是？要幾點？」
 只有完全模糊（例「幫我加個東西」沒時間沒事）才追問，且只問**一個關鍵點**。
@@ -2316,6 +3229,289 @@ async function replyAskGPTFromImage(client, ev, messageId, caption) {
       type: 'text', text: `❌ 圖片讀取失敗：${String(e?.message || '').slice(0, 120)}`,
     }));
   }
+}
+
+// ============================================================
+// Batch 2: 完成 / 取消 / 複製 / 延後 / 提前 ─ 共用 helper
+// ============================================================
+
+// 通用：依關鍵字 + 日期/最近未來 找一筆事件，回 { ref, data, uid } 或多筆/0 筆訊息
+// strategy = 'nearest' | 'date'
+async function findOneEventByQuery(uids, titleQuery, dateStr = null) {
+  if (!titleQuery) return { error: 'no_query' };
+  const todayStr = formatDateTW(new Date());
+  const matches = [];
+  for (const uid of uids) {
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('bibi_events').get();
+    snap.forEach((d) => {
+      const e = d.data();
+      if (!e.title || !e.title.includes(titleQuery)) return;
+      if (dateStr) {
+        // 限定該日期區間內 (該日落在 [startDate, endDate])
+        if (e.startDate > dateStr || e.endDate < dateStr) return;
+      } else {
+        // 未來事件 (最近)
+        if (e.endDate < todayStr) return;
+      }
+      matches.push({ ref: d.ref, data: e, uid });
+    });
+  }
+  matches.sort((a, b) => a.data.startDate.localeCompare(b.data.startDate));
+  if (matches.length === 0) return { error: 'not_found' };
+  if (matches.length > 1 && !dateStr) {
+    // 沒指定日期、多筆 → 回多筆讓使用者選
+    return { error: 'multiple', matches };
+  }
+  return { match: matches[0] };
+}
+
+// 完成 ✅：標記 done=true (App 之後可以加打勾顯示)
+async function tryCompleteEvent(client, ev, text) {
+  if (!text) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '請帶上要完成的事件。\n例：「完成 5/20 牙醫」「完成 牙醫」',
+    }));
+  }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const todayStr = formatDateTW(new Date());
+  const todayDow = getDayOfWeekTaipei(new Date());
+  const dateToken = parseDateToken(text, todayStr, todayDow);
+  const titleQuery = dateToken ? text.slice(dateToken.consumed.length).trim() : text.trim();
+  const dateStr = dateToken ? dateToken.date : null;
+
+  const result = await findOneEventByQuery(uids, titleQuery, dateStr);
+  if (result.error === 'no_query') {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '請帶上事件名稱關鍵字。',
+    }));
+  }
+  if (result.error === 'not_found') {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `🔍 找不到「${titleQuery}」`,
+    }));
+  }
+  if (result.error === 'multiple') {
+    const lines = ['找到多筆，請加上日期：', ''];
+    result.matches.slice(0, 5).forEach((m, i) =>
+      lines.push(`${i + 1}. ${m.data.startDate} ${m.data.title}`));
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: lines.join('\n'),
+    }));
+  }
+  await result.match.ref.update({ done: true, doneAt: admin.firestore.FieldValue.serverTimestamp() });
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: `✅ 已完成：${result.match.data.title}\n　${result.match.data.startDate}`,
+  }));
+}
+
+// 取消：標記 status='cancelled' (保留紀錄，跟刪除不同)
+async function tryCancelEvent(client, ev, text) {
+  if (!text) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '請帶上要取消的事件。\n例：「取消 5/20 牙醫」',
+    }));
+  }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const todayStr = formatDateTW(new Date());
+  const todayDow = getDayOfWeekTaipei(new Date());
+  const dateToken = parseDateToken(text, todayStr, todayDow);
+  const titleQuery = dateToken ? text.slice(dateToken.consumed.length).trim() : text.trim();
+  const dateStr = dateToken ? dateToken.date : null;
+
+  const result = await findOneEventByQuery(uids, titleQuery, dateStr);
+  if (result.error === 'not_found') {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `🔍 找不到「${titleQuery}」`,
+    }));
+  }
+  if (result.error === 'multiple') {
+    const lines = ['找到多筆，請加上日期：', ''];
+    result.matches.slice(0, 5).forEach((m, i) =>
+      lines.push(`${i + 1}. ${m.data.startDate} ${m.data.title}`));
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: lines.join('\n'),
+    }));
+  }
+  await result.match.ref.update({ status: 'cancelled', cancelledAt: admin.firestore.FieldValue.serverTimestamp() });
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: `❎ 已取消：${result.match.data.title}\n　${result.match.data.startDate}`,
+  }));
+}
+
+// 複製：「複製 5/20 牙醫 到 6/20」「複製 5/20 牙醫 一週後」
+async function tryCopyEvent(client, ev, text) {
+  if (!text) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '格式：「複製 <來源日期> <事件名> 到 <目標日期>」\n例：「複製 5/20 牙醫 到 6/20」',
+    }));
+  }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const todayStr = formatDateTW(new Date());
+  const todayDow = getDayOfWeekTaipei(new Date());
+
+  // 解析「到 / 改成 / →」分割
+  const splitMatch = text.match(/^(.+?)[\s　]*(?:到|改成|→|->)[\s　]*(.+?)$/);
+  if (!splitMatch) {
+    // 沒有「到」→ 可能是「一週後」「N 天後」這種
+    const altMatch = text.match(/^(.+?)[\s　]*(一週後|一周後|下週|下周|[一二三四五六七八九十\d]+天後)$/);
+    if (!altMatch) {
+      return safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: '請用「到」分隔，例：「複製 5/20 牙醫 到 6/20」',
+      }));
+    }
+    const srcPart = altMatch[1];
+    const shiftStr = altMatch[2];
+    const shiftDays = shiftStr.includes('週') || shiftStr.includes('周') ? 7
+      : parseInt(shiftStr.match(/\d+/)?.[0] || '0', 10);
+    return await doCopy(client, ev, srcPart, null, shiftDays, uids, todayStr, todayDow);
+  }
+  return await doCopy(client, ev, splitMatch[1], splitMatch[2], null, uids, todayStr, todayDow);
+}
+async function doCopy(client, ev, srcPart, dstDateStr, shiftDays, uids, todayStr, todayDow) {
+  const srcDate = parseDateToken(srcPart, todayStr, todayDow);
+  if (!srcDate) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '抓不到來源日期，例「複製 5/20 牙醫 到 6/20」',
+    }));
+  }
+  const titleQuery = srcPart.slice(srcDate.consumed.length).trim();
+  if (!titleQuery) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '請帶上要複製的事件名，例「複製 5/20 牙醫 到 6/20」',
+    }));
+  }
+  const result = await findOneEventByQuery(uids, titleQuery, srcDate.date);
+  if (result.error === 'not_found') {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `🔍 ${srcDate.date} 找不到「${titleQuery}」`,
+    }));
+  }
+  let targetDate;
+  if (dstDateStr) {
+    const dstTok = parseDateToken(dstDateStr, todayStr, todayDow);
+    if (!dstTok) {
+      return safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: `抓不到目標日期「${dstDateStr}」`,
+      }));
+    }
+    targetDate = dstTok.date;
+  } else if (shiftDays) {
+    targetDate = addDaysStr(result.match.data.startDate, shiftDays);
+  }
+  const dayDiff = daysBetween(targetDate, result.match.data.startDate);
+  const newEndDate = addDaysStr(result.match.data.endDate, dayDiff);
+  const orig = result.match.data;
+  const newData = {
+    title: orig.title,
+    description: orig.description || '',
+    startDate: targetDate,
+    endDate: newEndDate,
+    isAllDay: orig.isAllDay,
+    startTime: orig.startTime || '',
+    endTime: orig.endTime || '',
+    color: orig.color,
+    eventType: orig.eventType,
+  };
+  await db().collection('artifacts').doc(APP_ID)
+    .collection('users').doc(result.match.uid).collection('bibi_events').add(newData);
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: `📋 已複製：${orig.title}\n　${orig.startDate} → ${targetDate}`,
+  }));
+}
+
+// 延後 / 提前：找最近未來的事件，整體 shift N 天 / 小時
+async function tryShiftEvent(client, ev, text, direction) {
+  // direction: 1=延後, -1=提前
+  if (!text) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: direction > 0
+        ? '格式：「延後 牙醫 1 天」「延後 會議 30 分鐘」'
+        : '格式：「提前 牙醫 1 天」「提前 會議 30 分鐘」',
+    }));
+  }
+  // 解析「<事件名> <數量> 天/小時/分鐘」
+  const m = text.match(/^(.+?)[\s　]+(\d+)[\s　]*(天|小時|分鐘|分|hour|min)/);
+  if (!m) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '解析不出來，例：「延後 牙醫 1 天」「延後 會議 30 分鐘」',
+    }));
+  }
+  const titleQuery = m[1].trim();
+  const amount = parseInt(m[2], 10);
+  const unit = m[3];
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text: '尚未綁定行事曆' }));
+  }
+  const result = await findOneEventByQuery(uids, titleQuery);
+  if (result.error === 'not_found') {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `🔍 找不到「${titleQuery}」`,
+    }));
+  }
+  if (result.error === 'multiple') {
+    const lines = ['找到多筆，請加日期，例「延後 5/20 牙醫 1 天」：', ''];
+    result.matches.slice(0, 5).forEach((mm, i) =>
+      lines.push(`${i + 1}. ${mm.data.startDate} ${mm.data.title}`));
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: lines.join('\n'),
+    }));
+  }
+  const data = result.match.data;
+  const updates = {};
+  if (unit === '天') {
+    updates.startDate = addDaysStr(data.startDate, amount * direction);
+    updates.endDate = addDaysStr(data.endDate, amount * direction);
+  } else if (data.isAllDay) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '全天行程無法用分鐘 / 小時調整，請改用「N 天」或「改時間」',
+    }));
+  } else {
+    // 分鐘 / 小時 → 移動 startTime + endTime
+    const minutes = unit.startsWith('小') || unit === 'hour' ? amount * 60 : amount;
+    const shift = direction * minutes;
+    updates.startTime = shiftTimeStr(data.startTime, shift);
+    updates.endTime = shiftTimeStr(data.endTime, shift);
+    if (!updates.startTime || !updates.endTime) {
+      return safeReply(client, ev.replyToken, withQuickReply({
+        type: 'text', text: '時間超出 00:00-23:59 範圍，無法調整',
+      }));
+    }
+  }
+  await result.match.ref.update(updates);
+  const arrow = direction > 0 ? '⏩ 延後' : '⏪ 提前';
+  const timeRange = updates.startTime
+    ? `${updates.startTime}-${updates.endTime}`
+    : updates.isAllDay ? '全天' : (data.startTime ? `${data.startTime}-${data.endTime}` : '');
+  const dateLabel = updates.startDate || data.startDate;
+  return safeReply(client, ev.replyToken, withQuickReply({
+    type: 'text', text: `${arrow}：${data.title}\n　→ ${dateLabel} ${timeRange}`,
+  }));
+}
+function shiftTimeStr(hhmm, shiftMin) {
+  if (!hhmm) return null;
+  const [h, m] = hhmm.split(':').map(Number);
+  const total = h * 60 + m + shiftMin;
+  if (total < 0 || total >= 24 * 60) return null;
+  const nh = Math.floor(total / 60);
+  const nm = total % 60;
+  return `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`;
 }
 
 async function tryDeleteEvent(client, ev, text) {
@@ -2569,8 +3765,47 @@ function getHelpText() {
     '　「改名稱 5/20 媽媽生日 媽媽77大壽」',
     '　(或從事件卡片底部按鈕直接改／刪)',
     '',
-    '🗑️ 刪除',
+    '🗑️ 刪除 / 完成 / 取消',
     '　「刪除 5/20 媽媽生日」',
+    '　「完成 5/20 牙醫」　— 標記完成 ✅',
+    '　「取消 5/20 牙醫」　— 標為取消 ❎ (保留紀錄)',
+    '',
+    '📋 複製 / 延後 / 提前',
+    '　「複製 5/20 牙醫 到 6/20」',
+    '　「複製 5/20 牙醫 一週後」',
+    '　「延後 牙醫 1 天」「提前 會議 30 分鐘」',
+    '',
+    '🔁 批量 / 重複',
+    '　「批量 5/20, 5/22, 5/25 牙醫」',
+    '　「重複 每週一 10:00 開會 共 8 次」',
+    '　「重複 每月 15 號 房租 12 次」',
+    '　「重複 每天 22:00 吃藥 30 次」',
+    '',
+    '⏳ 倒數 / 今天剩 / 空檔',
+    '　「倒數 阿花生日」「還剩 中秋」',
+    '　「剩下」「今天剩什麼」',
+    '　「明天有空嗎」「今天空檔」「本週空檔」',
+    '',
+    '📊 統計 / 衝突 / 假日 / 節氣',
+    '　「統計」「本月統計」',
+    '　「衝突」「撞時間」',
+    '　「假日」「下個假日」',
+    '　「節氣」「下個節氣」',
+    '　「第幾週」',
+    '　「生日」「休假」',
+    '',
+    '📝 便利貼 / 打卡 / 撤回',
+    '　「便利貼 買牛奶」「便利貼」(看清單)',
+    '　「打卡 跑步」　— 立刻建一筆 30 分鐘的事',
+    '　「撤回」　— 復原上一筆 AI / 規則建的事',
+    '',
+    '⏰ 稍後提醒',
+    '　「30 分鐘後提醒 倒垃圾」',
+    '　「1 小時後 接小孩」',
+    '',
+    '📤 匯出',
+    '　「匯出」　— 給 Google / Apple Calendar 訂閱 URL',
+    '　「匯出 5月」　— 指定範圍',
     '',
     '🤖 AI 助理 — 自然語言、自動操作行事曆 + 上網',
     '　觸發：「親 …」「AI: …」「ai: …」',
@@ -2681,6 +3916,43 @@ exports.lineWebhook = onRequest(
             await replyNextEvents(client, ev, 1);
           } else if (text === '最近' || text === '即將' || text === '即將到來') {
             await replyNextEvents(client, ev, 5);
+          } else if (text === '撤回' || text === 'Undo' || text === 'undo' || text === 'UNDO') {
+            await tryUndoLastOp(client, ev);
+          } else if (text === '匯出' || text.startsWith('匯出 ') || text.startsWith('匯出　')) {
+            await tryExportICS(client, ev, text.replace(/^匯出[\s　]*/, '').trim());
+          } else if (/^\d+[\s　]*(分鐘?|小時|時|hr|min)[\s　]*後/.test(text)) {
+            await tryDelayedReminder(client, ev, text);
+          } else if (text === '剩下' || text === '今天剩' || text === '今天還剩' || text === '剩什麼') {
+            await replyRemainingToday(client, ev);
+          } else if (text === '空檔' || text === '明天空檔' || text === '明天有空嗎') {
+            await replyFreeSlots(client, ev, 'tomorrow');
+          } else if (text === '今天空檔' || text === '今天有空嗎') {
+            await replyFreeSlots(client, ev, 'today');
+          } else if (text === '本週空檔' || text === '這週空檔' || text === '本週有空嗎') {
+            await replyFreeSlots(client, ev, 'week');
+          } else if (text === '便利貼' || text === '便利貼清單' || text === '備忘') {
+            await replyStickyList(client, ev);
+          } else if (text.startsWith('便利貼 ') || text.startsWith('便利貼　') || text.startsWith('記一下 ') || text.startsWith('記一下　')) {
+            await trySticky(client, ev, text.replace(/^(便利貼|記一下)[\s　]*/, '').trim());
+          } else if (text.startsWith('打卡')) {
+            await tryCheckin(client, ev, text.replace(/^打卡[\s　]*/, '').trim());
+          } else if (text === '節氣' || text === '下個節氣') {
+            await replyNextSolarTerm(client, ev);
+          } else if (text === '統計' || text === '本月統計' || text === '月統計') {
+            await replyMonthlyStats(client, ev);
+          } else if (text === '衝突' || text === '撞時間' || text === '撞行程') {
+            await replyConflicts(client, ev);
+          } else if (text === '第幾週' || text === '週數' || text === '今天第幾週') {
+            await replyWeekNumber(client, ev);
+          } else if (text === '假日' || text === '下個假日' || text === '國定假日') {
+            await replyNextHoliday(client, ev);
+          } else if (text === '生日' || text === '生日清單' || text === '所有生日') {
+            await replyTitleFilteredList(client, ev, ['生日', '生辰', '壽', '誕辰'], '生日');
+          } else if (text === '休假' || text === '請假' || text === '請假清單') {
+            await replyTitleFilteredList(client, ev, ['休假', '請假', '年假', '特休', '病假', '事假'], '休假');
+          } else if (text.startsWith('倒數') || text.startsWith('還剩')) {
+            const q = text.replace(/^(倒數|還剩)[\s　]*/, '').trim();
+            await replyCountdown(client, ev, q);
           } else if (/^(親|AI|ai)[\s　:：]/.test(text) || text === '親' || text.toLowerCase() === 'ai') {
             // 收緊判斷，避免「親愛的」「親自」這種以親開頭的非指令被誤觸
             const q = text.replace(/^(親|AI|ai)[\s　:：]*/, '').trim();
@@ -2694,10 +3966,27 @@ exports.lineWebhook = onRequest(
             await tryEditEvent(client, ev, text);
           } else if (text.startsWith('新增')) {
             const body = text.replace(/^新增[\s　]*/, '').trim();
-            await tryCreateExplicit(client, ev, body);
+            // 偵測批量 (多個逗號分隔的日期) → tryBatchCreate
+            const hasMultiDate = /[\d]+[\/\-][\d]+[\s　]*[,，、]/.test(body);
+            if (hasMultiDate) await tryBatchCreate(client, ev, body);
+            else await tryCreateExplicit(client, ev, body);
+          } else if (text.startsWith('批量')) {
+            await tryBatchCreate(client, ev, text.replace(/^批量[\s　]*/, '').trim());
+          } else if (text.startsWith('重複')) {
+            await tryRecurringCreate(client, ev, text.replace(/^重複[\s　]*/, '').trim());
           } else if (text.startsWith('刪除') || text.startsWith('刪 ') || text === '刪') {
             const body = text.replace(/^刪除?[\s　]*/, '').trim();
             await tryDeleteEvent(client, ev, body);
+          } else if (text.startsWith('完成')) {
+            await tryCompleteEvent(client, ev, text.replace(/^完成[\s　]*/, '').trim());
+          } else if (text.startsWith('取消')) {
+            await tryCancelEvent(client, ev, text.replace(/^取消[\s　]*/, '').trim());
+          } else if (text.startsWith('複製')) {
+            await tryCopyEvent(client, ev, text.replace(/^複製[\s　]*/, '').trim());
+          } else if (text.startsWith('延後')) {
+            await tryShiftEvent(client, ev, text.replace(/^延後[\s　]*/, '').trim(), 1);
+          } else if (text.startsWith('提前')) {
+            await tryShiftEvent(client, ev, text.replace(/^提前[\s　]*/, '').trim(), -1);
           } else if (await tryRoleFilteredQuery(client, ev, text)) {
             // 已處理角色過濾 (Shane 今天 / 阿花 本週 / 只看共同 等)
           } else if (range) {
@@ -3034,5 +4323,83 @@ exports.weeklySundayPreview = onSchedule(
       }
     }
     console.log('[weeklySundayPreview] done');
+  }
+);
+
+// ============================================================
+// iCal 匯出 HTTP endpoint：用 token 驗證，回傳 text/calendar 內容
+// 給 Google / Apple Calendar 的「從 URL 訂閱」用
+// ============================================================
+exports.exportIcal = onRequest(
+  { cors: true },
+  async (req, res) => {
+    try {
+      const uid = String(req.query.uid || '');
+      const token = String(req.query.token || '');
+      const startStr = req.query.start ? String(req.query.start) : null;
+      const days = req.query.days ? parseInt(String(req.query.days), 10) : null;
+      if (!uid || !token) {
+        res.status(400).send('Missing uid or token');
+        return;
+      }
+      const settings = await db().collection('artifacts').doc(APP_ID)
+        .collection('users').doc(uid)
+        .collection('bibi_settings').doc('export').get();
+      if (!settings.exists || settings.data().icalToken !== token) {
+        res.status(403).send('Invalid token');
+        return;
+      }
+      // 抓事件 (沒指定範圍就抓未來全部)
+      const todayStr = formatDateTW(new Date());
+      const rangeStart = startStr || todayStr;
+      const rangeEnd = days ? addDaysStr(rangeStart, days) : addDaysStr(todayStr, 365 * 2);
+      const eventsSnap = await db().collection('artifacts').doc(APP_ID)
+        .collection('users').doc(uid).collection('bibi_events')
+        .where('startDate', '<=', rangeEnd).get();
+      const events = [];
+      eventsSnap.forEach((d) => {
+        const e = d.data();
+        if (!e.endDate || e.endDate < rangeStart) return;
+        events.push({ _eventId: d.id, ...e });
+      });
+      const ics = buildICS(events);
+      res.set('Content-Type', 'text/calendar; charset=utf-8');
+      res.set('Content-Disposition', 'inline; filename="bibi-schedule.ics"');
+      res.status(200).send(ics);
+    } catch (err) {
+      console.error('[exportIcal]', err);
+      res.status(500).send(String(err?.message || err));
+    }
+  }
+);
+
+// ============================================================
+// 稍後提醒 cron：每 5 分鐘掃 pending_reminders 撈已到期的，push 完刪掉
+// ============================================================
+exports.runPendingReminders = onSchedule(
+  {
+    schedule: 'every 5 minutes',
+    timeZone: 'Asia/Taipei',
+    secrets: [LINE_CHANNEL_ACCESS_TOKEN],
+  },
+  async () => {
+    const now = admin.firestore.Timestamp.now();
+    const snap = await db().collection('artifacts').doc(APP_ID)
+      .collection('pending_reminders')
+      .where('triggerAt', '<=', now)
+      .limit(50).get();
+    if (snap.empty) return;
+    const client = lineClient();
+    for (const d of snap.docs) {
+      try {
+        const r = d.data();
+        const msg = { type: 'text', text: `⏰ 提醒：${r.text}` };
+        await client.pushMessage(r.sourceId, msg);
+      } catch (e) {
+        console.warn('[reminders] push failed', d.id, e?.message);
+      } finally {
+        await d.ref.delete();
+      }
+    }
   }
 );
