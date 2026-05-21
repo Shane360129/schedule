@@ -1696,30 +1696,6 @@ async function saveAIConversation(sourceId, messages) {
   }
 }
 
-// 衝突偵測：找出在指定時間區間內已存在的「會撞時間」事件
-async function findScheduleConflicts(uid, startDate, endDate, startTime, endTime, isAllDay, excludeEventId = null) {
-  const snap = await db().collection('artifacts').doc(APP_ID)
-    .collection('users').doc(uid).collection('bibi_events')
-    .where('startDate', '<=', endDate).get();
-  const conflicts = [];
-  snap.forEach((d) => {
-    if (excludeEventId && d.id === excludeEventId) return;
-    const e = d.data();
-    if (!e.endDate || e.endDate < startDate) return;
-    // 雙方都全天 → 日期有重疊就算衝突
-    if (isAllDay || e.isAllDay) {
-      conflicts.push({ _eventId: d.id, ...e });
-      return;
-    }
-    // 雙方都有時間 → 看時間有沒有重疊
-    if (startTime && endTime && e.startTime && e.endTime) {
-      if (e.endTime <= startTime || e.startTime >= endTime) return;
-      conflicts.push({ _eventId: d.id, ...e });
-    }
-  });
-  return conflicts.slice(0, 10);
-}
-
 // -------- AI 助理：直接操作行事曆 + 即時上網 --------
 // Tool 給 GPT 呼叫。所有寫入只能寫到 ctx.primaryUid，讀取/修改/刪除限制在 ctx.uids 範圍內。
 const aiToolHandlers = {
@@ -1799,14 +1775,6 @@ const aiToolHandlers = {
     if (!data.title || !data.startDate || !data.endDate) {
       return { error: 'title / startDate / endDate 不能空' };
     }
-    // 檢查是否撞行程 (跨所有綁定 uid)
-    const allConflicts = [];
-    for (const uid of ctx.uids) {
-      const cf = await findScheduleConflicts(
-        uid, data.startDate, data.endDate, data.startTime, data.endTime, data.isAllDay
-      );
-      cf.forEach((c) => allConflicts.push({ _uid: uid, ...c }));
-    }
     const ref = await db().collection('artifacts').doc(APP_ID)
       .collection('users').doc(ctx.primaryUid).collection('bibi_events').add(data);
     const roles = ctx.uidRoles[ctx.primaryUid] || {};
@@ -1814,15 +1782,6 @@ const aiToolHandlers = {
       ok: true, _eventId: ref.id, _uid: ctx.primaryUid,
       ...data,
       ownerName: computeOwnerLabel(eventType, roles),
-      conflicts: allConflicts.length > 0 ? allConflicts.map((c) => ({
-        title: c.title,
-        startDate: c.startDate,
-        endDate: c.endDate,
-        startTime: c.startTime,
-        endTime: c.endTime,
-        isAllDay: c.isAllDay,
-        ownerName: computeOwnerLabel(c.eventType, ctx.uidRoles[c._uid] || {}),
-      })) : [],
     };
   },
 
@@ -1883,7 +1842,7 @@ function aiCalendarToolDefs() {
       type: 'function',
       name: 'create_event',
       description:
-        '新增一筆行程。回傳 conflicts 陣列顯示是否撞時間。\n' +
+        '新增一筆行程。\n' +
         'eventType: me=role1 的、partner=role2 的、common=兩人共同 (沒明說就 common)。\n' +
         '預設顏色：me→smokedPlum (莫蘭迪紅)，partner→pastelCream (莫蘭迪奶油)，common→latte。\n' +
         '可選擇傳入 color 覆寫，common 行程建議依標題語意挑選 color (見下方清單)。',
@@ -2039,10 +1998,7 @@ ${roleStrs}
 - 整個回覆 < 600 字 (LINE 訊息限制)。
 
 顏色規則 (建立 common 行程時 AI 可自選 color 欄位，me / partner 自動套用角色預設色，AI 不需要設定 color)：
-${colorList}
-
-撞時間警告：create_event 回傳含 conflicts 陣列時，**一定要在回覆中清楚提醒使用者撞到哪些行程**，
-例：「⚠️ 注意，這天 14:00-15:00 已經有「牙醫」(共同)」。事件還是會建立，但要告知。`;
+${colorList}`;
 }
 
 async function replyAskGPT(client, ev, question, options = {}) {
