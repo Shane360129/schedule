@@ -18,8 +18,7 @@ const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 
 const APP_ID = 'schdule-f5cda';
-const STORAGE_BUCKET = 'schdule-f5cda.firebasestorage.app';
-const BUILD_VERSION = '2026-05-21-v20-ai';
+const BUILD_VERSION = '2026-05-21-v21-ai-agent';
 
 // 通知開關 (true=開, false=關，省 LINE push 額度)
 const NOTIFY_ON_CREATE = true;
@@ -48,85 +47,28 @@ async function lineApiGet(path) {
   return res.json();
 }
 
-// -------- OpenAI API helpers --------
-async function openaiChat(systemPrompt, userMessage) {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+// -------- OpenAI Responses API agent (function calling + 即時上網搜尋) --------
+// Responses API 內建 web_search 工具，省下另外接搜尋 API 的麻煩。
+async function openaiResponses(input, tools, model = 'gpt-4o-mini') {
+  const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${OPENAI_API_KEY.value()}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-      max_tokens: 800,
-      temperature: 0.7,
+      model,
+      input,
+      tools,
+      tool_choice: 'auto',
+      max_output_tokens: 2000,
     }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`OpenAI chat ${res.status}: ${body.slice(0, 200)}`);
+    throw new Error(`OpenAI ${res.status}: ${body.slice(0, 300)}`);
   }
-  const data = await res.json();
-  return (data.choices?.[0]?.message?.content || '').trim();
-}
-
-async function openaiImage(prompt) {
-  const res = await fetch('https://api.openai.com/v1/images/generations', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENAI_API_KEY.value()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'dall-e-3',
-      prompt,
-      n: 1,
-      size: '1024x1024',
-      quality: 'standard',
-      response_format: 'b64_json',
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`OpenAI image ${res.status}: ${body.slice(0, 200)}`);
-  }
-  const data = await res.json();
-  return data.data?.[0]?.b64_json;
-}
-
-// 上傳到 Firebase Storage 並回傳長期可用的下載 URL (含 token，不會過期)
-async function uploadGalleryImage(uid, b64Image, prompt) {
-  const buffer = Buffer.from(b64Image, 'base64');
-  const docRef = db().collection('artifacts').doc(APP_ID)
-    .collection('users').doc(uid).collection('bibi_gallery').doc();
-  const docId = docRef.id;
-  const storagePath = `gallery/${uid}/${docId}.png`;
-  const bucket = admin.storage().bucket(STORAGE_BUCKET);
-  const file = bucket.file(storagePath);
-  // firebaseStorageDownloadTokens 是 Firebase 慣例，加了之後可以用 ?token= 公開讀取
-  const { randomUUID } = require('crypto');
-  const token = randomUUID();
-  await file.save(buffer, {
-    metadata: {
-      contentType: 'image/png',
-      metadata: { firebaseStorageDownloadTokens: token },
-    },
-    resumable: false,
-  });
-  const downloadUrl =
-    `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}` +
-    `/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
-  await docRef.set({
-    prompt,
-    storagePath,
-    downloadUrl,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  return { docId, downloadUrl };
+  return res.json();
 }
 
 // Firebase Functions runtime is UTC. 所有日期計算都要明確指定 Asia/Taipei，
@@ -641,7 +583,35 @@ function computeOwnerLabel(eventType, roles) {
   return '共同';
 }
 
-const COLOR_BY_TYPE = { me: 'tea', partner: 'sesame', common: 'latte' };
+// 角色 A (me) → 莫蘭迪紅、角色 B (partner) → 莫蘭迪奶油、共同 → 深咖啡
+// 對應 App.jsx 裡 TECHO_COLORS 的 key
+const COLOR_BY_TYPE = { me: 'smokedPlum', partner: 'pastelCream', common: 'latte' };
+
+// AI 看標題自動分類用：給 AI 看的色票清單 + 適用場景提示
+const AI_COLOR_HINTS = [
+  { key: 'smokedPlum', name: '煙燻梅 (莫蘭迪紅)', use: '醫療/健檢/重要日子' },
+  { key: 'ironBlue', name: '鐵藍灰', use: '工作/會議/正式' },
+  { key: 'mossGreen', name: '苔蘚綠', use: '戶外/運動/登山' },
+  { key: 'ocher', name: '赭石黃', use: '學習/上課/讀書' },
+  { key: 'latte', name: '深咖啡', use: '共同/一般' },
+  { key: 'tea', name: '重焙茶', use: '聚會/朋友' },
+  { key: 'mist', name: '暴風藍', use: '旅遊/出差' },
+  { key: 'sakura', name: '乾燥櫻', use: '紀念日/慶祝/生日' },
+  { key: 'mint', name: '松針綠', use: '健康/瑜珈/瘦身' },
+  { key: 'lemon', name: '蜂蜜黃', use: '休閒/娛樂' },
+  { key: 'lavender', name: '紫羅蘭', use: '美容/SPA' },
+  { key: 'slate', name: '岩石灰', use: '雜務/家事' },
+  { key: 'pastelCream', name: '雲朵棉花 (莫蘭迪奶油)', use: '夥伴專屬' },
+  { key: 'pastelSakura', name: '櫻花氣泡', use: '約會/浪漫' },
+  { key: 'pastelMatcha', name: '抹茶牛奶', use: '輕食/咖啡廳' },
+  { key: 'pastelSky', name: '冰河藍', use: '水上/游泳' },
+];
+
+// AI 使用上限（防爆預算）
+const AI_MAX_CALLS_PER_MONTH = 1000;       // 月度上限：~ NT$ 50-100 / 月
+const AI_RATE_LIMIT_PER_MIN = 5;           // 每分鐘最多 5 次 (per sourceId)
+const AI_CONVERSATION_TTL_HOURS = 24;      // 對話記憶 24 小時內有效
+const AI_CONVERSATION_KEEP_TURNS = 3;      // 保留最近 3 輪 (= 6 則訊息)
 
 function buildEventConfirmFlex(ev, ownerLabel, opts = {}) {
   const { uid, eventId } = opts;
@@ -1521,12 +1491,6 @@ async function handlePostback(client, ev) {
   const eventId = params.get('id');
   if (!act || !uid || !eventId) return;
 
-  // 圖庫刪除走另一個 collection，先攔截
-  if (act === 'del_img') {
-    await deleteGalleryImage(client, ev, uid, eventId);
-    return;
-  }
-
   const ref = db()
     .collection('artifacts').doc(APP_ID)
     .collection('users').doc(uid)
@@ -1589,161 +1553,567 @@ async function handlePostback(client, ev) {
   }
 }
 
-// -------- AI 指令：問答 / 生成圖片 / 圖庫 / 刪除圖片 --------
-async function replyAskGPT(client, ev, question) {
-  if (!question) {
+// -------- AI 助理：cost / safety guards --------
+
+// Webhook 去重複觸發：同一個 webhookEventId 只處理一次 (LINE 偶爾重送)
+async function isDuplicateWebhookEvent(webhookEventId) {
+  if (!webhookEventId) return false;
+  const ref = db().collection('artifacts').doc(APP_ID)
+    .collection('webhook_dedup').doc(webhookEventId);
+  try {
+    return await db().runTransaction(async (t) => {
+      const snap = await t.get(ref);
+      if (snap.exists) return true;
+      t.set(ref, { processedAt: admin.firestore.FieldValue.serverTimestamp() });
+      return false;
+    });
+  } catch (e) {
+    console.warn('[dedup] failed', e?.message);
+    return false; // 失敗就放行，寧可重複處理也別漏掉
+  }
+}
+
+// Rate limit：每個 sourceId 每分鐘最多 N 次 AI 呼叫
+async function checkAIRateLimit(sourceId) {
+  if (!sourceId) return { allowed: true, count: 0 };
+  const ref = db().collection('artifacts').doc(APP_ID)
+    .collection('ai_rate_limit').doc(sourceId);
+  const oneMinAgo = Date.now() - 60_000;
+  try {
+    return await db().runTransaction(async (t) => {
+      const snap = await t.get(ref);
+      const prev = snap.exists ? (snap.data().times || []) : [];
+      const recent = prev.filter((ts) => ts > oneMinAgo);
+      if (recent.length >= AI_RATE_LIMIT_PER_MIN) {
+        return { allowed: false, count: recent.length };
+      }
+      recent.push(Date.now());
+      t.set(ref, { times: recent.slice(-AI_RATE_LIMIT_PER_MIN) });
+      return { allowed: true, count: recent.length };
+    });
+  } catch (e) {
+    console.warn('[rate_limit] failed', e?.message);
+    return { allowed: true, count: 0 };
+  }
+}
+
+// 月度用量上限：以 primaryUid 為單位累計
+async function checkAndIncrementAIUsage(uid) {
+  const monthKey = formatDateTW(new Date()).slice(0, 7); // YYYY-MM
+  const ref = db().collection('artifacts').doc(APP_ID)
+    .collection('users').doc(uid)
+    .collection('ai_usage').doc(monthKey);
+  try {
+    return await db().runTransaction(async (t) => {
+      const snap = await t.get(ref);
+      const count = snap.exists ? (snap.data().count || 0) : 0;
+      if (count >= AI_MAX_CALLS_PER_MONTH) {
+        return { allowed: false, count, limit: AI_MAX_CALLS_PER_MONTH };
+      }
+      t.set(ref, {
+        count: count + 1,
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return { allowed: true, count: count + 1, limit: AI_MAX_CALLS_PER_MONTH };
+    });
+  } catch (e) {
+    console.warn('[ai_usage] failed', e?.message);
+    return { allowed: true, count: 0, limit: AI_MAX_CALLS_PER_MONTH };
+  }
+}
+
+// AI 操作 log
+async function logAIInvocation(uid, sourceId, userMsg, finalAnswer, toolCalls, error) {
+  try {
+    await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid)
+      .collection('ai_logs').add({
+        sourceId,
+        userMsg: (userMsg || '').slice(0, 500),
+        finalAnswer: (finalAnswer || '').slice(0, 1500),
+        toolCalls: (toolCalls || []).slice(0, 20).map((c) => ({
+          name: c.name,
+          args: JSON.stringify(c.args || {}).slice(0, 500),
+        })),
+        error: error ? String(error).slice(0, 300) : null,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+  } catch (e) {
+    console.warn('[ai_log] failed', e?.message);
+  }
+}
+
+// LINE 顯示「打字中…」動畫，最多 60 秒 (5 秒一級)
+async function startLineLoading(sourceId, seconds = 30) {
+  if (!sourceId) return;
+  const loadingSeconds = Math.min(60, Math.max(5, Math.ceil(seconds / 5) * 5));
+  try {
+    await fetch('https://api.line.me/v2/bot/chat/loading/start', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LINE_CHANNEL_ACCESS_TOKEN.value()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ chatId: sourceId, loadingSeconds }),
+    });
+  } catch (e) {
+    console.warn('[loading] failed', e?.message);
+  }
+}
+
+// AI 對話記憶（短期）：用 sourceId 當 key，存最近幾輪 user/assistant 對話
+async function loadAIConversation(sourceId) {
+  if (!sourceId) return [];
+  try {
+    const ref = db().collection('artifacts').doc(APP_ID)
+      .collection('ai_conversations').doc(sourceId);
+    const snap = await ref.get();
+    if (!snap.exists) return [];
+    const data = snap.data();
+    const ttlMs = AI_CONVERSATION_TTL_HOURS * 3600 * 1000;
+    const updatedAt = data.updatedAt?.toMillis?.() || 0;
+    if (Date.now() - updatedAt > ttlMs) return [];
+    return Array.isArray(data.messages) ? data.messages : [];
+  } catch (e) {
+    console.warn('[convo_load] failed', e?.message);
+    return [];
+  }
+}
+
+async function saveAIConversation(sourceId, messages) {
+  if (!sourceId) return;
+  try {
+    // 只保留最近 N 輪 user+assistant 交互
+    const kept = messages.slice(-AI_CONVERSATION_KEEP_TURNS * 2);
+    await db().collection('artifacts').doc(APP_ID)
+      .collection('ai_conversations').doc(sourceId)
+      .set({
+        messages: kept,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+  } catch (e) {
+    console.warn('[convo_save] failed', e?.message);
+  }
+}
+
+// -------- AI 助理：直接操作行事曆 + 即時上網 --------
+// Tool 給 GPT 呼叫。所有寫入只能寫到 ctx.primaryUid，讀取/修改/刪除限制在 ctx.uids 範圍內。
+const aiToolHandlers = {
+  async get_events({ startDate, endDate }, ctx) {
+    const results = [];
+    for (const uid of ctx.uids) {
+      const snap = await db().collection('artifacts').doc(APP_ID)
+        .collection('users').doc(uid).collection('bibi_events')
+        .where('startDate', '<=', endDate).get();
+      const roles = ctx.uidRoles[uid] || {};
+      snap.forEach((d) => {
+        const e = d.data();
+        if (!e.endDate || e.endDate < startDate) return;
+        results.push({
+          _uid: uid,
+          _eventId: d.id,
+          title: e.title,
+          startDate: e.startDate,
+          endDate: e.endDate,
+          isAllDay: !!e.isAllDay,
+          startTime: e.startTime || null,
+          endTime: e.endTime || null,
+          description: e.description || '',
+          eventType: e.eventType || 'common',
+          ownerName: computeOwnerLabel(e.eventType, roles),
+        });
+      });
+    }
+    return { events: results.slice(0, 80) };
+  },
+
+  async search_events({ query }, ctx) {
+    const results = [];
+    for (const uid of ctx.uids) {
+      const snap = await db().collection('artifacts').doc(APP_ID)
+        .collection('users').doc(uid).collection('bibi_events').get();
+      const roles = ctx.uidRoles[uid] || {};
+      snap.forEach((d) => {
+        const e = d.data();
+        const blob = `${e.title || ''} ${e.description || ''}`;
+        if (!blob.includes(query)) return;
+        results.push({
+          _uid: uid,
+          _eventId: d.id,
+          title: e.title,
+          startDate: e.startDate,
+          endDate: e.endDate,
+          isAllDay: !!e.isAllDay,
+          startTime: e.startTime || null,
+          endTime: e.endTime || null,
+          eventType: e.eventType || 'common',
+          ownerName: computeOwnerLabel(e.eventType, roles),
+        });
+      });
+    }
+    return { events: results.slice(0, 30) };
+  },
+
+  async create_event(args, ctx) {
+    const eventType = ['me', 'partner', 'common'].includes(args.eventType) ? args.eventType : 'common';
+    // 顏色決定優先順序：AI 指定 > 角色預設
+    // - me 預設 smokedPlum (莫蘭迪紅)、partner 預設 pastelCream (莫蘭迪奶油)
+    // - common: AI 可以依標題內容自由選色 (AI_COLOR_HINTS)
+    const aiPickedColor = args.color && AI_COLOR_HINTS.find((c) => c.key === args.color)?.key;
+    const color = aiPickedColor || COLOR_BY_TYPE[eventType] || 'latte';
+    const data = {
+      title: String(args.title || '').slice(0, 200),
+      startDate: args.startDate,
+      endDate: args.endDate || args.startDate,
+      isAllDay: !!args.isAllDay,
+      startTime: args.isAllDay ? '' : (args.startTime || '09:00'),
+      endTime: args.isAllDay ? '' : (args.endTime || '10:00'),
+      description: String(args.description || '').slice(0, 1000),
+      eventType,
+      color,
+    };
+    if (!data.title || !data.startDate || !data.endDate) {
+      return { error: 'title / startDate / endDate 不能空' };
+    }
+    const ref = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(ctx.primaryUid).collection('bibi_events').add(data);
+    const roles = ctx.uidRoles[ctx.primaryUid] || {};
+    return {
+      ok: true, _eventId: ref.id, _uid: ctx.primaryUid,
+      ...data,
+      ownerName: computeOwnerLabel(eventType, roles),
+    };
+  },
+
+  async update_event({ uid, eventId, updates }, ctx) {
+    if (!ctx.uids.includes(uid)) return { error: '無權更新此 uid 的行程' };
+    const ref = db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('bibi_events').doc(eventId);
+    const before = await ref.get();
+    if (!before.exists) return { error: '事件不存在' };
+    const allowed = ['title', 'startDate', 'endDate', 'isAllDay', 'startTime', 'endTime', 'description', 'eventType'];
+    const safe = {};
+    for (const k of allowed) if (updates && updates[k] !== undefined) safe[k] = updates[k];
+    if (safe.eventType && COLOR_BY_TYPE[safe.eventType]) safe.color = COLOR_BY_TYPE[safe.eventType];
+    await ref.update(safe);
+    return { ok: true, _eventId: eventId, _uid: uid, updates: safe };
+  },
+
+  async delete_event({ uid, eventId }, ctx) {
+    if (!ctx.uids.includes(uid)) return { error: '無權刪除此 uid 的行程' };
+    const ref = db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid).collection('bibi_events').doc(eventId);
+    const before = await ref.get();
+    if (!before.exists) return { error: '事件不存在' };
+    const title = before.data().title;
+    await ref.delete();
+    return { ok: true, deletedTitle: title };
+  },
+};
+
+function aiCalendarToolDefs() {
+  return [
+    {
+      type: 'function',
+      name: 'get_events',
+      description: '查指定日期區間內所有行程。回傳每筆帶 _uid + _eventId 供後續 update/delete 使用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          startDate: { type: 'string', description: 'YYYY-MM-DD' },
+          endDate: { type: 'string', description: 'YYYY-MM-DD' },
+        },
+        required: ['startDate', 'endDate'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'search_events',
+      description: '依關鍵字模糊搜尋行程 (含 title + description)，跨所有時間。',
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string' } },
+        required: ['query'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'create_event',
+      description:
+        '新增一筆行程。\n' +
+        'eventType: me=role1 的、partner=role2 的、common=兩人共同 (沒明說就 common)。\n' +
+        '預設顏色：me→smokedPlum (莫蘭迪紅)，partner→pastelCream (莫蘭迪奶油)，common→latte。\n' +
+        '可選擇傳入 color 覆寫，common 行程建議依標題語意挑選 color (見下方清單)。',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          startDate: { type: 'string', description: 'YYYY-MM-DD' },
+          endDate: { type: 'string', description: 'YYYY-MM-DD，單日跟 startDate 相同' },
+          isAllDay: { type: 'boolean' },
+          startTime: { type: 'string', description: 'HH:MM 24h，isAllDay=true 可省略' },
+          endTime: { type: 'string', description: 'HH:MM 24h，isAllDay=true 可省略' },
+          description: { type: 'string' },
+          eventType: { type: 'string', enum: ['me', 'partner', 'common'] },
+          color: {
+            type: 'string',
+            description:
+              '可選。常見：smokedPlum/ironBlue/mossGreen/ocher/latte/tea/mist/' +
+              'sakura/mint/lemon/lavender/slate/pastelCream/pastelSakura/' +
+              'pastelMatcha/pastelSky',
+          },
+        },
+        required: ['title', 'startDate', 'endDate', 'isAllDay'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'update_event',
+      description: '更新已存在的行程。請先用 get_events / search_events 取得 _uid 跟 _eventId。',
+      parameters: {
+        type: 'object',
+        properties: {
+          uid: { type: 'string' },
+          eventId: { type: 'string' },
+          updates: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              startDate: { type: 'string' },
+              endDate: { type: 'string' },
+              isAllDay: { type: 'boolean' },
+              startTime: { type: 'string' },
+              endTime: { type: 'string' },
+              description: { type: 'string' },
+              eventType: { type: 'string', enum: ['me', 'partner', 'common'] },
+            },
+            additionalProperties: false,
+          },
+        },
+        required: ['uid', 'eventId', 'updates'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'delete_event',
+      description: '刪除一筆行程。請先用 get_events / search_events 確認哪一筆。',
+      parameters: {
+        type: 'object',
+        properties: {
+          uid: { type: 'string' },
+          eventId: { type: 'string' },
+        },
+        required: ['uid', 'eventId'],
+        additionalProperties: false,
+      },
+    },
+  ];
+}
+
+// AI Agent：吃完整 input (含歷史)，輸出 {text, toolCalls}
+async function runAIAgent(input, ctx, maxIterations = 8) {
+  const tools = [
+    { type: 'web_search' }, // OpenAI 內建工具，可上網拿即時資訊 (天氣/新聞/查資料)
+    ...aiCalendarToolDefs(),
+  ];
+  const toolCalls = [];
+  let allInput = [...input];
+  for (let i = 0; i < maxIterations; i++) {
+    const data = await openaiResponses(allInput, tools);
+    const output = data.output || [];
+    allInput = allInput.concat(output);
+    let hadFunctionCall = false;
+    for (const item of output) {
+      if (item.type === 'function_call') {
+        hadFunctionCall = true;
+        let args = {};
+        try { args = JSON.parse(item.arguments || '{}'); } catch {}
+        toolCalls.push({ name: item.name, args });
+        let result;
+        try {
+          const fn = aiToolHandlers[item.name];
+          result = fn ? await fn(args, ctx) : { error: `unknown tool: ${item.name}` };
+        } catch (e) {
+          result = { error: String(e?.message || e).slice(0, 300) };
+        }
+        allInput.push({
+          type: 'function_call_output',
+          call_id: item.call_id,
+          output: JSON.stringify(result),
+        });
+      }
+    }
+    if (!hadFunctionCall) {
+      // 沒有再 call function = 終局答案
+      let text = '';
+      for (const item of output) {
+        if (item.type === 'message' && Array.isArray(item.content)) {
+          for (const c of item.content) {
+            if ((c.type === 'output_text' || c.type === 'text') && c.text) text += c.text;
+          }
+        }
+      }
+      return { text: text.trim() || '🤔', toolCalls };
+    }
+  }
+  return { text: '⚠️ 處理太久了，請改用更簡單的句子重試', toolCalls };
+}
+
+// Vision: 把 LINE 傳來的圖片下載成 base64
+async function downloadLineImageAsBase64(messageId) {
+  const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
+    headers: { Authorization: `Bearer ${LINE_CHANNEL_ACCESS_TOKEN.value()}` },
+  });
+  if (!res.ok) throw new Error(`LINE content ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  // LINE 圖片大多是 JPEG，但保險起見直接用 image/jpeg
+  return { b64: buf.toString('base64'), mimeType: 'image/jpeg' };
+}
+
+function buildAISystemPrompt(today, dow, uidRoles, primaryUid) {
+  const roleStrs = Object.keys(uidRoles).map((uid) => {
+    const r = uidRoles[uid];
+    return `  - uid="${uid}": me="${r.role1 || '我'}", partner="${r.role2 || '夥伴'}"`;
+  }).join('\n');
+  const colorList = AI_COLOR_HINTS.map((c) => `  - ${c.key} (${c.name}) — ${c.use}`).join('\n');
+  return `你是 BiBi 行事曆的 AI 助理。講台灣中文、口語自然、回覆簡潔。
+今天是 ${today} (星期${dow})，台北時區。
+
+綁定的行事曆 uid 與角色名稱：
+${roleStrs}
+建立新行程預設寫到 primaryUid="${primaryUid}"。
+
+行為規則：
+- 相對日期 (今天/明天/下週三/三天後) 都轉成 YYYY-MM-DD 再呼叫 tool。
+- 新行程 eventType 預設 common (兩人共同)，使用者明確提到 role 名字才設 me / partner。
+- 修改 / 刪除前，**一定**先用 get_events 或 search_events 找出對應的 _eventId 跟 _uid。
+- 若搜出多筆候選 (同一天兩個牙醫之類)，列出讓使用者選，**先不要動**。
+- 完成操作後簡潔回報，例：「✅ 已新增 5/20 牙醫 14:00」、「✏️ 已把 5/20 牙醫改到 5/22」。
+- 即時資訊 (天氣 / 新聞 / 股市 / 查餐廳 / 翻譯時事) 用 web_search 工具查。
+- 不要編造行程，找不到就老實說。
+- 整個回覆 < 600 字 (LINE 訊息限制)。
+
+顏色規則 (建立 common 行程時 AI 可自選 color 欄位，me / partner 自動套用角色預設色，AI 不需要設定 color)：
+${colorList}`;
+}
+
+async function replyAskGPT(client, ev, question, options = {}) {
+  // options: { initialUserContent }  — Vision 用，把 user 訊息換成多模態 content array
+  if (!question && !options.initialUserContent) {
     return safeReply(client, ev.replyToken, withQuickReply({
       type: 'text',
-      text: '請帶上要問的問題。\n例：「問 今天台北會下雨嗎？」\n　　「問 番茄炒蛋怎麼做」',
+      text: '請帶上要問 / 要做的事。\n例：\n　「親 我下週有幾件事」\n　「親 明天3點和小美喝咖啡幫我加進去」\n　「親 把5/20牙醫改到5/22」\n　「親 台北明天會下雨嗎」',
     }));
   }
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: '尚未綁定行事曆。先傳：綁定 <你的裝置 ID>',
+    }));
+  }
+  const primaryUid = uids[0];
+
+  // === 防爆預算三道牆 ===
+  // 1. Rate limit (每分鐘)
+  const rl = await checkAIRateLimit(sourceId);
+  if (!rl.allowed) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: `🛑 一分鐘最多用 ${AI_RATE_LIMIT_PER_MIN} 次 AI，稍等一下再試 🙏`,
+    }));
+  }
+  // 2. 月度上限
+  const monthly = await checkAndIncrementAIUsage(primaryUid);
+  if (!monthly.allowed) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: `🛑 這個月 AI 已用 ${monthly.count}/${monthly.limit} 次，下個月 1 號自動歸零。\n（防止意外爆預算的保險機制）`,
+    }));
+  }
+
+  // === 顯示「打字中…」動畫 ===
+  startLineLoading(sourceId, 30); // fire-and-forget
+
+  let finalText = '';
+  let toolCalls = [];
+  let errorForLog = null;
+
   try {
     const today = formatDateTW(new Date());
     const dow = ['一', '二', '三', '四', '五', '六', '日'][(getDayOfWeekTaipei(new Date()) - 1 + 7) % 7];
-    const answer = await openaiChat(
-      `你是 BiBi 行事曆裡的 AI 小幫手，講中文（台灣用語）。今天是 ${today} (星期${dow})。\n回答要簡潔、口語、不超過 3 段。可以適度用 emoji。\n如果是行事曆相關的事 (查詢/修改行程)，請提醒使用者使用對應指令而不是直接幫他改。`,
-      question,
-    );
-    const text = (answer || '🤔 想不到耶').slice(0, 4900);
-    return safeReply(client, ev.replyToken, withQuickReply({ type: 'text', text }));
+    const uidRoles = {};
+    for (const uid of uids) uidRoles[uid] = await getRoleSettings(uid);
+
+    const systemPrompt = buildAISystemPrompt(today, dow, uidRoles, primaryUid);
+
+    // 載入對話歷史 (短期記憶)
+    const history = await loadAIConversation(sourceId);
+
+    // 組 input：system + history + 這次 user
+    const userContent = options.initialUserContent || question;
+    const input = [
+      { role: 'system', content: systemPrompt },
+      ...history,
+      { role: 'user', content: userContent },
+    ];
+
+    const result = await runAIAgent(input, { uids, primaryUid, uidRoles });
+    finalText = result.text;
+    toolCalls = result.toolCalls;
+
+    // 存對話歷史 (只存 user / assistant 純文字，不存 tool call)
+    // user content 如果是多模態，存純文字摘要
+    const userTextForHistory = typeof userContent === 'string'
+      ? userContent
+      : `[圖片] ${question || ''}`.trim();
+    await saveAIConversation(sourceId, [
+      ...history,
+      { role: 'user', content: userTextForHistory },
+      { role: 'assistant', content: finalText },
+    ]);
+
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: finalText.slice(0, 4900),
+    }));
   } catch (err) {
     console.error('[ask] failed', err?.message || err);
-    return safeReply(client, ev.replyToken, withQuickReply({
+    errorForLog = err?.message || String(err);
+    await safeReply(client, ev.replyToken, withQuickReply({
       type: 'text',
-      text: `❌ AI 回答失敗，等等再試\n${String(err?.message || '').slice(0, 120)}`,
+      text: `❌ AI 失敗，等等再試\n${String(err?.message || '').slice(0, 200)}`,
     }));
+  } finally {
+    // log 給後台追蹤
+    await logAIInvocation(primaryUid, sourceId,
+      typeof question === 'string' ? question : '[image]',
+      finalText, toolCalls, errorForLog);
   }
 }
 
-async function replyGenerateImage(client, ev, prompt) {
-  if (!prompt) {
-    return safeReply(client, ev.replyToken, withQuickReply({
-      type: 'text',
-      text: '請補上提示詞。\n例：「生成圖片 一隻彈鋼琴的橘貓 水彩風」',
-    }));
-  }
+// 接收 LINE 圖片訊息 → 走 Vision pipeline
+async function replyAskGPTFromImage(client, ev, messageId, caption) {
   const sourceId = getSourceId(ev);
-  const uids = await getBoundUidsForSource(sourceId);
-  if (uids.length === 0) {
-    return safeReply(client, ev.replyToken, withQuickReply({
-      type: 'text',
-      text: '尚未綁定行事曆，無法存圖庫。先傳：綁定 <你的裝置 ID>',
-    }));
-  }
-  const targetUid = uids[0];
-  // 先告知正在繪製，避免使用者乾等 (DALL-E 一般 8-20 秒)
-  // 用 reply token 一次只能回一次，所以這裡直接做完一次回，不發中間狀態
+  startLineLoading(sourceId, 30);
   try {
-    const b64 = await openaiImage(prompt);
-    if (!b64) throw new Error('API 回傳空圖片');
-    const { downloadUrl } = await uploadGalleryImage(targetUid, b64, prompt);
-    return safeReply(client, ev.replyToken, withQuickReply({
-      type: 'image',
-      originalContentUrl: downloadUrl,
-      previewImageUrl: downloadUrl,
-    }));
-  } catch (err) {
-    console.error('[gen_img] failed', err?.message || err);
-    return safeReply(client, ev.replyToken, withQuickReply({
-      type: 'text',
-      text: `❌ 生圖失敗：${String(err?.message || '').slice(0, 150)}`,
-    }));
-  }
-}
-
-async function replyGallery(client, ev) {
-  const sourceId = getSourceId(ev);
-  const uids = await getBoundUidsForSource(sourceId);
-  if (uids.length === 0) {
-    return safeReply(client, ev.replyToken, withQuickReply({
-      type: 'text', text: '尚未綁定行事曆',
-    }));
-  }
-  const items = [];
-  for (const uid of uids) {
-    const snap = await db().collection('artifacts').doc(APP_ID)
-      .collection('users').doc(uid).collection('bibi_gallery')
-      .orderBy('createdAt', 'desc').limit(10).get();
-    snap.forEach((d) => items.push({ id: d.id, uid, ...d.data() }));
-  }
-  if (items.length === 0) {
-    return safeReply(client, ev.replyToken, withQuickReply({
-      type: 'text', text: '📷 圖庫是空的。用「生成圖片 <提示詞>」開始畫圖！',
-    }));
-  }
-  items.sort((a, b) =>
-    (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
-  const top = items.slice(0, 10);
-  const bubbles = top.map((item) => ({
-    type: 'bubble',
-    size: 'kilo',
-    hero: {
-      type: 'image',
-      url: item.downloadUrl,
-      size: 'full',
-      aspectRatio: '1:1',
-      aspectMode: 'cover',
-    },
-    body: {
-      type: 'box',
-      layout: 'vertical',
-      spacing: 'sm',
-      contents: [{
-        type: 'text',
-        text: (item.prompt || '').slice(0, 60) || '(無提示詞)',
-        size: 'xs',
-        wrap: true,
-        color: '#5D4037',
-      }],
-    },
-    footer: {
-      type: 'box',
-      layout: 'vertical',
-      contents: [{
-        type: 'button',
-        style: 'secondary',
-        height: 'sm',
-        action: {
-          type: 'postback',
-          label: '🗑️ 刪除',
-          data: `act=del_img&uid=${item.uid}&id=${item.id}`,
-          displayText: `刪除圖片：${(item.prompt || '').slice(0, 20)}`,
-        },
-      }],
-    },
-  }));
-  return safeReply(client, ev.replyToken, withQuickReply({
-    type: 'flex',
-    altText: `📷 圖庫（${top.length} 張）`,
-    contents: { type: 'carousel', contents: bubbles },
-  }));
-}
-
-async function deleteGalleryImage(client, ev, uid, id) {
-  try {
-    const ref = db().collection('artifacts').doc(APP_ID)
-      .collection('users').doc(uid).collection('bibi_gallery').doc(id);
-    const snap = await ref.get();
-    if (!snap.exists) {
-      return safeReply(client, ev.replyToken, withQuickReply({
-        type: 'text', text: '⚠️ 找不到圖片 (可能已刪除)',
-      }));
-    }
-    const data = snap.data();
-    try {
-      await admin.storage().bucket(STORAGE_BUCKET).file(data.storagePath).delete();
-    } catch (e) {
-      // Storage 刪不到不擋整個刪除，Firestore 記錄還是清掉
-      console.warn('[del_img] storage delete failed', e?.message || e);
-    }
-    await ref.delete();
-    return safeReply(client, ev.replyToken, withQuickReply({
-      type: 'text', text: `🗑️ 已刪除圖片：${(data.prompt || '').slice(0, 30)}`,
-    }));
-  } catch (err) {
-    console.error('[del_img] failed', err?.message || err);
-    return safeReply(client, ev.replyToken, withQuickReply({
-      type: 'text', text: '❌ 刪除失敗',
+    const { b64, mimeType } = await downloadLineImageAsBase64(messageId);
+    const userContent = [
+      {
+        type: 'input_text',
+        text: caption ||
+          '請幫我從這張圖建立行事曆事件 (婚禮邀請函/機票/活動傳單之類)。如果看到日期/時間/地點/標題就抓出來。如果無法判讀就老實說。',
+      },
+      { type: 'input_image', image_url: `data:${mimeType};base64,${b64}` },
+    ];
+    await replyAskGPT(client, ev, caption || '[image]', { initialUserContent: userContent });
+  } catch (e) {
+    console.error('[vision] failed', e?.message || e);
+    await safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text', text: `❌ 圖片讀取失敗：${String(e?.message || '').slice(0, 120)}`,
     }));
   }
 }
@@ -1961,38 +2331,64 @@ function getHelpText() {
   return [
     '🤖 我聽得懂的指令：',
     '',
-    '🔗 綁定 / 解除綁定 / 我是 <名字>',
-    '📊 狀態 / 誰是誰 / 用量',
+    '🔗 設定 / 綁定',
+    '　綁定 <裝置ID>　— 綁定行事曆',
+    '　解除綁定',
+    '　我是 <名字>　— 群組裡告訴 Bot 你是誰',
+    '　狀態 / 綁定狀態 / status',
+    '　用量 / 推播用量 / usage',
+    '　誰是誰　— 群組內誰對應哪個 role',
+    '　幫助 / 說明 / 指令 / help',
     '',
-    '📅 查詢行程：',
-    '　今日／明天／後天／大後天',
-    '　本週／下週／下下週／週末',
-    '　整月行程／本月／7月／2026/7',
-    '　下一個 / 最近（接下來 5 件）',
+    '📅 查詢行程（規則式、不花 token）',
+    '　今日／今天／今日行程',
+    '　明天／明日　|　後天／大後天',
+    '　本週／下週／下下週',
+    '　週末／這週末',
+    '　本月／這個月／整月行程',
+    '　7月／2026/7　— 指定月份',
     '　直接傳日期：「5/16」「週三」「下週一」',
-    '　依角色：「Shane 今天」「阿花 本週」「只看共同 明天」',
+    '　下一個 / 最近（接下來 5 件）',
     '',
-    '🔍 找 / 搜尋 <關鍵字>　— 搜尋事件標題',
+    '🎭 角色過濾',
+    '　「Shane 今天」「阿花 本週」　— 只看那個 role',
+    '　「只看共同 X」「共同 X」「一起 X」',
+    '　「只看我 X」「我的 X」',
     '',
-    '➕ 新增（必須以「新增」開頭）：',
+    '🔍 搜尋',
+    '　找 / 搜尋 / 查 <關鍵字>',
+    '',
+    '➕ 新增（必須以「新增」開頭）',
     '　「新增 明天10點 看牙醫」',
     '　「新增 5/20 全天 媽媽生日」',
     '　「新增 7/10-7/22 加州旅遊」',
     '',
-    '✏️ 編輯：',
+    '✏️ 編輯',
     '　「改日期 5/20 媽媽生日 5/21」',
     '　「改時間 5/20 看牙醫 14:30-16:00」',
     '　「改名稱 5/20 媽媽生日 媽媽77大壽」',
     '　(或從事件卡片底部按鈕直接改／刪)',
     '',
-    '🗑️ 「刪除 5/20 媽媽生日」',
+    '🗑️ 刪除',
+    '　「刪除 5/20 媽媽生日」',
     '',
-    '🤖 AI 助理：',
-    '　「問 番茄炒蛋怎麼做」',
-    '　「生成圖片 一隻彈鋼琴的橘貓」',
-    '　「圖庫」— 翻歷史圖、可刪除',
+    '🤖 AI 助理 — 自然語言、自動操作行事曆 + 上網',
+    '　觸發：「親 …」「AI: …」「ai: …」',
+    '　範例：',
+    '　　親 我下週有幾件事',
+    '　　親 明天3點和小美喝咖啡幫我加進去',
+    '　　親 把5/20牙醫改到5/22同時間',
+    '　　親 刪掉這週末所有共同行程',
+    '　　親 台北明天會下雨嗎',
+    '　　親 今天美股漲跌如何',
+    '　　親 我下週的行程裡哪天最忙',
+    '　　親 幫我規劃週末一日遊，找2個信義區景點',
     '',
-    '⏰ 自動通知：每日 00:00 當日行程預覽 + 新增事件 Flex 卡片',
+    '💡 省錢小撇步：',
+    '　記得格式用規則式（免費）',
+    '　懶得記就「親 …」（每次約 NT$ 0.01-1）',
+    '',
+    '⏰ 自動通知：每日 00:00 當日行程預覽',
     '',
     `（版本 ${BUILD_VERSION}）`,
   ].join('\n');
@@ -2003,7 +2399,7 @@ exports.lineWebhook = onRequest(
   {
     secrets: [LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, OPENAI_API_KEY],
     cors: false,
-    timeoutSeconds: 60, // DALL-E 生圖可能要 10-20 秒，留多點 buffer
+    timeoutSeconds: 60, // AI agent 多輪 function call + web_search 最多會跑 20-40 秒
   },
   async (req, res) => {
     const signature = req.get('x-line-signature');
@@ -2018,6 +2414,11 @@ exports.lineWebhook = onRequest(
 
     for (const ev of events) {
       try {
+        // 去重複觸發 (LINE 偶爾會重送同一個 webhookEventId)
+        if (await isDuplicateWebhookEvent(ev.webhookEventId)) {
+          console.log('[dedup] skip', ev.webhookEventId);
+          continue;
+        }
         if (ev.type === 'follow' || ev.type === 'join') {
           await safeReply(client, ev.replyToken, withQuickReply(
             buildWelcomeFlex(ev.source?.type)
@@ -2026,6 +2427,9 @@ exports.lineWebhook = onRequest(
           await removeBindingsForSource(getSourceId(ev));
         } else if (ev.type === 'postback') {
           await handlePostback(client, ev);
+        } else if (ev.type === 'message' && ev.message.type === 'image') {
+          // 圖片訊息 → 走 Vision pipeline，由 AI 看圖建行程
+          await replyAskGPTFromImage(client, ev, ev.message.id, '');
         } else if (ev.type === 'message' && ev.message.type === 'text') {
           const sourceId = getSourceId(ev);
           if (!sourceId) {
@@ -2077,14 +2481,9 @@ exports.lineWebhook = onRequest(
             await replyNextEvents(client, ev, 1);
           } else if (text === '最近' || text === '即將' || text === '即將到來') {
             await replyNextEvents(client, ev, 5);
-          } else if (text === '圖庫' || text === '相簿' || text.toLowerCase() === 'gallery') {
-            await replyGallery(client, ev);
-          } else if (text.startsWith('生成圖片') || text.startsWith('畫圖') || text.startsWith('畫一張')) {
-            const p = text.replace(/^(生成圖片|畫一張|畫圖)[\s　:：]*/, '').trim();
-            await replyGenerateImage(client, ev, p);
-          } else if (/^(問|AI|ai)[\s　:：]/.test(text) || text === '問' || text.toLowerCase() === 'ai') {
-            // 收緊判斷，避免「問題」這種以問開頭的非指令被誤觸
-            const q = text.replace(/^(問|AI|ai)[\s　:：]*/, '').trim();
+          } else if (/^(親|AI|ai)[\s　:：]/.test(text) || text === '親' || text.toLowerCase() === 'ai') {
+            // 收緊判斷，避免「親愛的」「親自」這種以親開頭的非指令被誤觸
+            const q = text.replace(/^(親|AI|ai)[\s　:：]*/, '').trim();
             await replyAskGPT(client, ev, q);
           } else if (text.startsWith('找') || text.startsWith('搜尋') || text.startsWith('查')) {
             const q = text.replace(/^(搜尋|找|查)[\s　]*/, '').trim();
@@ -2188,11 +2587,40 @@ exports.notifyOnEventDelete = onDocumentDeleted(
 );
 
 // -------- Scheduled notifications --------
+// 抓今日天氣摘要 (台北)，用 OpenAI web_search 一次拿，所有使用者共用同一份結果
+async function getTodayWeatherBlurb(today) {
+  try {
+    const data = await openaiResponses(
+      [{
+        role: 'user',
+        content:
+          `用一行 (40 字內) 簡潔告訴我「${today} 台北今天的天氣摘要 + 是否要帶傘」。` +
+          `格式：「🌤️ 26-32°C，降雨 30%，帶把折傘剛好」。直接給結論，不要前言。`,
+      }],
+      [{ type: 'web_search' }],
+    );
+    // 從 response 中抽出最終文字
+    for (const item of data.output || []) {
+      if (item.type === 'message' && Array.isArray(item.content)) {
+        for (const c of item.content) {
+          if ((c.type === 'output_text' || c.type === 'text') && c.text) {
+            return c.text.trim().slice(0, 80);
+          }
+        }
+      }
+    }
+    return '';
+  } catch (e) {
+    console.warn('[weather] failed', e?.message || e);
+    return '';
+  }
+}
+
 exports.dailyMorningSummary = onSchedule(
   {
     schedule: '0 0 * * *',
     timeZone: 'Asia/Taipei',
-    secrets: [LINE_CHANNEL_ACCESS_TOKEN],
+    secrets: [LINE_CHANNEL_ACCESS_TOKEN, OPENAI_API_KEY],
   },
   async () => {
     if (!NOTIFY_DAILY_SUMMARY) {
@@ -2202,9 +2630,11 @@ exports.dailyMorningSummary = onSchedule(
     const today = formatDateTW(new Date());
     console.log('[dailyMorningSummary] start', { today, buildVersion: BUILD_VERSION });
 
+    // 整批使用者共用同一份天氣 (省一次 web_search 費用)
+    const weatherBlurb = await getTodayWeatherBlurb(today);
+
     // 不用 where('lineUserIds', '!=', [])：collectionGroup + 陣列 != 查詢
     // 在沒手動建 index 時會丟 FAILED_PRECONDITION 讓 function 500。
-    // 直接撈全部 bibi_settings 在程式內過濾，數量小不會有效能問題。
     const snap = await db().collectionGroup('bibi_settings').get();
     console.log('[dailyMorningSummary] bibi_settings docs:', snap.size);
 
@@ -2216,8 +2646,6 @@ exports.dailyMorningSummary = onSchedule(
         const lineUserIds = doc.data()?.lineUserIds || [];
         if (lineUserIds.length === 0) continue;
 
-        // 只用 startDate 單欄位 range，endDate 在程式裡過濾，
-        // 避免 Firestore 對兩個不同欄位的 range query 要求 composite index。
         const eventsSnap = await db()
           .collection('artifacts').doc(APP_ID)
           .collection('users').doc(uid)
@@ -2234,10 +2662,15 @@ exports.dailyMorningSummary = onSchedule(
           lines.push(`• ${e.isAllDay ? '全天' : (e.startTime || '')} ${e.title}（${ownerLabel}）`);
         });
 
-        const message =
-          lines.length === 1
-            ? `🌙 今天 (${today}) 沒有排程，好好休息 💤`
-            : lines.join('\n');
+        let message;
+        if (lines.length === 1) {
+          message = `🌙 今天 (${today}) 沒有排程，好好休息 💤`;
+        } else {
+          message = lines.join('\n');
+        }
+        if (weatherBlurb) {
+          message = `${weatherBlurb}\n\n${message}`;
+        }
 
         await pushToTargets(uid, lineUserIds, message, 'morning');
       } catch (err) {
