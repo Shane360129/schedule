@@ -864,11 +864,12 @@ const App = () => {
                   return (
                     <>
                       {visibleSlots.map((ev, slotIdx) => {
+                        // 非 run 起始日：保留高度但不畫內容 (bar 由起始日 absolute 覆蓋過來)
                         if (!ev || !ev.isRunStart) {
                           return (
                             <div
                               key={ev ? `${ev.id}-cont` : `ph-${slotIdx}`}
-                              className="h-[18px] sm:h-[20px] invisible"
+                              className="h-[18px] sm:h-[20px]"
                               aria-hidden
                             />
                           );
@@ -879,26 +880,29 @@ const App = () => {
                         return (
                           <div
                             key={ev.id}
-                            onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }}
-                            className="text-[10px] font-bold font-num-naikai sm:text-xs h-[18px] sm:h-[20px] flex items-center justify-center px-1 transition-all hover:brightness-95 active:scale-95 relative z-10 overflow-hidden"
-                            style={{
-                              backgroundColor: colorObj.hex,
-                              color: colorObj.text,
-                              marginLeft: `${ml}px`,
-                              marginRight: `${mr}px`,
-                              width: `calc(${ev.runLength * 100}% - ${ml + mr}px)`,
-                              borderTopLeftRadius: '6px',
-                              borderBottomLeftRadius: '6px',
-                              borderTopRightRadius: ev.runEndsAtEventEnd ? '6px' : '0',
-                              borderBottomRightRadius: ev.runEndsAtEventEnd ? '6px' : '0',
-                            }}
+                            className="h-[18px] sm:h-[20px] relative"
                           >
-                            <span className="block w-full truncate text-center font-medium leading-none">
-                              {ev.isStart && !ev.isAllDay && ev.startTime && (
-                                <span className="hidden sm:inline text-[10px] font-bold font-num-naikai mr-1">{ev.startTime}</span>
-                              )}
-                              {ev.title}
-                            </span>
+                            <div
+                              onClick={(e) => { e.stopPropagation(); openEditModal(null, ev); }}
+                              className="absolute inset-y-0 text-[10px] font-bold font-num-naikai sm:text-xs flex items-center justify-center px-1 transition-all hover:brightness-95 active:scale-95 z-10 overflow-hidden cursor-pointer"
+                              style={{
+                                backgroundColor: colorObj.hex,
+                                color: colorObj.text,
+                                left: `${ml}px`,
+                                width: `calc(${ev.runLength * 100}% - ${ml + mr}px)`,
+                                borderTopLeftRadius: '6px',
+                                borderBottomLeftRadius: '6px',
+                                borderTopRightRadius: ev.runEndsAtEventEnd ? '6px' : '0',
+                                borderBottomRightRadius: ev.runEndsAtEventEnd ? '6px' : '0',
+                              }}
+                            >
+                              <span className="block w-full truncate text-center font-medium leading-none">
+                                {ev.isStart && !ev.isAllDay && ev.startTime && (
+                                  <span className="hidden sm:inline text-[10px] font-bold font-num-naikai mr-1">{ev.startTime}</span>
+                                )}
+                                {ev.title}
+                              </span>
+                            </div>
                           </div>
                         );
                       })}
