@@ -434,7 +434,7 @@ function getRangeFromText(text) {
   return null;
 }
 
-function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } = {}) {
+function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {}, subtitle = null } = {}) {
   const ownerOf = (ev) => computeOwnerLabel(ev.eventType, uidRoles[ev._uid]);
   const todayStr = formatDateTW(new Date());
   const showDateHeader = dateGroups.length > 1;
@@ -541,13 +541,19 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
       header: {
         type: 'box',
         layout: 'vertical',
-        contents: [{
-          type: 'text',
-          text: title,
-          weight: 'bold',
-          size: compact ? 'md' : 'lg',
-          color: '#FFFFFF',
-        }],
+        contents: [
+          {
+            type: 'text',
+            text: title,
+            weight: 'bold',
+            size: compact ? 'md' : 'lg',
+            color: '#FFFFFF',
+          },
+          ...(subtitle ? [{
+            type: 'text', text: subtitle, size: 'xs',
+            color: '#FFFFFFDD', margin: 'sm', wrap: true,
+          }] : []),
+        ],
         backgroundColor: '#BCAAA4',
         paddingAll: 'lg',
       },
@@ -5101,25 +5107,34 @@ exports.dailyMorningSummary = onSchedule(
           .get();
 
         const roles = await getRoleSettings(uid);
-        const lines = [`🌙 今日 (${today}) 行程：`];
+        const dayEvents = [];
         eventsSnap.forEach((d) => {
           const e = d.data();
           if (!e.endDate || e.endDate < today) return; // 已結束的略過
-          const ownerLabel = computeOwnerLabel(e.eventType, roles);
-          lines.push(`• ${e.isAllDay ? '全天' : (e.startTime || '')} ${e.title}（${ownerLabel}）`);
+          dayEvents.push({ ...e, _uid: uid });
+        });
+        dayEvents.sort((a, b) => {
+          if (a.isAllDay && !b.isAllDay) return -1;
+          if (!a.isAllDay && b.isAllDay) return 1;
+          return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
         });
 
-        let message;
-        if (lines.length === 1) {
-          message = `🌙 今天 (${today}) 沒有排程，好好休息 💤`;
+        if (dayEvents.length === 0) {
+          // 沒行程維持輕量純文字（一樣只算 1 則推播）
+          let message = `🌙 今天 (${today}) 沒有排程，好好休息 💤`;
+          if (weatherBlurb) message = `${weatherBlurb}\n\n${message}`;
+          await pushToTargets(uid, lineUserIds, message, 'morning');
         } else {
-          message = lines.join('\n');
+          // 有行程 → 與「今日」查詢同一張放大版 Flex 卡片，天氣放在標頭副標
+          const todayDate = new Date(`${today}T00:00:00+08:00`);
+          const flex = buildAgendaFlex(
+            `🌙 今日行程　${formatDateLabel(todayDate)}`,
+            [{ date: todayDate, dateStr: today, events: dayEvents }],
+            { uidRoles: { [uid]: roles }, subtitle: weatherBlurb || null }
+          );
+          flex.altText = `🌙 今日行程 ${dayEvents.length} 件`;
+          await pushToTargets(uid, lineUserIds, flex, 'morning');
         }
-        if (weatherBlurb) {
-          message = `${weatherBlurb}\n\n${message}`;
-        }
-
-        await pushToTargets(uid, lineUserIds, message, 'morning');
       } catch (err) {
         console.error('[dailyMorningSummary] user error', { path: doc.ref.path, err: err?.message || err });
       }
