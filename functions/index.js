@@ -5119,22 +5119,18 @@ exports.dailyMorningSummary = onSchedule(
           return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
         });
 
-        if (dayEvents.length === 0) {
-          // 沒行程維持輕量純文字（一樣只算 1 則推播）
-          let message = `🌙 今天 (${today}) 沒有排程，好好休息 💤`;
-          if (weatherBlurb) message = `${weatherBlurb}\n\n${message}`;
-          await pushToTargets(uid, lineUserIds, message, 'morning');
-        } else {
-          // 有行程 → 與「今日」查詢同一張放大版 Flex 卡片，天氣放在標頭副標
-          const todayDate = new Date(`${today}T00:00:00+08:00`);
-          const flex = buildAgendaFlex(
-            `🌙 今日行程　${formatDateLabel(todayDate)}`,
-            [{ date: todayDate, dateStr: today, events: dayEvents }],
-            { uidRoles: { [uid]: roles }, subtitle: weatherBlurb || null }
-          );
-          flex.altText = `🌙 今日行程 ${dayEvents.length} 件`;
-          await pushToTargets(uid, lineUserIds, flex, 'morning');
-        }
+        // 一律推放大版 Flex 卡片（與「今日」查詢同款），天氣放標頭副標；
+        // 空日也用卡片，body 會顯示「今天沒有行程，好好休息 ☕」
+        const todayDate = new Date(`${today}T00:00:00+08:00`);
+        const flex = buildAgendaFlex(
+          `🌙 今日行程　${formatDateLabel(todayDate)}`,
+          [{ date: todayDate, dateStr: today, events: dayEvents }],
+          { uidRoles: { [uid]: roles }, subtitle: weatherBlurb || null }
+        );
+        flex.altText = dayEvents.length > 0
+          ? `🌙 今日行程 ${dayEvents.length} 件`
+          : '🌙 今天沒有行程，好好休息 💤';
+        await pushToTargets(uid, lineUserIds, flex, 'morning');
       } catch (err) {
         console.error('[dailyMorningSummary] user error', { path: doc.ref.path, err: err?.message || err });
       }
