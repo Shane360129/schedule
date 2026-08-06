@@ -595,18 +595,36 @@ const App = () => {
   }, [financeId, view, finMonth]);
 
   // --- 帳務：logo 長按進入 ---
-  const handleLogoPressStart = () => {
+  // 不在計時器觸發當下就切頁：手指還壓著就換 DOM，iOS 放開時補發的合成 click
+  // 會打在同位置的「返回」鍵上，造成進去馬上被彈回來。改成「長按到 500ms 先震動
+  // 標記 armed，放開後由 click（或備援計時器）完成導頁」，並忽略 touch 後的合成 mousedown。
+  const logoLastTouchAt = useRef(0);
+  const logoNavigateFinance = () => {
+    logoLongPressed.current = false;
+    setView('finance');
+  };
+  const handleLogoPressStart = (e) => {
+    if (e.type === 'mousedown' && Date.now() - logoLastTouchAt.current < 800) return;
     logoLongPressed.current = false;
     clearTimeout(logoPressTimer.current);
     logoPressTimer.current = setTimeout(() => {
       logoLongPressed.current = true;
-      triggerHaptic();
-      setView('finance');
+      triggerHaptic(); // armed 提示
     }, 500);
   };
-  const handleLogoPressEnd = () => { clearTimeout(logoPressTimer.current); };
+  const handleLogoPressMove = () => { clearTimeout(logoPressTimer.current); };
+  const handleLogoPressEnd = (e) => {
+    clearTimeout(logoPressTimer.current);
+    if (e.type === 'touchend' || e.type === 'touchcancel') logoLastTouchAt.current = Date.now();
+    if (e.type === 'mouseleave') { logoLongPressed.current = false; return; }
+    if (logoLongPressed.current) {
+      // 多數瀏覽器放開後會補發 click → 走 handleLogoClick 導頁；
+      // 少數長按後不發 click 的瀏覽器由這個備援計時器導頁
+      setTimeout(() => { if (logoLongPressed.current) logoNavigateFinance(); }, 350);
+    }
+  };
   const handleLogoClick = () => {
-    if (logoLongPressed.current) { logoLongPressed.current = false; return; }
+    if (logoLongPressed.current) { logoNavigateFinance(); return; }
     openUpcomingList();
   };
 
@@ -643,10 +661,11 @@ const App = () => {
   const saveExpense = async () => {
     if (!editingExpense || !financeId) return;
     const item = (editingExpense.item || '').trim();
-    const amount = parseInt(editingExpense.amount, 10);
+    const amount = Math.round(Number(editingExpense.amount));
     if (!item) { addToast('請輸入品項', 'error'); return; }
-    if (!amount || amount < 1) { addToast('請輸入正確金額', 'error'); return; }
-    if (!editingExpense.date) { addToast('請選擇日期', 'error'); return; }
+    if (!Number.isFinite(amount) || amount < 1 || amount > 9999999) { addToast('請輸入正確金額', 'error'); return; }
+    if (!editingExpense.date || isNaN(new Date(editingExpense.date + 'T00:00:00').getTime())) { addToast('請選擇日期', 'error'); return; }
+    if (editingExpense.date > formatDate(new Date())) { addToast('記帳日期不能是未來', 'error'); return; }
     setFinSaving(true);
     const data = {
       date: editingExpense.date,
@@ -1006,6 +1025,7 @@ const App = () => {
              onMouseUp={handleLogoPressEnd}
              onMouseLeave={handleLogoPressEnd}
              onTouchStart={handleLogoPressStart}
+             onTouchMove={handleLogoPressMove}
              onTouchEnd={handleLogoPressEnd}
              onTouchCancel={handleLogoPressEnd}
              onContextMenu={(e) => e.preventDefault()}

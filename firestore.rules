@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 設計說明：
+    // - 客戶端（App）走匿名登入，路徑裡的不可猜 ID（裝置 uid / 帳務 fid）就是存取憑證，
+    //   所以規則的底線是「必須登入」＋「只開放這兩個子樹」。
+    // - LINE bot 走 Admin SDK，不受這裡限制。
+    // - finance_bindings、webhook_dedup、ai_usage 等後端內部集合，客戶端一律禁止。
+
+    match /artifacts/{appId}/users/{uid}/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /artifacts/{appId}/finance/{fid}/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
