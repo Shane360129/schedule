@@ -18,7 +18,7 @@ const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-05-21-v21-ai-agent';
+const BUILD_VERSION = '2026-08-06-v22-finance';
 
 // 通知開關 (true=開, false=關，省 LINE push 額度)
 const NOTIFY_ON_CREATE = true;
@@ -434,7 +434,7 @@ function getRangeFromText(text) {
   return null;
 }
 
-function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } = {}) {
+function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {}, subtitle = null } = {}) {
   const ownerOf = (ev) => computeOwnerLabel(ev.eventType, uidRoles[ev._uid]);
   const todayStr = formatDateTW(new Date());
   const showDateHeader = dateGroups.length > 1;
@@ -448,9 +448,9 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
         type: 'text',
         text: isToday ? `▶ ${formatDateLabel(g.date)}　今天` : formatDateLabel(g.date),
         weight: 'bold',
-        size: 'sm',
+        size: compact ? 'sm' : 'md',
         color: isToday ? '#8D6E63' : '#555555',
-        margin: idx === 0 ? 'none' : 'lg',
+        margin: idx === 0 ? 'none' : 'xl',
       });
       bodyContents.push({
         type: 'separator',
@@ -462,7 +462,7 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
       bodyContents.push({
         type: 'text',
         text: showDateHeader ? '（空檔）' : '今天沒有行程，好好休息 ☕',
-        size: 'xs',
+        size: compact ? 'xs' : 'sm',
         color: '#AAAAAA',
         margin: 'sm',
       });
@@ -479,16 +479,22 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
       const baseTitle = isMulti && compact
         ? `${ev.title || '(未命名)'} → ${ev.endDate.slice(5).replace('-', '/')}`
         : (ev.title || '(未命名)');
-      const titleText = `${baseTitle}（${ownerOf(ev)}）`;
       bodyContents.push({
         type: 'box',
         layout: 'horizontal',
         spacing: 'sm',
-        margin: 'sm',
+        margin: compact ? 'sm' : 'md',
         contents: [
-          { type: 'text', text: '📌', size: 'xs', flex: 2, gravity: 'top' },
-          { type: 'text', text: titleText, size: 'sm', wrap: true, flex: 5,
-            weight: 'bold', color: '#6D4C41' },
+          { type: 'text', text: '📌 全天', size: compact ? 'xs' : 'sm',
+            color: '#8D6E63', weight: 'bold', flex: 2, gravity: 'top', margin: 'xs' },
+          {
+            type: 'box', layout: 'vertical', flex: 5,
+            contents: [
+              { type: 'text', text: baseTitle, size: compact ? 'md' : 'lg',
+                wrap: true, weight: 'bold', color: '#6D4C41' },
+              { type: 'text', text: ownerOf(ev), size: 'xs', color: '#999999' },
+            ],
+          },
         ],
       });
     });
@@ -497,16 +503,22 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
       const baseTitle = isMulti && compact
         ? `${ev.title || '(未命名)'} → ${ev.endDate.slice(5).replace('-', '/')}`
         : (ev.title || '(未命名)');
-      const titleText = `${baseTitle}（${ownerOf(ev)}）`;
       bodyContents.push({
         type: 'box',
         layout: 'horizontal',
         spacing: 'sm',
-        margin: 'sm',
+        margin: compact ? 'sm' : 'md',
         contents: [
-          { type: 'text', text: ev.startTime || '', size: 'xs',
-            color: '#999999', flex: 2, gravity: 'top' },
-          { type: 'text', text: titleText, size: 'sm', wrap: true, flex: 5 },
+          { type: 'text', text: ev.startTime || '', size: compact ? 'sm' : 'md',
+            weight: 'bold', color: '#8D6E63', flex: 2, gravity: 'top', margin: 'xs' },
+          {
+            type: 'box', layout: 'vertical', flex: 5,
+            contents: [
+              { type: 'text', text: baseTitle, size: compact ? 'md' : 'lg',
+                wrap: true, weight: 'bold', color: '#333333' },
+              { type: 'text', text: ownerOf(ev), size: 'xs', color: '#999999' },
+            ],
+          },
         ],
       });
     });
@@ -525,19 +537,25 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
     altText: title,
     contents: {
       type: 'bubble',
-      size: 'mega',
+      size: 'giga',
       header: {
         type: 'box',
         layout: 'vertical',
-        contents: [{
-          type: 'text',
-          text: title,
-          weight: 'bold',
-          size: 'md',
-          color: '#FFFFFF',
-        }],
+        contents: [
+          {
+            type: 'text',
+            text: title,
+            weight: 'bold',
+            size: compact ? 'md' : 'lg',
+            color: '#FFFFFF',
+          },
+          ...(subtitle ? [{
+            type: 'text', text: subtitle, size: 'xs',
+            color: '#FFFFFFDD', margin: 'sm', wrap: true,
+          }] : []),
+        ],
         backgroundColor: '#BCAAA4',
-        paddingAll: 'md',
+        paddingAll: 'lg',
       },
       body: {
         type: 'box',
@@ -1729,6 +1747,7 @@ async function tryCheckin(client, ev, text) {
       color: COLOR_BY_TYPE[eventType] || 'latte',
       eventType,
       done: true, // 打卡本身就是完成
+      createdVia: getSourceId(ev), // 回音抑制
     });
   await recordLastOp(targetUid, { type: 'create', eventId: ref.id });
   return safeReply(client, ev.replyToken, withQuickReply({
@@ -1831,7 +1850,7 @@ async function tryUndoLastOp(client, ev) {
       }));
     }
     if (op.type === 'delete' && op.before) {
-      await eventsCol.add(op.before);
+      await eventsCol.add({ ...op.before, createdVia: getSourceId(ev) });
       await ref.delete();
       return safeReply(client, ev.replyToken, withQuickReply({
         type: 'text', text: `↩️ 已撤回刪除：${op.before.title || ''}`,
@@ -2016,6 +2035,7 @@ async function tryBatchCreate(client, ev, text) {
       parsed.color = COLOR_BY_TYPE[senderRole] || COLOR_BY_TYPE.common;
     }
     delete parsed._explicitCommon;
+    parsed.createdVia = sourceId; // 回音抑制：新增通知跳過來源聊天室
     const ref = await db().collection('artifacts').doc(APP_ID)
       .collection('users').doc(targetUid).collection('bibi_events').add(parsed);
     created.push({ date: parsed.startDate, id: ref.id });
@@ -2138,6 +2158,8 @@ async function tryRecurringCreate(client, ev, text) {
       color: sample.color,
       eventType: sample.eventType,
       recurringGroup: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      createdVia: sourceId, // 回音抑制
+
     });
   }
   await batch.commit();
@@ -2195,6 +2217,7 @@ async function tryCreateExplicit(client, ev, text) {
   }
   // 清掉 internal flag，不要存進 Firestore
   delete parsed._explicitCommon;
+  parsed.createdVia = sourceId; // 回音抑制：新增通知跳過來源聊天室
 
   const added = await db()
     .collection('artifacts').doc(APP_ID)
@@ -2398,6 +2421,34 @@ async function handlePostback(client, ev) {
   const dataStr = ev.postback?.data || '';
   const params = new URLSearchParams(dataStr);
   const act = params.get('act');
+
+  // 記帳刪除按鈕（僅私聊；驗證發送者確實綁定該帳務空間）
+  if (act === 'fexp_del') {
+    const fid = params.get('fid');
+    const expenseId = params.get('id');
+    const senderId = ev.source?.type === 'user' ? ev.source.userId : null;
+    const bound = senderId ? await getFinanceIdForLineUser(senderId) : null;
+    if (!fid || !expenseId || bound !== fid) {
+      await safeReply(client, ev.replyToken, { type: 'text', text: '⚠️ 無法執行此刪除。' });
+      return;
+    }
+    const ref = finSpaceRef(fid).collection('expenses').doc(expenseId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      await safeReply(client, ev.replyToken, financeQuickReply({
+        type: 'text', text: '⚠️ 這筆記帳已經刪過了。',
+      }));
+      return;
+    }
+    const e = { id: snap.id, ...snap.data() };
+    await ref.set({ deletedVia: 'line' }, { merge: true });
+    await ref.delete();
+    await safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text', text: `🗑️ 已刪除：${expenseLineLabel(e)}`,
+    }));
+    return;
+  }
+
   const uid = params.get('uid');
   const eventId = params.get('id');
   if (!act || !uid || !eventId) return;
@@ -2697,6 +2748,7 @@ const aiToolHandlers = {
       description: String(args.description || '').slice(0, 1000),
       eventType,
       color,
+      createdVia: ctx.sourceId || null, // 回音抑制：新增通知跳過來源聊天室
     };
     if (!data.title || !data.startDate || !data.endDate) {
       return { error: 'title / startDate / endDate 不能空' };
@@ -2875,6 +2927,8 @@ async function runAIAgent(input, ctx, maxIterations = 8) {
   const tools = [
     { type: 'web_search' }, // OpenAI 內建工具，可上網拿即時資訊 (天氣/新聞/查資料)
     ...aiCalendarToolDefs(),
+    // 帳務唯讀查詢：只在「私聊 + 已帳務綁定」時注入，群組物理上拿不到這些工具
+    ...(ctx.financeId ? aiFinanceToolDefs() : []),
   ];
   const toolCalls = [];
   let allInput = [...input];
@@ -2894,7 +2948,8 @@ async function runAIAgent(input, ctx, maxIterations = 8) {
         toolCalls.push({ name: item.name, args });
         let result;
         try {
-          const fn = aiToolHandlers[item.name];
+          const fn = aiToolHandlers[item.name] ||
+            (ctx.financeId ? aiFinanceToolHandlers[item.name] : undefined);
           result = fn ? await fn(args, ctx) : { error: `unknown tool: ${item.name}` };
         } catch (e) {
           result = { error: String(e?.message || e).slice(0, 300) };
@@ -3147,7 +3202,22 @@ async function replyAskGPT(client, ev, question, options = {}) {
       : senderRole === 'partner' ? (primaryRoles.role2 || '夥伴')
       : '訪客';
 
-    const systemPrompt = buildAISystemPrompt(today, dow, uidRoles, primaryUid, senderRole, senderName);
+    let systemPrompt = buildAISystemPrompt(today, dow, uidRoles, primaryUid, senderRole, senderName);
+
+    // 帳務查詢：只在「一對一私聊 + 已帳務綁定」注入工具與說明；
+    // 群組/未綁定 → 不給工具也不揭露資料，僅引導到私聊
+    const financeId = await getFinanceIdForEvent(ev);
+    if (financeId) {
+      systemPrompt += '\n\n【帳務查詢】此私聊的使用者已綁定個人帳務空間。' +
+        '你可以用 query_expenses / query_finance_bills 查詢他的私人記帳、信用卡帳期與貸款（唯讀，金額為新台幣）。' +
+        '這是使用者本人的私密資料，只在這個私聊回答。' +
+        '你沒有任何寫入記帳的工具——不可宣稱已幫使用者記帳/刪帳，請引導他直接輸入「品項 金額」。';
+    } else {
+      systemPrompt += '\n\n【帳務】你在此對話沒有任何記帳/帳務工具，也拿不到任何消費資料。' +
+        '若被問到記帳、花費金額、信用卡帳單等問題，一律回覆：帳務功能僅在個人私聊中提供' +
+        (ev.source?.type === 'user' ? '，請先傳「帳務綁定」啟用。' : '。') +
+        '不可編造任何金額。';
+    }
 
     // 載入對話歷史 (短期記憶)
     const history = await loadAIConversation(sourceId);
@@ -3163,7 +3233,7 @@ async function replyAskGPT(client, ev, question, options = {}) {
     // 若使用者輸入像 CRUD 意圖 (含時間/動詞)，強制 model 第一輪必須呼叫 tool
     // 避免 hallucination：用文字假裝完成新增/修改/刪除
     const forceTool = typeof question === 'string' && detectActionIntent(question);
-    const result = await runAIAgent(input, { uids, primaryUid, uidRoles, forceTool });
+    const result = await runAIAgent(input, { uids, primaryUid, uidRoles, forceTool, financeId, sourceId });
     finalText = result.text;
     toolCalls = result.toolCalls;
 
@@ -3425,6 +3495,7 @@ async function doCopy(client, ev, srcPart, dstDateStr, shiftDays, uids, todayStr
     endTime: orig.endTime || '',
     color: orig.color,
     eventType: orig.eventType,
+    createdVia: getSourceId(ev), // 回音抑制
   };
   await db().collection('artifacts').doc(APP_ID)
     .collection('users').doc(result.match.uid).collection('bibi_events').add(newData);
@@ -3713,13 +3784,15 @@ async function pushToTargets(uid, lineUserIds, message, category = 'other') {
   if (successCount > 0) await incrementPushCount(uid, successCount, category);
 }
 
-async function pushToBoundUsers(uid, message, category = 'other') {
+async function pushToBoundUsers(uid, message, category = 'other', excludeSourceId = null) {
   const doc = await db()
     .collection('artifacts').doc(APP_ID)
     .collection('users').doc(uid)
     .collection('bibi_settings').doc('line')
     .get();
-  const lineUserIds = (doc.exists ? doc.data().lineUserIds : []) || [];
+  let lineUserIds = (doc.exists ? doc.data().lineUserIds : []) || [];
+  // 回音抑制：跳過發起操作的那個聊天室 (它已經收到確認回覆了)
+  if (excludeSourceId) lineUserIds = lineUserIds.filter((id) => id !== excludeSourceId);
   await pushToTargets(uid, lineUserIds, message, category);
 }
 
@@ -3829,6 +3902,885 @@ function getHelpText() {
   ].join('\n');
 }
 
+// ============================================================
+// 帳務子系統 (Finance)：綁定 / 帳單 / 記帳
+// 與行事曆完全隔離的私人空間：
+//   artifacts/{APP_ID}/finance_bindings/{lineUserId} → { financeId }
+//   artifacts/{APP_ID}/finance/{financeId}            → space doc (ownerLineUserId, lastOp)
+//   artifacts/{APP_ID}/finance/{financeId}/bills      → 信用卡(結帳日/額度) + 貸款(繳款日)
+//   artifacts/{APP_ID}/finance/{financeId}/expenses   → 記帳明細
+// 所有指令僅在 1-on-1 私聊生效；群組一律無視。推播只到綁定者本人。
+// ============================================================
+
+const EXPENSE_CATEGORIES = {
+  food: { name: '餐飲', emoji: '🍜' },
+  transport: { name: '交通', emoji: '🚗' },
+  shopping: { name: '購物', emoji: '🛒' },
+  entertainment: { name: '娛樂', emoji: '🎮' },
+  home: { name: '居住', emoji: '🏠' },
+  medical: { name: '醫療', emoji: '💊' },
+  other: { name: '其他', emoji: '📦' },
+};
+
+const EXPENSE_KEYWORD_RULES = [
+  ['food', ['早餐', '午餐', '晚餐', '宵夜', '早午餐', '下午茶', '咖啡', '飲料', '手搖', '便當', '聚餐', '吃', '餐', '麵', '飯', '火鍋', '燒烤', '壽司', '甜點', '蛋糕', '麥當勞', '肯德基', '星巴克', '飲品', '酒']],
+  ['transport', ['加油', '油錢', '停車', '捷運', '公車', '高鐵', '台鐵', '火車', '計程車', 'Uber', 'uber', '機票', '車票', '過路費', '洗車', '修車', '保養', '悠遊卡', '加值']],
+  ['shopping', ['全聯', '家樂福', '好市多', 'Costco', 'costco', '超市', '菜', '網購', '蝦皮', 'momo', 'MOMO', '淘寶', '衣服', '鞋', '包包', '日用品', '衛生紙', '洗衣精', '買']],
+  ['entertainment', ['電影', '遊戲', '課金', 'KTV', 'ktv', '唱歌', '展覽', '門票', '演唱會', '訂閱', 'Netflix', 'netflix', 'Spotify', 'spotify', '桌遊', '旅遊', '住宿', '飯店']],
+  ['home', ['房租', '房貸', '水費', '電費', '瓦斯', '網路費', '電話費', '管理費', '家具', '家電', '修繕']],
+  ['medical', ['掛號', '看病', '看醫生', '牙醫', '藥', '診所', '醫院', '保健', '維他命', '眼鏡', '保險']],
+];
+
+function guessExpenseCategory(item) {
+  for (const [cat, keys] of EXPENSE_KEYWORD_RULES) {
+    if (keys.some((k) => item.includes(k))) return cat;
+  }
+  return 'other';
+}
+
+function fmtMoney(n) {
+  return Number(n || 0).toLocaleString('en-US');
+}
+
+const finBindingRef = (lineUserId) => db()
+  .collection('artifacts').doc(APP_ID)
+  .collection('finance_bindings').doc(lineUserId);
+
+const finSpaceRef = (fid) => db()
+  .collection('artifacts').doc(APP_ID)
+  .collection('finance').doc(fid);
+
+function genFinanceId() {
+  let s = '';
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return `fin-${s}`;
+}
+
+// 只有一對一私聊才會回傳 financeId，群組/聊天室永遠 null
+async function getFinanceIdForLineUser(lineUserId) {
+  if (!lineUserId) return null;
+  try {
+    const snap = await finBindingRef(lineUserId).get();
+    return snap.exists ? (snap.data().financeId || null) : null;
+  } catch (e) {
+    console.warn('[finance] binding read failed', e?.message);
+    return null;
+  }
+}
+
+async function getFinanceIdForEvent(ev) {
+  if (ev.source?.type !== 'user') return null;
+  return getFinanceIdForLineUser(ev.source.userId);
+}
+
+function financeQuickReply(message) {
+  return Object.assign({}, message, {
+    quickReply: {
+      items: [
+        { type: 'action', action: { type: 'message', label: '今天花多少', text: '今天花多少' } },
+        { type: 'action', action: { type: 'message', label: '本月花費', text: '本月花費' } },
+        { type: 'action', action: { type: 'message', label: '帳單', text: '帳單' } },
+        { type: 'action', action: { type: 'message', label: '記帳明細', text: '記帳' } },
+        { type: 'action', action: { type: 'message', label: '撤回', text: '撤回' } },
+      ],
+    },
+  });
+}
+
+// --- 日期工具：月底 clamp ---
+function daysInMonthKey(mk) {
+  const [y, m] = mk.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+function clampedDateForMonth(mk, day) {
+  const last = daysInMonthKey(mk);
+  return `${mk}-${String(Math.min(day, last)).padStart(2, '0')}`;
+}
+
+// 下一個「每月 day 號」（含今天）
+function nextMonthlyOccurrence(day, todayStr) {
+  const mk = todayStr.slice(0, 7);
+  let cand = clampedDateForMonth(mk, day);
+  if (cand < todayStr) cand = clampedDateForMonth(addMonthKey(mk, 1), day);
+  return cand;
+}
+
+// 信用卡本期帳期：上個結帳日隔天 ~ 下個結帳日（含今天）
+function cardCycleForToday(day, todayStr) {
+  const endStr = nextMonthlyOccurrence(day, todayStr);
+  const prevStmt = clampedDateForMonth(addMonthKey(endStr.slice(0, 7), -1), day);
+  return { startStr: addDaysStr(prevStmt, 1), endStr };
+}
+
+async function getFinanceBills(fid) {
+  const snap = await finSpaceRef(fid).collection('bills').get();
+  const bills = [];
+  snap.forEach((d) => bills.push({ id: d.id, ...d.data() }));
+  bills.sort((a, b) => (a.day || 0) - (b.day || 0));
+  return bills;
+}
+
+async function getExpensesInRange(fid, startStr, endStr) {
+  // 單欄位 range query（免 composite index），卡別/分類過濾在記憶體做
+  const snap = await finSpaceRef(fid).collection('expenses')
+    .where('date', '>=', startStr)
+    .where('date', '<=', endStr)
+    .get();
+  const items = [];
+  snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
+  items.sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? -1 : 1));
+  return items;
+}
+
+function sumExpenses(items) {
+  return items.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+}
+
+// 卡名比對：「國泰」可對到「國泰卡」，去掉尾字「卡」後做前綴比對
+function matchCardBill(bills, token) {
+  if (!token) return null;
+  const norm = (s) => String(s || '').replace(/卡$/, '');
+  const t = norm(token);
+  if (!t) return null;
+  return bills.find((b) => b.type === 'card' &&
+    (norm(b.name) === t || norm(b.name).startsWith(t) || t.startsWith(norm(b.name)))) || null;
+}
+
+async function recordFinanceLastOp(fid, op) {
+  try {
+    await finSpaceRef(fid).set({
+      lastOp: { ...op, at: admin.firestore.Timestamp.now() },
+    }, { merge: true });
+  } catch (e) {
+    console.warn('[finance] lastOp failed', e?.message);
+  }
+}
+
+// --- 記帳文字解析：[昨天/前天/M/D] 品項 金額 [卡名|現金] ---
+function parseExpenseText(text, todayStr) {
+  let working = text.trim();
+  let dateStr = todayStr;
+  let m;
+  if ((m = working.match(/^(?:昨天|昨日)[\s　]+/))) {
+    dateStr = addDaysStr(todayStr, -1);
+    working = working.slice(m[0].length);
+  } else if ((m = working.match(/^前天[\s　]+/))) {
+    dateStr = addDaysStr(todayStr, -2);
+    working = working.slice(m[0].length);
+  } else if ((m = working.match(/^(\d{1,2})[\/月](\d{1,2})[日號]?[\s　]+/))) {
+    const y = parseInt(todayStr.slice(0, 4), 10);
+    const mm = String(parseInt(m[1], 10)).padStart(2, '0');
+    const dd = String(parseInt(m[2], 10)).padStart(2, '0');
+    if (parseInt(mm, 10) < 1 || parseInt(mm, 10) > 12 || parseInt(dd, 10) < 1 || parseInt(dd, 10) > 31) return null;
+    let cand = `${y}-${mm}-${dd}`;
+    if (cand > todayStr) cand = `${y - 1}-${mm}-${dd}`; // 補記只能記過去
+    dateStr = cand;
+    working = working.slice(m[0].length);
+  }
+  m = working.match(/^(.+?)[\s　]+(\d{1,7})(?:元|塊)?(?:[\s　]+(\S{1,12}))?$/);
+  if (!m) return null;
+  const item = m[1].trim();
+  const amount = parseInt(m[2], 10);
+  const payToken = m[3] || null;
+  if (!item || item.length > 24) return null;
+  if (/^[\d\s\/\-:：.,]+$/.test(item)) return null; // 純數字/日期樣式不當品項
+  if (!amount || amount < 1 || amount > 9999999) return null;
+  return { dateStr, item, amount, payToken };
+}
+
+// --- 記帳 catch-all：私聊 + 已綁定才會嘗試。回傳 true = 已處理 ---
+async function tryFinanceExpenseCatchAll(client, ev, text) {
+  if (ev.source?.type !== 'user') return false;
+  const fid = await getFinanceIdForLineUser(ev.source.userId);
+  if (!fid) return false;
+
+  const todayStr = formatDateTW(new Date());
+  const bills = await getFinanceBills(fid);
+
+  // 1) 單獨輸入卡名 → 本期帳期明細
+  if (text.length <= 12 && !/\d/.test(text)) {
+    const card = matchCardBill(bills, text);
+    if (card && card.name.replace(/卡$/, '').length >= text.replace(/卡$/, '').length - 1) {
+      await replyCardCycleDetail(client, ev, fid, card, todayStr);
+      return true;
+    }
+  }
+
+  // 2) 品項 金額 [卡名]
+  const parsed = parseExpenseText(text, todayStr);
+  if (!parsed) return false;
+
+  let card = null;
+  let item = parsed.item;
+  if (parsed.payToken) {
+    if (/^(現金|cash)$/i.test(parsed.payToken)) {
+      card = null;
+    } else {
+      card = matchCardBill(bills, parsed.payToken);
+      if (!card) item = `${item} ${parsed.payToken}`.trim(); // 對不到卡就當品項的一部分
+    }
+  }
+  if (item.length > 24) return false;
+
+  const category = guessExpenseCategory(item);
+  const data = {
+    date: parsed.dateStr,
+    item,
+    amount: parsed.amount,
+    category,
+    card: card ? card.name : null,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  const ref = await finSpaceRef(fid).collection('expenses').add(data);
+  await recordFinanceLastOp(fid, { type: 'expense_create', expenseId: ref.id, item, amount: parsed.amount, date: parsed.dateStr });
+
+  const cat = EXPENSE_CATEGORIES[category] || EXPENSE_CATEGORIES.other;
+  const dayItems = await getExpensesInRange(fid, parsed.dateStr, parsed.dateStr);
+  const dayLabel = parsed.dateStr === todayStr ? '今日' : parsed.dateStr.slice(5).replace('-', '/');
+  const lines = [
+    `✅ 已記：${cat.emoji} ${cat.name}・${item} $${fmtMoney(parsed.amount)}`,
+    `${dayLabel}累計 $${fmtMoney(sumExpenses(dayItems))}`,
+  ];
+  if (parsed.amount >= 10000) lines.push('⚠️ 金額較大，記錯請按「撤回」');
+  if (card) {
+    const cycle = cardCycleForToday(card.day, todayStr);
+    const cycleItems = (await getExpensesInRange(fid, cycle.startStr, cycle.endStr))
+      .filter((e) => e.card === card.name);
+    const cycleSum = sumExpenses(cycleItems);
+    lines.push(`💳 ${card.name}本期已刷 $${fmtMoney(cycleSum)}（${cycle.endStr.slice(5).replace('-', '/')} 結帳）`);
+    if (card.limit) lines.push(`　剩餘額度約 $${fmtMoney(Math.max(0, card.limit - cycleSum))}`);
+  }
+  await safeReply(client, ev.replyToken, financeQuickReply({ type: 'text', text: lines.join('\n') }));
+  return true;
+}
+
+async function replyCardCycleDetail(client, ev, fid, card, todayStr) {
+  const cycle = cardCycleForToday(card.day, todayStr);
+  const items = (await getExpensesInRange(fid, cycle.startStr, cycle.endStr))
+    .filter((e) => e.card === card.name);
+  const total = sumExpenses(items);
+  const lines = [
+    `💳 ${card.name}（每月 ${card.day} 號結帳）`,
+    `本期帳期 ${cycle.startStr.slice(5).replace('-', '/')} ~ ${cycle.endStr.slice(5).replace('-', '/')}`,
+    `本期已刷 $${fmtMoney(total)}（＝本次應繳）`,
+  ];
+  if (card.limit) {
+    const pct = Math.round((total / card.limit) * 1000) / 10;
+    lines.push(`剩餘額度約 $${fmtMoney(Math.max(0, card.limit - total))} / $${fmtMoney(card.limit)}（已用 ${pct}%）`);
+  }
+  if (items.length > 0) {
+    lines.push('');
+    items.slice(-10).forEach((e) => {
+      lines.push(`• ${e.date.slice(5).replace('-', '/')} ${e.item} $${fmtMoney(e.amount)}`);
+    });
+    if (items.length > 10) lines.push(`…（僅列最近 10 筆，共 ${items.length} 筆）`);
+  }
+  return safeReply(client, ev.replyToken, financeQuickReply({ type: 'text', text: lines.join('\n') }));
+}
+
+// --- 帳務指令 gateway：明確關鍵字才進來，回傳 true = 已處理 ---
+const FINANCE_CMD_RE = /^(帳務|信用卡[\s　]|貸款[\s　]|帳單$|刪除帳單|刪帳|記帳$|今天花|今日花|本月花|這個月花|確認刪除$)/;
+
+async function tryFinanceCommand(client, ev, text) {
+  if (ev.source?.type !== 'user') return false;
+  if (!FINANCE_CMD_RE.test(text)) return false;
+  const lineUserId = ev.source.userId;
+
+  // -- 綁定系列（不需要已綁定） --
+  let m;
+  if ((m = text.match(/^帳務綁定(?:[\s　]+(\S+))?$/))) {
+    await handleFinanceBind(client, ev, lineUserId, m[1] || null);
+    return true;
+  }
+  if (text === '帳務狀態' || text === '帳務') {
+    await replyFinanceStatus(client, ev, lineUserId);
+    return true;
+  }
+  if (text === '帳務解綁') {
+    const fid = await getFinanceIdForLineUser(lineUserId);
+    if (!fid) {
+      await safeReply(client, ev.replyToken, { type: 'text', text: '目前沒有帳務綁定。' });
+      return true;
+    }
+    await finBindingRef(lineUserId).delete();
+    await safeReply(client, ev.replyToken, {
+      type: 'text',
+      text: `已解除帳務綁定，資料原封保留。\n想接回來請傳：\n帳務綁定 ${fid}`,
+    });
+    return true;
+  }
+
+  const fid = await getFinanceIdForLineUser(lineUserId);
+  if (!fid) {
+    await safeReply(client, ev.replyToken, {
+      type: 'text',
+      text: '還沒建立帳務空間。先傳「帳務綁定」即可開始（獨立於行事曆、只有你看得到）。',
+    });
+    return true;
+  }
+
+  // -- 刪除整個空間（二次確認） --
+  if (text === '刪除帳務空間') {
+    await finBindingRef(lineUserId).set({
+      pendingDeleteAt: admin.firestore.Timestamp.now(),
+    }, { merge: true });
+    await safeReply(client, ev.replyToken, {
+      type: 'text',
+      text: '⚠️ 這會永久刪除你的所有卡片、貸款設定與全部記帳紀錄，無法復原。\n確定要刪，請在 1 分鐘內回覆：確認刪除',
+    });
+    return true;
+  }
+  if (text === '確認刪除') {
+    const bindSnap = await finBindingRef(lineUserId).get();
+    const pendingAt = bindSnap.exists ? bindSnap.data().pendingDeleteAt : null;
+    if (!pendingAt || (Date.now() - pendingAt.toMillis()) > 60 * 1000) {
+      await safeReply(client, ev.replyToken, { type: 'text', text: '沒有待確認的刪除操作（或已逾時）。' });
+      return true;
+    }
+    await wipeFinanceSpace(fid, lineUserId);
+    await safeReply(client, ev.replyToken, { type: 'text', text: '🗑️ 已清空帳務空間並解除綁定。' });
+    return true;
+  }
+
+  // -- 帳單設定 --
+  if ((m = text.match(/^信用卡[\s　]+(\S+)[\s　]+(?:結帳[\s　]*)?(\d{1,2})[\s　]*號?(?:[\s　]+額度[\s　]*([\d,]+))?$/))) {
+    await handleFinanceCardCreate(client, ev, fid, m[1], parseInt(m[2], 10), m[3]);
+    return true;
+  }
+  if (text.startsWith('信用卡')) {
+    await safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text', text: '格式：「信用卡 國泰卡 15號」\n或含額度：「信用卡 國泰卡 15號 額度100000」',
+    }));
+    return true;
+  }
+  if ((m = text.match(/^貸款[\s　]+(\S+)[\s　]+(?:每月[\s　]*)?(\d{1,2})[\s　]*號?(?:[\s　]+([\d,]+))?$/))) {
+    await handleFinanceLoanCreate(client, ev, fid, m[1], parseInt(m[2], 10), m[3]);
+    return true;
+  }
+  if (text.startsWith('貸款')) {
+    await safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text', text: '格式：「貸款 房貸 10號」\n或含金額：「貸款 房貸 10號 25000」',
+    }));
+    return true;
+  }
+  if (text === '帳單') {
+    await replyFinanceBillList(client, ev, fid);
+    return true;
+  }
+  if ((m = text.match(/^刪除帳單[\s　]*(\S+)?$/))) {
+    await handleFinanceBillDelete(client, ev, fid, m[1] || null);
+    return true;
+  }
+
+  // -- 記帳查詢 / 刪除 --
+  if (/^(今天花|今日花)/.test(text)) {
+    await replyExpenseDaySummary(client, ev, fid, formatDateTW(new Date()));
+    return true;
+  }
+  if (/^(本月花|這個月花)/.test(text)) {
+    await replyExpenseMonthSummary(client, ev, fid, formatDateTW(new Date()).slice(0, 7));
+    return true;
+  }
+  if (text === '記帳') {
+    await replyExpenseRecent(client, ev, fid);
+    return true;
+  }
+  if ((m = text.match(/^刪帳單[\s　]*(\S+)?$/))) {
+    // 「刪帳單」視為「刪除帳單」的簡寫，避免被當成「刪帳 單」
+    await handleFinanceBillDelete(client, ev, fid, m[1] || null);
+    return true;
+  }
+  if ((m = text.match(/^刪帳(?:[\s　]+(.+))?$/))) {
+    await handleExpenseDelete(client, ev, fid, (m[1] || '').trim());
+    return true;
+  }
+  return false;
+}
+
+async function handleFinanceBind(client, ev, lineUserId, requestedFid) {
+  if (requestedFid) {
+    // 帶 ID：接回既有空間
+    const snap = await finSpaceRef(requestedFid).get();
+    if (!snap.exists) {
+      return safeReply(client, ev.replyToken, {
+        type: 'text', text: `找不到帳務空間「${requestedFid}」，請確認 ID 是否正確。\n要開新空間直接傳「帳務綁定」即可。`,
+      });
+    }
+    await finBindingRef(lineUserId).set({ financeId: requestedFid, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    await finSpaceRef(requestedFid).set({ ownerLineUserId: lineUserId }, { merge: true });
+    return safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text', text: `✅ 已接回帳務空間 ${requestedFid}\n直接輸入「品項 金額」就能記帳，例：早餐 65`,
+    }));
+  }
+  const existing = await getFinanceIdForLineUser(lineUserId);
+  if (existing) {
+    return safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text', text: `你已經綁定帳務空間了 ✅\n帳務 ID：${existing}\n（想在 App 看帳務頁：長按月曆 logo → 貼上此 ID）`,
+    }));
+  }
+  const fid = genFinanceId();
+  await finSpaceRef(fid).set({
+    ownerLineUserId: lineUserId,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  await finBindingRef(lineUserId).set({ financeId: fid, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+  return safeReply(client, ev.replyToken, financeQuickReply({
+    type: 'text',
+    text: [
+      '✅ 已建立你的帳務空間（獨立於行事曆、只有你看得到）',
+      `帳務 ID：${fid}`,
+      '',
+      '開始使用：',
+      '• 記帳：「早餐 65」「午餐 151 國泰」「昨天 宵夜 120」',
+      '• 建卡：「信用卡 國泰卡 15號 額度100000」',
+      '• 貸款：「貸款 房貸 10號 25000」',
+      '• 查詢：「今天花多少」「本月花費」「帳單」',
+      '',
+      '想在 App 看帳務頁：長按月曆 logo 0.5 秒 → 貼上帳務 ID',
+    ].join('\n'),
+  }));
+}
+
+async function replyFinanceStatus(client, ev, lineUserId) {
+  const fid = await getFinanceIdForLineUser(lineUserId);
+  if (!fid) {
+    return safeReply(client, ev.replyToken, {
+      type: 'text', text: '尚未綁定帳務空間。傳「帳務綁定」即可建立（免費、獨立於行事曆）。',
+    });
+  }
+  const bills = await getFinanceBills(fid);
+  const mk = formatDateTW(new Date()).slice(0, 7);
+  const monthItems = await getExpensesInRange(fid, `${mk}-01`, clampedDateForMonth(mk, 31));
+  return safeReply(client, ev.replyToken, financeQuickReply({
+    type: 'text',
+    text: [
+      '📂 帳務狀態',
+      `帳務 ID：${fid}`,
+      `卡片/貸款：${bills.length} 筆`,
+      `本月記帳：${monthItems.length} 筆・$${fmtMoney(sumExpenses(monthItems))}`,
+      '',
+      '（App 帳務頁：長按月曆 logo → 貼上帳務 ID）',
+    ].join('\n'),
+  }));
+}
+
+async function wipeFinanceSpace(fid, lineUserId) {
+  // 先刪 space doc + binding，讓 expenses 刪除觸發器找不到 owner → 不會推播轟炸
+  await finSpaceRef(fid).delete();
+  await finBindingRef(lineUserId).delete();
+  for (const sub of ['bills', 'expenses']) {
+    // 分批刪除子集合
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const snap = await finSpaceRef(fid).collection(sub).limit(300).get();
+      if (snap.empty) break;
+      const batch = db().batch();
+      snap.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
+}
+
+async function handleFinanceCardCreate(client, ev, fid, name, day, limitStr) {
+  if (day < 1 || day > 31) {
+    return safeReply(client, ev.replyToken, { type: 'text', text: '結帳日要 1-31 號' });
+  }
+  const limit = limitStr ? parseInt(limitStr.replace(/,/g, ''), 10) : null;
+  const bills = await getFinanceBills(fid);
+  const existing = bills.find((b) => b.type === 'card' && b.name === name);
+  const data = { type: 'card', name, day, limit: limit || null };
+  if (existing) {
+    await finSpaceRef(fid).collection('bills').doc(existing.id).set(data, { merge: true });
+  } else {
+    data.createdAt = admin.firestore.FieldValue.serverTimestamp();
+    await finSpaceRef(fid).collection('bills').add(data);
+  }
+  const todayStr = formatDateTW(new Date());
+  const cycle = cardCycleForToday(day, todayStr);
+  const lines = [
+    `💳 ${existing ? '已更新' : '已新增'}：${name}`,
+    `每月 ${day} 號結帳${limit ? `・額度 $${fmtMoney(limit)}` : ''}`,
+    `本期帳期：${cycle.startStr.slice(5).replace('-', '/')} ~ ${cycle.endStr.slice(5).replace('-', '/')}`,
+    '',
+    `記帳時在後面加卡名就會算進帳期，例：「午餐 151 ${name.replace(/卡$/, '')}」`,
+  ];
+  return safeReply(client, ev.replyToken, financeQuickReply({ type: 'text', text: lines.join('\n') }));
+}
+
+async function handleFinanceLoanCreate(client, ev, fid, name, day, amountStr) {
+  if (day < 1 || day > 31) {
+    return safeReply(client, ev.replyToken, { type: 'text', text: '繳款日要 1-31 號' });
+  }
+  const amount = amountStr ? parseInt(amountStr.replace(/,/g, ''), 10) : null;
+  const bills = await getFinanceBills(fid);
+  const existing = bills.find((b) => b.type === 'loan' && b.name === name);
+  const data = { type: 'loan', name, day, amount: amount || null };
+  if (existing) {
+    await finSpaceRef(fid).collection('bills').doc(existing.id).set(data, { merge: true });
+  } else {
+    data.createdAt = admin.firestore.FieldValue.serverTimestamp();
+    await finSpaceRef(fid).collection('bills').add(data);
+  }
+  const todayStr = formatDateTW(new Date());
+  const next = nextMonthlyOccurrence(day, todayStr);
+  const daysLeft = daysBetween(next, todayStr);
+  return safeReply(client, ev.replyToken, financeQuickReply({
+    type: 'text',
+    text: [
+      `🏦 ${existing ? '已更新' : '已新增'}：${name}`,
+      `每月 ${day} 號繳款${amount ? `・$${fmtMoney(amount)}` : ''}`,
+      `下次繳款日：${next.slice(5).replace('-', '/')}（${daysLeft === 0 ? '就是今天' : `還 ${daysLeft} 天`}）`,
+      '',
+      '繳款日前 3 天起會私訊提醒你。',
+    ].join('\n'),
+  }));
+}
+
+async function replyFinanceBillList(client, ev, fid) {
+  const bills = await getFinanceBills(fid);
+  if (bills.length === 0) {
+    return safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text',
+      text: [
+        '還沒有任何卡片或貸款。',
+        '',
+        '建立方式：',
+        '「信用卡 國泰卡 15號 額度100000」',
+        '「貸款 房貸 10號 25000」',
+        '（額度/金額可省略）',
+      ].join('\n'),
+    }));
+  }
+  const todayStr = formatDateTW(new Date());
+  const lines = ['📋 你的帳務'];
+  for (const b of bills) {
+    if (b.type === 'card') {
+      const cycle = cardCycleForToday(b.day, todayStr);
+      const items = (await getExpensesInRange(fid, cycle.startStr, cycle.endStr))
+        .filter((e) => e.card === b.name);
+      const total = sumExpenses(items);
+      const dLeft = daysBetween(cycle.endStr, todayStr);
+      lines.push('');
+      lines.push(`💳 ${b.name}　每月 ${b.day} 號結帳（${dLeft === 0 ? '今天結帳' : `還 ${dLeft} 天`}）`);
+      lines.push(`　本期已刷 $${fmtMoney(total)}${b.limit ? `・剩餘額度約 $${fmtMoney(Math.max(0, b.limit - total))}` : ''}`);
+    } else {
+      const next = nextMonthlyOccurrence(b.day, todayStr);
+      const dLeft = daysBetween(next, todayStr);
+      lines.push('');
+      lines.push(`🏦 ${b.name}　每月 ${b.day} 號繳款${b.amount ? `・$${fmtMoney(b.amount)}` : ''}`);
+      lines.push(`　下次 ${next.slice(5).replace('-', '/')}（${dLeft === 0 ? '就是今天' : `還 ${dLeft} 天`}）`);
+    }
+  }
+  return safeReply(client, ev.replyToken, financeQuickReply({ type: 'text', text: lines.join('\n') }));
+}
+
+async function handleFinanceBillDelete(client, ev, fid, name) {
+  if (!name) {
+    return safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text', text: '格式：「刪除帳單 國泰卡」',
+    }));
+  }
+  const bills = await getFinanceBills(fid);
+  const norm = (s) => String(s || '').replace(/卡$/, '');
+  const hit = bills.find((b) => b.name === name) ||
+    bills.find((b) => norm(b.name) === norm(name)) ||
+    bills.find((b) => norm(b.name).startsWith(norm(name)));
+  if (!hit) {
+    return safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text', text: `找不到「${name}」。傳「帳單」看看現有清單。`,
+    }));
+  }
+  await finSpaceRef(fid).collection('bills').doc(hit.id).delete();
+  return safeReply(client, ev.replyToken, financeQuickReply({
+    type: 'text',
+    text: `🗑️ 已刪除：${hit.type === 'card' ? '💳' : '🏦'} ${hit.name}\n（歷史記帳保留，只是不再有提醒與帳期統計）`,
+  }));
+}
+
+function expenseLineLabel(e) {
+  const cat = EXPENSE_CATEGORIES[e.category] || EXPENSE_CATEGORIES.other;
+  return `${e.date.slice(5).replace('-', '/')} ${cat.emoji} ${e.item} $${fmtMoney(e.amount)}${e.card ? `（💳${e.card}）` : ''}`;
+}
+
+async function replyExpenseDaySummary(client, ev, fid, dateStr) {
+  const items = await getExpensesInRange(fid, dateStr, dateStr);
+  if (items.length === 0) {
+    return safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text', text: `📅 ${dateStr.slice(5).replace('-', '/')} 還沒有記帳。直接輸入「品項 金額」即可記一筆。`,
+    }));
+  }
+  const byCat = {};
+  items.forEach((e) => { byCat[e.category] = (byCat[e.category] || 0) + (Number(e.amount) || 0); });
+  const catLine = Object.entries(byCat)
+    .sort((a, b) => b[1] - a[1])
+    .map(([c, v]) => {
+      const cat = EXPENSE_CATEGORIES[c] || EXPENSE_CATEGORIES.other;
+      return `${cat.emoji} ${cat.name} $${fmtMoney(v)}`;
+    }).join('｜');
+  const lines = [
+    `📅 ${dateStr.slice(5).replace('-', '/')} 支出 $${fmtMoney(sumExpenses(items))}`,
+    catLine,
+    '',
+  ];
+  items.forEach((e) => lines.push(`• ${e.item} $${fmtMoney(e.amount)}${e.card ? `（💳${e.card}）` : ''}`));
+  return safeReply(client, ev.replyToken, financeQuickReply({ type: 'text', text: lines.join('\n') }));
+}
+
+function buildMonthSummaryLines(mk, items, prevItems) {
+  const total = sumExpenses(items);
+  const byCat = {};
+  let cardSum = 0;
+  items.forEach((e) => {
+    byCat[e.category] = (byCat[e.category] || 0) + (Number(e.amount) || 0);
+    if (e.card) cardSum += Number(e.amount) || 0;
+  });
+  const lines = [
+    `📊 ${parseInt(mk.slice(5), 10)} 月支出 $${fmtMoney(total)}`,
+    `現金 $${fmtMoney(total - cardSum)}・刷卡 $${fmtMoney(cardSum)}`,
+  ];
+  Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 5).forEach(([c, v]) => {
+    const cat = EXPENSE_CATEGORIES[c] || EXPENSE_CATEGORIES.other;
+    const pct = total > 0 ? Math.round((v / total) * 100) : 0;
+    lines.push(`${cat.emoji} ${cat.name} $${fmtMoney(v)}（${pct}%）`);
+  });
+  if (prevItems && prevItems.length > 0) {
+    const prevTotal = sumExpenses(prevItems);
+    const diff = total - prevTotal;
+    if (diff !== 0) lines.push(diff > 0 ? `比上月多 $${fmtMoney(diff)}` : `比上月少 $${fmtMoney(-diff)} 👍`);
+  }
+  return lines;
+}
+
+async function replyExpenseMonthSummary(client, ev, fid, mk) {
+  const items = await getExpensesInRange(fid, `${mk}-01`, clampedDateForMonth(mk, 31));
+  if (items.length === 0) {
+    return safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text', text: `${parseInt(mk.slice(5), 10)} 月還沒有記帳紀錄。`,
+    }));
+  }
+  const prevMk = addMonthKey(mk, -1);
+  const prevItems = await getExpensesInRange(fid, `${prevMk}-01`, clampedDateForMonth(prevMk, 31));
+  return safeReply(client, ev.replyToken, financeQuickReply({
+    type: 'text', text: buildMonthSummaryLines(mk, items, prevItems).join('\n'),
+  }));
+}
+
+async function replyExpenseRecent(client, ev, fid) {
+  const todayStr = formatDateTW(new Date());
+  const items = await getExpensesInRange(fid, addDaysStr(todayStr, -90), todayStr);
+  if (items.length === 0) {
+    return safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text', text: '還沒有記帳紀錄。直接輸入「品項 金額」即可，例：早餐 65',
+    }));
+  }
+  const recent = items.slice(-10).reverse();
+  const lines = ['🧾 最近的記帳：'];
+  recent.forEach((e) => lines.push(`• ${expenseLineLabel(e)}`));
+  lines.push('');
+  lines.push('要刪除請傳「刪帳」或「刪帳 品項」');
+  return safeReply(client, ev.replyToken, financeQuickReply({ type: 'text', text: lines.join('\n') }));
+}
+
+function buildExpenseDeleteFlex(fid, items) {
+  return {
+    type: 'flex',
+    altText: '選擇要刪除的記帳',
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box', layout: 'vertical', paddingAll: '12px', backgroundColor: '#F5F0EB',
+        contents: [{ type: 'text', text: '🗑️ 點選要刪除的記帳', weight: 'bold', size: 'sm', color: '#5F524C' }],
+      },
+      body: {
+        type: 'box', layout: 'vertical', spacing: 'md',
+        contents: items.map((e) => ({
+          type: 'box', layout: 'horizontal', alignItems: 'center', spacing: 'sm',
+          contents: [
+            {
+              type: 'box', layout: 'vertical', flex: 7,
+              contents: [
+                { type: 'text', text: `${e.item} $${fmtMoney(e.amount)}`, size: 'sm', weight: 'bold', wrap: true, color: '#5F524C' },
+                { type: 'text', text: `${e.date.slice(5).replace('-', '/')}${e.card ? `・💳${e.card}` : ''}`, size: 'xs', color: '#998B82' },
+              ],
+            },
+            {
+              type: 'button', style: 'primary', color: '#D48888', height: 'sm', flex: 3,
+              action: {
+                type: 'postback',
+                label: '刪除',
+                data: `act=fexp_del&fid=${fid}&id=${e.id}`,
+                displayText: `刪除 ${e.item} $${fmtMoney(e.amount)}`,
+              },
+            },
+          ],
+        })),
+      },
+    },
+  };
+}
+
+async function handleExpenseDelete(client, ev, fid, query) {
+  const todayStr = formatDateTW(new Date());
+  const items = await getExpensesInRange(fid, addDaysStr(todayStr, -90), todayStr);
+  if (items.length === 0) {
+    return safeReply(client, ev.replyToken, financeQuickReply({
+      type: 'text', text: '最近 90 天沒有記帳紀錄。',
+    }));
+  }
+  let candidates = items;
+  if (query) {
+    // 「刪帳 8/3 加油」→ 日期 + 關鍵字；「刪帳 加油」→ 關鍵字
+    let keyword = query;
+    let dateFilter = null;
+    const dm = query.match(/^(\d{1,2})[\/月](\d{1,2})[日號]?[\s　]*(.*)$/);
+    if (dm) {
+      const y = parseInt(todayStr.slice(0, 4), 10);
+      let cand = `${y}-${String(parseInt(dm[1], 10)).padStart(2, '0')}-${String(parseInt(dm[2], 10)).padStart(2, '0')}`;
+      if (cand > todayStr) cand = `${y - 1}${cand.slice(4)}`;
+      dateFilter = cand;
+      keyword = (dm[3] || '').trim();
+    }
+    candidates = items.filter((e) =>
+      (!dateFilter || e.date === dateFilter) &&
+      (!keyword || e.item.includes(keyword)));
+    if (candidates.length === 0) {
+      return safeReply(client, ev.replyToken, financeQuickReply({
+        type: 'text', text: `找不到符合「${query}」的記帳。傳「刪帳」看最近清單。`,
+      }));
+    }
+    if (candidates.length === 1) {
+      const e = candidates[0];
+      await finSpaceRef(fid).collection('expenses').doc(e.id)
+        .set({ deletedVia: 'line' }, { merge: true });
+      await finSpaceRef(fid).collection('expenses').doc(e.id).delete();
+      return safeReply(client, ev.replyToken, financeQuickReply({
+        type: 'text', text: `🗑️ 已刪除：${expenseLineLabel(e)}`,
+      }));
+    }
+  }
+  // 多筆或未指定 → 列表點按刪（最近 10 筆）
+  const list = candidates.slice(-10).reverse();
+  return safeReply(client, ev.replyToken, buildExpenseDeleteFlex(fid, list));
+}
+
+// 「撤回」整合：比較記帳與行事曆的最後操作時間，撤回較新的那個
+// 回傳 true = 已由記帳側處理
+async function tryFinanceUndoIfNewer(client, ev) {
+  if (ev.source?.type !== 'user') return false;
+  const fid = await getFinanceIdForLineUser(ev.source.userId);
+  if (!fid) return false;
+  const spaceSnap = await finSpaceRef(fid).get();
+  const finOp = spaceSnap.exists ? spaceSnap.data().lastOp : null;
+  if (!finOp || finOp.type !== 'expense_create' || !finOp.expenseId) return false;
+
+  // 行事曆側的 lastop 時間
+  let calMillis = 0;
+  const uids = await getBoundUidsForSource(getSourceId(ev));
+  if (uids.length > 0) {
+    const calSnap = await db().collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uids[0])
+      .collection('bibi_settings').doc('lastop').get();
+    if (calSnap.exists && calSnap.data().timestamp) {
+      calMillis = calSnap.data().timestamp.toMillis();
+    }
+  }
+  const finMillis = finOp.at ? finOp.at.toMillis() : 0;
+  if (finMillis <= calMillis) return false; // 行事曆操作比較新 → 交回原本的撤回
+
+  const ref = finSpaceRef(fid).collection('expenses').doc(finOp.expenseId);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  await ref.set({ deletedVia: 'line' }, { merge: true });
+  await ref.delete();
+  await finSpaceRef(fid).set({ lastOp: admin.firestore.FieldValue.delete() }, { merge: true });
+  await safeReply(client, ev.replyToken, financeQuickReply({
+    type: 'text', text: `↩️ 已撤回記帳：${finOp.item} $${fmtMoney(finOp.amount)}`,
+  }));
+  return true;
+}
+
+// --- AI 唯讀查詢工具（只在私聊 + 已綁定時注入；群組物理上拿不到） ---
+const aiFinanceToolHandlers = {
+  async query_expenses({ startDate, endDate, keyword, card }, ctx) {
+    if (!ctx.financeId) return { error: 'no finance space' };
+    if (!startDate || !endDate) return { error: 'startDate / endDate 必填' };
+    let items = await getExpensesInRange(ctx.financeId, startDate, endDate);
+    if (keyword) items = items.filter((e) => e.item.includes(keyword));
+    if (card) items = items.filter((e) => e.card && e.card.includes(card.replace(/卡$/, '')));
+    const byCategory = {};
+    items.forEach((e) => {
+      const cat = EXPENSE_CATEGORIES[e.category]?.name || '其他';
+      byCategory[cat] = (byCategory[cat] || 0) + (Number(e.amount) || 0);
+    });
+    return {
+      total: sumExpenses(items),
+      count: items.length,
+      byCategory,
+      items: items.slice(-60).map((e) => ({
+        date: e.date, item: e.item, amount: e.amount,
+        category: EXPENSE_CATEGORIES[e.category]?.name || '其他',
+        card: e.card || null,
+      })),
+    };
+  },
+
+  async query_finance_bills(_args, ctx) {
+    if (!ctx.financeId) return { error: 'no finance space' };
+    const todayStr = formatDateTW(new Date());
+    const bills = await getFinanceBills(ctx.financeId);
+    const out = [];
+    for (const b of bills) {
+      if (b.type === 'card') {
+        const cycle = cardCycleForToday(b.day, todayStr);
+        const items = (await getExpensesInRange(ctx.financeId, cycle.startStr, cycle.endStr))
+          .filter((e) => e.card === b.name);
+        const total = sumExpenses(items);
+        out.push({
+          type: 'card', name: b.name, statementDay: b.day,
+          cycleStart: cycle.startStr, cycleEnd: cycle.endStr,
+          cycleSpent: total, limit: b.limit || null,
+          remainingLimit: b.limit ? Math.max(0, b.limit - total) : null,
+        });
+      } else {
+        out.push({
+          type: 'loan', name: b.name, dueDay: b.day, amount: b.amount || null,
+          nextDueDate: nextMonthlyOccurrence(b.day, todayStr),
+        });
+      }
+    }
+    return { bills: out };
+  },
+};
+
+function aiFinanceToolDefs() {
+  return [
+    {
+      type: 'function',
+      name: 'query_expenses',
+      description: '查詢使用者的私人記帳（唯讀）。回傳總額、分類統計與明細。金額為新台幣。',
+      parameters: {
+        type: 'object',
+        properties: {
+          startDate: { type: 'string', description: 'YYYY-MM-DD' },
+          endDate: { type: 'string', description: 'YYYY-MM-DD' },
+          keyword: { type: 'string', description: '可選，品項關鍵字' },
+          card: { type: 'string', description: '可選，信用卡名稱' },
+        },
+        required: ['startDate', 'endDate'],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: 'function',
+      name: 'query_finance_bills',
+      description: '查詢使用者的信用卡（結帳日/本期已刷/額度）與貸款（繳款日）狀態（唯讀）。',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  ];
+}
+
 // -------- Webhook: handle messages received by the bot --------
 exports.lineWebhook = onRequest(
   {
@@ -3905,6 +4857,8 @@ exports.lineWebhook = onRequest(
             await replyBindingStatus(client, ev);
           } else if (text === '用量' || text === '推播用量' || text === 'usage') {
             await replyUsage(client, ev);
+          } else if (ev.source?.type === 'user' && await tryFinanceCommand(client, ev, text)) {
+            // 帳務指令（綁定/帳單/記帳查詢/刪帳）— 僅私聊，群組直接無視
           } else if (text === '誰是誰' || text === '誰是誰?' || text === '誰是誰？') {
             await replyIdentityMap(client, ev);
           } else if (text === '幫助' || text === '說明' || text === '指令' ||
@@ -3916,6 +4870,9 @@ exports.lineWebhook = onRequest(
             await replyNextEvents(client, ev, 1);
           } else if (text === '最近' || text === '即將' || text === '即將到來') {
             await replyNextEvents(client, ev, 5);
+          } else if ((text === '撤回' || text === 'Undo' || text === 'undo' || text === 'UNDO') &&
+                     await tryFinanceUndoIfNewer(client, ev)) {
+            // 記帳的撤回（比行事曆操作更新時優先）
           } else if (text === '撤回' || text === 'Undo' || text === 'undo' || text === 'UNDO') {
             await tryUndoLastOp(client, ev);
           } else if (text === '匯出' || text.startsWith('匯出 ') || text.startsWith('匯出　')) {
@@ -3993,6 +4950,8 @@ exports.lineWebhook = onRequest(
             await replyAgenda(client, ev, range);
           } else if (ev.source?.type === 'group' || ev.source?.type === 'room') {
             // 群組／多人聊天室：非指令訊息保持安靜，避免 AI 被亂觸發
+          } else if (await tryFinanceExpenseCatchAll(client, ev, text)) {
+            // 記帳：「品項 金額 [卡名]」／卡名查詢 — 僅私聊 + 已帳務綁定
           } else if (text.length >= 2 && await hasRecentAIConversation(sourceId)) {
             // 1-on-1 對話追問：5 分鐘內剛跟 AI 對話過 → 沒前綴的話也視為 AI 對話延續
             // 例：使用者「親 這禮拜天中午要去甜點店」→ AI 問細節 → 使用者「不用」
@@ -4030,7 +4989,8 @@ exports.notifyOnEventCreate = onDocumentCreated(
     const flex = buildEventConfirmFlex(ev, ownerLabel, { uid, eventId });
     flex.contents.header.contents[0].text = '📝 新增行程';
     flex.altText = `📝 新增行程：${ev.title}`;
-    await pushToBoundUsers(uid, flex, 'event_create');
+    // 回音抑制：LINE 建立的行程不再推回來源聊天室 (那裡已有確認回覆)
+    await pushToBoundUsers(uid, flex, 'event_create', ev.createdVia || null);
   }
 );
 
@@ -4147,25 +5107,34 @@ exports.dailyMorningSummary = onSchedule(
           .get();
 
         const roles = await getRoleSettings(uid);
-        const lines = [`🌙 今日 (${today}) 行程：`];
+        const dayEvents = [];
         eventsSnap.forEach((d) => {
           const e = d.data();
           if (!e.endDate || e.endDate < today) return; // 已結束的略過
-          const ownerLabel = computeOwnerLabel(e.eventType, roles);
-          lines.push(`• ${e.isAllDay ? '全天' : (e.startTime || '')} ${e.title}（${ownerLabel}）`);
+          dayEvents.push({ ...e, _uid: uid });
+        });
+        dayEvents.sort((a, b) => {
+          if (a.isAllDay && !b.isAllDay) return -1;
+          if (!a.isAllDay && b.isAllDay) return 1;
+          return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
         });
 
-        let message;
-        if (lines.length === 1) {
-          message = `🌙 今天 (${today}) 沒有排程，好好休息 💤`;
+        if (dayEvents.length === 0) {
+          // 沒行程維持輕量純文字（一樣只算 1 則推播）
+          let message = `🌙 今天 (${today}) 沒有排程，好好休息 💤`;
+          if (weatherBlurb) message = `${weatherBlurb}\n\n${message}`;
+          await pushToTargets(uid, lineUserIds, message, 'morning');
         } else {
-          message = lines.join('\n');
+          // 有行程 → 與「今日」查詢同一張放大版 Flex 卡片，天氣放在標頭副標
+          const todayDate = new Date(`${today}T00:00:00+08:00`);
+          const flex = buildAgendaFlex(
+            `🌙 今日行程　${formatDateLabel(todayDate)}`,
+            [{ date: todayDate, dateStr: today, events: dayEvents }],
+            { uidRoles: { [uid]: roles }, subtitle: weatherBlurb || null }
+          );
+          flex.altText = `🌙 今日行程 ${dayEvents.length} 件`;
+          await pushToTargets(uid, lineUserIds, flex, 'morning');
         }
-        if (weatherBlurb) {
-          message = `${weatherBlurb}\n\n${message}`;
-        }
-
-        await pushToTargets(uid, lineUserIds, message, 'morning');
       } catch (err) {
         console.error('[dailyMorningSummary] user error', { path: doc.ref.path, err: err?.message || err });
       }
@@ -4400,6 +5369,111 @@ exports.runPendingReminders = onSchedule(
       } finally {
         await d.ref.delete();
       }
+    }
+  }
+);
+
+// ============================================================
+// 帳務排程通知：每日 00:10 (Asia/Taipei)
+//  - 信用卡結帳日當天 → 「今天結帳，本期應繳 $N」
+//  - 貸款繳款日前 3 天起每天 + 當天
+//  - 每月 1 號 → 上月記帳月結報告
+// 全部只私訊給綁定者本人，不進群組、不進共用摘要。
+// ============================================================
+exports.financeDailyNotify = onSchedule(
+  {
+    schedule: '10 0 * * *',
+    timeZone: 'Asia/Taipei',
+    secrets: [LINE_CHANNEL_ACCESS_TOKEN],
+  },
+  async () => {
+    const todayStr = formatDateTW(new Date());
+    const mk = todayStr.slice(0, 7);
+    const isFirstOfMonth = todayStr.endsWith('-01');
+    const bindingsSnap = await db().collection('artifacts').doc(APP_ID)
+      .collection('finance_bindings').get();
+    console.log('[financeDailyNotify] start', { todayStr, bindings: bindingsSnap.size });
+    if (bindingsSnap.empty) return;
+    const client = lineClient();
+
+    for (const bindDoc of bindingsSnap.docs) {
+      try {
+        const lineUserId = bindDoc.id;
+        const fid = bindDoc.data().financeId;
+        if (!fid) continue;
+        const lines = [];
+
+        // 月結報告（1 號）
+        if (isFirstOfMonth) {
+          const lastMk = addMonthKey(mk, -1);
+          const lastItems = await getExpensesInRange(fid, `${lastMk}-01`, clampedDateForMonth(lastMk, 31));
+          if (lastItems.length > 0) {
+            const prevMk = addMonthKey(lastMk, -1);
+            const prevItems = await getExpensesInRange(fid, `${prevMk}-01`, clampedDateForMonth(prevMk, 31));
+            lines.push(...buildMonthSummaryLines(lastMk, lastItems, prevItems));
+          }
+        }
+
+        // 帳單提醒
+        const bills = await getFinanceBills(fid);
+        for (const b of bills) {
+          if (b.type === 'card') {
+            const stmtToday = clampedDateForMonth(mk, b.day) === todayStr;
+            if (stmtToday) {
+              const cycle = cardCycleForToday(b.day, todayStr); // endStr === today
+              const items = (await getExpensesInRange(fid, cycle.startStr, cycle.endStr))
+                .filter((e) => e.card === b.name);
+              lines.push(`💳 ${b.name}今天結帳，本期應繳 $${fmtMoney(sumExpenses(items))}`);
+            }
+          } else {
+            const next = nextMonthlyOccurrence(b.day, todayStr);
+            const dLeft = daysBetween(next, todayStr);
+            if (dLeft === 0) {
+              lines.push(`🏦 ${b.name}今天繳款${b.amount ? ` $${fmtMoney(b.amount)}` : ''}`);
+            } else if (dLeft >= 1 && dLeft <= 3) {
+              lines.push(`🏦 ${b.name}繳款日 ${next.slice(5).replace('-', '/')}（還 ${dLeft} 天）${b.amount ? `$${fmtMoney(b.amount)}` : ''}`);
+            }
+          }
+        }
+
+        if (lines.length === 0) continue;
+        await client.pushMessage(lineUserId, { type: 'text', text: lines.join('\n') });
+        await finSpaceRef(fid).set({
+          [`pushCount_${mk}`]: admin.firestore.FieldValue.increment(1),
+        }, { merge: true });
+      } catch (err) {
+        console.error('[financeDailyNotify] user error', { id: bindDoc.id, err: err?.message || err });
+      }
+    }
+    console.log('[financeDailyNotify] done');
+  }
+);
+
+// ============================================================
+// 記帳刪除觸發器：App 端刪除 → LINE 私訊留底
+// LINE 端刪除前會先蓋 deletedVia:'line' 戳記，這裡看到就跳過（避免重複通知）
+// ============================================================
+exports.notifyOnExpenseDelete = onDocumentDeleted(
+  {
+    document: `artifacts/${APP_ID}/finance/{fid}/expenses/{expenseId}`,
+    secrets: [LINE_CHANNEL_ACCESS_TOKEN],
+  },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data || data.deletedVia === 'line') return;
+    const fid = event.params.fid;
+    const spaceSnap = await finSpaceRef(fid).get();
+    if (!spaceSnap.exists) return; // 空間已整個刪除 (wipe) → 不推
+    const owner = spaceSnap.data().ownerLineUserId;
+    if (!owner) return;
+    const cat = EXPENSE_CATEGORIES[data.category] || EXPENSE_CATEGORIES.other;
+    try {
+      await lineClient().pushMessage(owner, {
+        type: 'text',
+        text: `🗑️ 已刪除記帳：${(data.date || '').slice(5).replace('-', '/')} ${cat.emoji} ${data.item} $${fmtMoney(data.amount)}`,
+      });
+    } catch (e) {
+      console.warn('[expenseDelete] push failed', e?.message);
     }
   }
 );
