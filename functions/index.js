@@ -448,9 +448,9 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
         type: 'text',
         text: isToday ? `▶ ${formatDateLabel(g.date)}　今天` : formatDateLabel(g.date),
         weight: 'bold',
-        size: 'sm',
+        size: compact ? 'sm' : 'md',
         color: isToday ? '#8D6E63' : '#555555',
-        margin: idx === 0 ? 'none' : 'lg',
+        margin: idx === 0 ? 'none' : 'xl',
       });
       bodyContents.push({
         type: 'separator',
@@ -462,7 +462,7 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
       bodyContents.push({
         type: 'text',
         text: showDateHeader ? '（空檔）' : '今天沒有行程，好好休息 ☕',
-        size: 'xs',
+        size: compact ? 'xs' : 'sm',
         color: '#AAAAAA',
         margin: 'sm',
       });
@@ -479,16 +479,22 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
       const baseTitle = isMulti && compact
         ? `${ev.title || '(未命名)'} → ${ev.endDate.slice(5).replace('-', '/')}`
         : (ev.title || '(未命名)');
-      const titleText = `${baseTitle}（${ownerOf(ev)}）`;
       bodyContents.push({
         type: 'box',
         layout: 'horizontal',
         spacing: 'sm',
-        margin: 'sm',
+        margin: compact ? 'sm' : 'md',
         contents: [
-          { type: 'text', text: '📌', size: 'xs', flex: 2, gravity: 'top' },
-          { type: 'text', text: titleText, size: 'sm', wrap: true, flex: 5,
-            weight: 'bold', color: '#6D4C41' },
+          { type: 'text', text: '📌 全天', size: compact ? 'xs' : 'sm',
+            color: '#8D6E63', weight: 'bold', flex: 2, gravity: 'top', margin: 'xs' },
+          {
+            type: 'box', layout: 'vertical', flex: 5,
+            contents: [
+              { type: 'text', text: baseTitle, size: compact ? 'md' : 'lg',
+                wrap: true, weight: 'bold', color: '#6D4C41' },
+              { type: 'text', text: ownerOf(ev), size: 'xs', color: '#999999' },
+            ],
+          },
         ],
       });
     });
@@ -497,16 +503,22 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
       const baseTitle = isMulti && compact
         ? `${ev.title || '(未命名)'} → ${ev.endDate.slice(5).replace('-', '/')}`
         : (ev.title || '(未命名)');
-      const titleText = `${baseTitle}（${ownerOf(ev)}）`;
       bodyContents.push({
         type: 'box',
         layout: 'horizontal',
         spacing: 'sm',
-        margin: 'sm',
+        margin: compact ? 'sm' : 'md',
         contents: [
-          { type: 'text', text: ev.startTime || '', size: 'xs',
-            color: '#999999', flex: 2, gravity: 'top' },
-          { type: 'text', text: titleText, size: 'sm', wrap: true, flex: 5 },
+          { type: 'text', text: ev.startTime || '', size: compact ? 'sm' : 'md',
+            weight: 'bold', color: '#8D6E63', flex: 2, gravity: 'top', margin: 'xs' },
+          {
+            type: 'box', layout: 'vertical', flex: 5,
+            contents: [
+              { type: 'text', text: baseTitle, size: compact ? 'md' : 'lg',
+                wrap: true, weight: 'bold', color: '#333333' },
+              { type: 'text', text: ownerOf(ev), size: 'xs', color: '#999999' },
+            ],
+          },
         ],
       });
     });
@@ -525,7 +537,7 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
     altText: title,
     contents: {
       type: 'bubble',
-      size: 'mega',
+      size: 'giga',
       header: {
         type: 'box',
         layout: 'vertical',
@@ -533,11 +545,11 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {} } =
           type: 'text',
           text: title,
           weight: 'bold',
-          size: 'md',
+          size: compact ? 'md' : 'lg',
           color: '#FFFFFF',
         }],
         backgroundColor: '#BCAAA4',
-        paddingAll: 'md',
+        paddingAll: 'lg',
       },
       body: {
         type: 'box',
