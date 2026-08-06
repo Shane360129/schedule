@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2,
-  Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle, Calendar
+  Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle, Calendar,
+  ArrowLeft, Wallet
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth, onAuthStateChanged, signInAnonymously,
   setPersistence, browserLocalPersistence, inMemoryPersistence
 } from 'firebase/auth';
-import { 
-  getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, arrayUnion
+import {
+  getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, arrayUnion, where, serverTimestamp
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -155,6 +156,55 @@ const FALLBACK_HOLIDAYS = {
   "2027-02-05": { isHoliday: true, name: "除夕" },
   "2027-02-06": { isHoliday: true, name: "春節" },
 };
+
+// --- 帳務 (Finance)：分類定義，與後端 functions/index.js 對齊 ---
+const EXPENSE_CATEGORIES = {
+  food: { name: '餐飲', emoji: '🍜', hex: '#8E4A49' },
+  transport: { name: '交通', emoji: '🚗', hex: '#546E7A' },
+  shopping: { name: '購物', emoji: '🛒', hex: '#B8860B' },
+  entertainment: { name: '娛樂', emoji: '🎮', hex: '#7E57C2' },
+  home: { name: '居住', emoji: '🏠', hex: '#6D4C41' },
+  medical: { name: '醫療', emoji: '💊', hex: '#26A69A' },
+  other: { name: '其他', emoji: '📦', hex: '#78909C' },
+};
+
+const fmtMoney = (n) => Number(n || 0).toLocaleString('en-US');
+
+const addDaysToDateStr = (dateStr, days) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return formatDate(d);
+};
+
+const monthKeyAdd = (mk, delta) => {
+  const [y, m] = mk.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const clampDayToMonthKey = (mk, day) => {
+  const [y, m] = mk.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return `${mk}-${String(Math.min(day, last)).padStart(2, '0')}`;
+};
+
+// 下一個「每月 day 號」(含今天)
+const nextMonthlyDateStr = (day, todayStr) => {
+  const mk = todayStr.slice(0, 7);
+  let cand = clampDayToMonthKey(mk, day);
+  if (cand < todayStr) cand = clampDayToMonthKey(monthKeyAdd(mk, 1), day);
+  return cand;
+};
+
+// 信用卡本期帳期：上個結帳日隔天 ~ 下個結帳日
+const cardCycleOf = (day, todayStr) => {
+  const endStr = nextMonthlyDateStr(day, todayStr);
+  const prevStmt = clampDayToMonthKey(monthKeyAdd(endStr.slice(0, 7), -1), day);
+  return { startStr: addDaysToDateStr(prevStmt, 1), endStr };
+};
+
+const dateStrDiffDays = (a, b) =>
+  Math.round((new Date(a + 'T00:00:00').getTime() - new Date(b + 'T00:00:00').getTime()) / 86400000);
 
 const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
 // 統一週起始為「週一」，回傳值 0=Mon, 1=Tue, ..., 6=Sun
@@ -308,6 +358,20 @@ const App = () => {
   const [isStandalone, setIsStandalone] = useState(false);
   const [showIOSInstallGuide, setShowIOSInstallGuide] = useState(false);
 
+  // --- 帳務頁 (隱藏頁：長按 logo 進入) ---
+  const [view, setView] = useState('calendar'); // 'calendar' | 'finance'
+  const [financeId, setFinanceId] = useState(safeStorage.getItem('bibi_finance_id') || '');
+  const [financeIdInput, setFinanceIdInput] = useState('');
+  const [finTab, setFinTab] = useState('bills'); // 'bills' | 'expenses'
+  const [finBills, setFinBills] = useState([]);
+  const [finMonth, setFinMonth] = useState(() => formatDate(new Date()).slice(0, 7));
+  const [finMonthExpenses, setFinMonthExpenses] = useState([]);
+  const [finRecentExpenses, setFinRecentExpenses] = useState([]); // 近 62 天，算卡片帳期用
+  const [editingExpense, setEditingExpense] = useState(null); // null | {isNew?, id?, ...}
+  const [finSaving, setFinSaving] = useState(false);
+  const logoPressTimer = useRef(null);
+  const logoLongPressed = useRef(false);
+
   const touchStartX = useRef(null);
   const touchEndX = useRef(null);
   const minSwipeDistance = 50;
@@ -376,11 +440,13 @@ const App = () => {
       else if (isUpcomingModalOpen) setIsUpcomingModalOpen(false);
       else if (isDayViewModalOpen) setIsDayViewModalOpen(false);
       else if (isSettingsModalOpen) setIsSettingsModalOpen(false);
+      else if (editingExpense) setEditingExpense(null);
+      else if (view === 'finance') setView('calendar');
       else if (holidayType) setHolidayType(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isEditModalOpen, isUpcomingModalOpen, isDayViewModalOpen, isSettingsModalOpen, holidayType, showIOSInstallGuide]);
+  }, [isEditModalOpen, isUpcomingModalOpen, isDayViewModalOpen, isSettingsModalOpen, holidayType, showIOSInstallGuide, editingExpense, view]);
 
   const handleInstallApp = async () => {
     if (!deferredPrompt) return;
@@ -486,6 +552,140 @@ const App = () => {
     return () => { unsubEvents(); unsubSettings(); };
   }, [user, customUserId]);
 
+  // --- 帳務：bills + 近 62 天記帳 (卡片帳期計算用) ---
+  useEffect(() => {
+    if (!financeId || view !== 'finance') return;
+    const billsCol = collection(db, 'artifacts', appId, 'finance', financeId, 'bills');
+    const unsubBills = onSnapshot(query(billsCol), (snap) => {
+      const rows = [];
+      snap.forEach((d) => rows.push({ id: d.id, ...d.data() }));
+      rows.sort((a, b) => (a.day || 0) - (b.day || 0));
+      setFinBills(rows);
+    }, (err) => console.error('Finance bills error:', err));
+
+    const cutoff = addDaysToDateStr(formatDate(new Date()), -62);
+    const expCol = collection(db, 'artifacts', appId, 'finance', financeId, 'expenses');
+    const unsubRecent = onSnapshot(query(expCol, where('date', '>=', cutoff)), (snap) => {
+      const rows = [];
+      snap.forEach((d) => rows.push({ id: d.id, ...d.data() }));
+      setFinRecentExpenses(rows);
+    }, (err) => console.error('Finance recent expenses error:', err));
+
+    return () => { unsubBills(); unsubRecent(); };
+  }, [financeId, view]);
+
+  // --- 帳務：選定月份的記帳明細 ---
+  useEffect(() => {
+    if (!financeId || view !== 'finance') return;
+    const expCol = collection(db, 'artifacts', appId, 'finance', financeId, 'expenses');
+    const qm = query(expCol,
+      where('date', '>=', `${finMonth}-01`),
+      where('date', '<=', clampDayToMonthKey(finMonth, 31)));
+    return onSnapshot(qm, (snap) => {
+      const rows = [];
+      snap.forEach((d) => rows.push({ id: d.id, ...d.data() }));
+      rows.sort((a, b) => {
+        if (a.date !== b.date) return b.date.localeCompare(a.date);
+        const ta = a.createdAt?.seconds || 0;
+        const tb = b.createdAt?.seconds || 0;
+        return tb - ta;
+      });
+      setFinMonthExpenses(rows);
+    }, (err) => console.error('Finance month expenses error:', err));
+  }, [financeId, view, finMonth]);
+
+  // --- 帳務：logo 長按進入 ---
+  const handleLogoPressStart = () => {
+    logoLongPressed.current = false;
+    clearTimeout(logoPressTimer.current);
+    logoPressTimer.current = setTimeout(() => {
+      logoLongPressed.current = true;
+      triggerHaptic();
+      setView('finance');
+    }, 500);
+  };
+  const handleLogoPressEnd = () => { clearTimeout(logoPressTimer.current); };
+  const handleLogoClick = () => {
+    if (logoLongPressed.current) { logoLongPressed.current = false; return; }
+    openUpcomingList();
+  };
+
+  const openFinanceFromSettings = () => {
+    setIsSettingsModalOpen(false);
+    setView('finance');
+  };
+
+  const handleLinkFinanceId = async () => {
+    const id = financeIdInput.trim();
+    if (!id) { addToast('請貼上帳務 ID', 'error'); return; }
+    try {
+      const snap = await getDoc(doc(db, 'artifacts', appId, 'finance', id));
+      if (!snap.exists()) { addToast('找不到這個帳務 ID，請確認後再試', 'error'); return; }
+      safeStorage.setItem('bibi_finance_id', id);
+      setFinanceId(id);
+      setFinanceIdInput('');
+      addToast('帳務空間已連結 ✨');
+    } catch (e) {
+      console.error('Link finance error:', e);
+      addToast('連結失敗，請重試', 'error');
+    }
+  };
+
+  const handleUnlinkFinanceId = () => {
+    if (!window.confirm('要解除這台裝置與帳務空間的連結嗎？（資料不會刪除，重新貼 ID 即可接回）')) return;
+    safeStorage.removeItem('bibi_finance_id');
+    setFinanceId('');
+    setFinBills([]);
+    setFinMonthExpenses([]);
+    setFinRecentExpenses([]);
+  };
+
+  const saveExpense = async () => {
+    if (!editingExpense || !financeId) return;
+    const item = (editingExpense.item || '').trim();
+    const amount = parseInt(editingExpense.amount, 10);
+    if (!item) { addToast('請輸入品項', 'error'); return; }
+    if (!amount || amount < 1) { addToast('請輸入正確金額', 'error'); return; }
+    if (!editingExpense.date) { addToast('請選擇日期', 'error'); return; }
+    setFinSaving(true);
+    const data = {
+      date: editingExpense.date,
+      item,
+      amount,
+      category: editingExpense.category || 'other',
+      card: editingExpense.card || null,
+    };
+    try {
+      const expCol = collection(db, 'artifacts', appId, 'finance', financeId, 'expenses');
+      if (editingExpense.id) {
+        await updateDoc(doc(expCol, editingExpense.id), data);
+        addToast('記帳已更新 ✨');
+      } else {
+        await addDoc(expCol, { ...data, createdAt: serverTimestamp() });
+        addToast('已補記一筆 🧾');
+      }
+      setEditingExpense(null);
+    } catch (e) {
+      console.error('Save expense error:', e);
+      addToast('儲存失敗，請重試', 'error');
+    } finally {
+      setFinSaving(false);
+    }
+  };
+
+  const deleteExpense = async () => {
+    if (!editingExpense?.id || !financeId) return;
+    if (!window.confirm(`確定刪除「${editingExpense.item} $${fmtMoney(editingExpense.amount)}」嗎？\n（刪除後會發 LINE 私訊留底）`)) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'finance', financeId, 'expenses', editingExpense.id));
+      setEditingExpense(null);
+      addToast('記帳已刪除 🗑️');
+    } catch (e) {
+      console.error('Delete expense error:', e);
+      addToast('刪除失敗，請重試', 'error');
+    }
+  };
+
   const handleSaveCustomUid = () => { safeStorage.setItem('bibi_custom_uid', customUserId); window.location.reload(); };
   const handleResetUid = () => { safeStorage.removeItem('bibi_custom_uid'); window.location.reload(); };
   const handleCopyId = () => {
@@ -552,6 +752,7 @@ const App = () => {
   const onTouchEnd = () => {
     if (!touchStartX.current || !touchEndX.current) return;
     const distance = touchStartX.current - touchEndX.current;
+    if (view !== 'calendar') return; // 帳務頁不做月份滑動
     if (isEditModalOpen || isDayViewModalOpen || isSettingsModalOpen || isUpcomingModalOpen) return;
     if (distance > minSwipeDistance) handleNextMonth();
     if (distance < -minSwipeDistance) handlePrevMonth();
@@ -795,11 +996,23 @@ const App = () => {
     <div className={`h-dvh flex flex-col ${currentFont.bodyClass}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} style={{ backgroundColor: theme.colors.bg, color: theme.colors.text }}>
       <HolidayAnimation type={holidayType} onDismiss={() => setHolidayType(null)} />
       <ToastContainer toasts={toasts} />
-      
+
+      {view === 'calendar' && (<>
       <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] z-10 transition-colors duration-300" style={{ backgroundColor: theme.colors.headerBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
         <div className="flex items-center gap-3">
-           <div onClick={openUpcomingList} className="cursor-pointer mr-1 active:opacity-70 transition-opacity">
-             <img src="icon.png" className="w-8 h-8 object-contain" alt="Logo" />
+           <div
+             onClick={handleLogoClick}
+             onMouseDown={handleLogoPressStart}
+             onMouseUp={handleLogoPressEnd}
+             onMouseLeave={handleLogoPressEnd}
+             onTouchStart={handleLogoPressStart}
+             onTouchEnd={handleLogoPressEnd}
+             onTouchCancel={handleLogoPressEnd}
+             onContextMenu={(e) => e.preventDefault()}
+             className="cursor-pointer mr-1 active:opacity-70 transition-opacity select-none"
+             style={{ WebkitTouchCallout: 'none' }}
+           >
+             <img src="icon.png" className="w-8 h-8 object-contain pointer-events-none" alt="Logo" draggable={false} />
            </div>
            <div onClick={handleToday} className="cursor-pointer active:opacity-70 transition-opacity">
              <h1 className="text-xl font-title font-bold tracking-tight text-2xl" style={{ color: theme.colors.text }}>BiBi❣</h1>
@@ -967,6 +1180,305 @@ const App = () => {
       >
         <Plus className="w-7 h-7" />
       </button>
+      </>)}
+
+      {/* ===== 帳務頁（隱藏頁：長按 logo / 設定 → 帳務） ===== */}
+      {view === 'finance' && (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] z-10" style={{ backgroundColor: theme.colors.headerBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
+            <div className="flex items-center gap-2">
+              <button onClick={() => { triggerHaptic(); setView('calendar'); }} className="p-2 rounded-xl hover:opacity-70 active:scale-95 transition-all" style={{ color: theme.colors.secondaryText }} aria-label="返回月曆">
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h1 className="text-lg font-bold flex items-center gap-1.5" style={{ color: theme.colors.text }}>💳 帳務</h1>
+            </div>
+            {financeId && (
+              <button onClick={handleUnlinkFinanceId} className="text-[10px] px-2 py-1 rounded-lg hover:opacity-70 active:scale-95 transition-all" style={{ color: theme.colors.secondaryText }}>
+                解除連結
+              </button>
+            )}
+          </header>
+
+          {!financeId ? (
+            /* --- 引導頁：貼上帳務 ID --- */
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center">
+              <div className="w-full max-w-sm rounded-2xl border p-6 mt-4" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                <div className="flex flex-col items-center text-center mb-5">
+                  <div className="w-14 h-14 rounded-2xl border flex items-center justify-center text-2xl mb-3" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>🔗</div>
+                  <h2 className="font-bold mb-1" style={{ color: theme.colors.text }}>連結你的帳務空間</h2>
+                  <p className="text-[11px] leading-snug" style={{ color: theme.colors.secondaryText }}>帳務獨立於行事曆，只顯示在貼過 ID 的裝置上</p>
+                </div>
+                <div className="space-y-3 mb-5">
+                  {[
+                    ['1', '用 LINE 私聊對 Bot 傳「帳務綁定」'],
+                    ['2', '複製 Bot 回覆的帳務 ID（fin- 開頭）'],
+                    ['3', '貼到下方欄位'],
+                  ].map(([n, t]) => (
+                    <div key={n} className="flex items-center gap-3">
+                      <span className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0" style={{ backgroundColor: theme.colors.accent }}>{n}</span>
+                      <span className="text-xs" style={{ color: theme.colors.text }}>{t}</span>
+                    </div>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={financeIdInput}
+                  onChange={(e) => setFinanceIdInput(e.target.value)}
+                  placeholder="fin-________"
+                  className="w-full text-sm border rounded-xl p-2.5 mb-3 outline-none font-num-naikai"
+                  style={{ borderColor: theme.colors.inputBorder, backgroundColor: theme.colors.inputBg, color: theme.colors.text }}
+                />
+                <button onClick={handleLinkFinanceId} className="w-full py-2.5 text-sm font-bold text-white rounded-xl shadow-sm active:scale-95 transition-transform" style={{ backgroundColor: theme.colors.accent }}>
+                  連結帳務空間
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* --- 分頁切換 --- */}
+              <div className="flex-none mx-4 mt-3 flex gap-1 p-1 rounded-xl" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
+                {[['bills', '帳單'], ['expenses', '記帳']].map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => { triggerHaptic(); setFinTab(key); }}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${finTab === key ? 'shadow' : 'opacity-60'}`}
+                    style={{ backgroundColor: finTab === key ? theme.colors.modalBg : 'transparent', color: finTab === key ? theme.colors.text : theme.colors.secondaryText }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {finTab === 'bills' && (
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  {finBills.length === 0 && (
+                    <div className="rounded-2xl border p-4 text-xs leading-relaxed" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border, color: theme.colors.secondaryText }}>
+                      還沒有卡片或貸款。在 LINE 私聊對 Bot 傳：<br />
+                      「信用卡 國泰卡 15號 額度100000」<br />
+                      「貸款 房貸 10號 25000」
+                    </div>
+                  )}
+                  {finBills.map((b) => {
+                    if (b.type === 'card') {
+                      const cycle = cardCycleOf(b.day, todayStr);
+                      const spent = finRecentExpenses
+                        .filter((e) => e.card === b.name && e.date >= cycle.startStr && e.date <= cycle.endStr)
+                        .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                      const dLeft = dateStrDiffDays(cycle.endStr, todayStr);
+                      const pct = b.limit ? Math.min(100, Math.round((spent / b.limit) * 100)) : 0;
+                      return (
+                        <div key={b.id} className="rounded-2xl border p-4 shadow-sm" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="font-bold text-sm" style={{ color: theme.colors.text }}>💳 {b.name}</span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: dLeft <= 3 ? '#F6E3DF' : theme.colors.gridHeaderBg, color: dLeft <= 3 ? '#B96A5E' : theme.colors.secondaryText }}>
+                              {dLeft === 0 ? '今天結帳' : `${cycle.endStr.slice(5).replace('-', '/')} 結帳・還 ${dLeft} 天`}
+                            </span>
+                          </div>
+                          <p className="text-[11px] mb-2" style={{ color: theme.colors.secondaryText }}>
+                            每月 {b.day} 號結帳・本期 {cycle.startStr.slice(5).replace('-', '/')} ~ {cycle.endStr.slice(5).replace('-', '/')}
+                          </p>
+                          <div className="flex justify-between items-baseline mb-1.5">
+                            <span className="text-[11px]" style={{ color: theme.colors.secondaryText }}>本期已刷（＝本次應繳）</span>
+                            <span className="font-bold font-num-naikai text-lg" style={{ color: theme.colors.text }}>${fmtMoney(spent)}</span>
+                          </div>
+                          {b.limit ? (
+                            <>
+                              <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
+                                <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: pct >= 80 ? '#D48888' : theme.colors.accent }} />
+                              </div>
+                              <div className="flex justify-between mt-1 text-[10px]" style={{ color: theme.colors.secondaryText }}>
+                                <span>額度已用 {pct}%</span>
+                                <span>剩 ${fmtMoney(Math.max(0, b.limit - spent))} / ${fmtMoney(b.limit)}</span>
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      );
+                    }
+                    const next = nextMonthlyDateStr(b.day, todayStr);
+                    const dLeft = dateStrDiffDays(next, todayStr);
+                    return (
+                      <div key={b.id} className="rounded-2xl border p-4 shadow-sm" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-bold text-sm" style={{ color: theme.colors.text }}>🏦 {b.name}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: dLeft <= 3 ? '#F6E3DF' : theme.colors.gridHeaderBg, color: dLeft <= 3 ? '#B96A5E' : theme.colors.secondaryText }}>
+                            {dLeft === 0 ? '今天繳款' : `${next.slice(5).replace('-', '/')} 繳款・還 ${dLeft} 天`}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-baseline">
+                          <span className="text-[11px]" style={{ color: theme.colors.secondaryText }}>每月 {b.day} 號繳款</span>
+                          {b.amount ? <span className="font-bold font-num-naikai text-lg" style={{ color: theme.colors.text }}>${fmtMoney(b.amount)}</span> : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="rounded-xl p-3 text-[10px] leading-relaxed" style={{ backgroundColor: theme.colors.gridHeaderBg + '80', color: theme.colors.secondaryText }}>
+                    新增／刪除卡片與貸款請在 LINE 私聊對 Bot 傳：<br />
+                    「信用卡 名稱 15號 額度100000」・「貸款 名稱 10號 25000」・「刪除帳單 名稱」
+                  </div>
+                </div>
+              )}
+
+              {finTab === 'expenses' && (() => {
+                const total = finMonthExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                const cardSum = finMonthExpenses.filter((e) => e.card).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                const byCat = {};
+                finMonthExpenses.forEach((e) => {
+                  const c = EXPENSE_CATEGORIES[e.category] ? e.category : 'other';
+                  byCat[c] = (byCat[c] || 0) + (Number(e.amount) || 0);
+                });
+                const catRows = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+                const maxCat = catRows.length > 0 ? catRows[0][1] : 1;
+                const dayGroups = {};
+                finMonthExpenses.forEach((e) => {
+                  if (!dayGroups[e.date]) dayGroups[e.date] = [];
+                  dayGroups[e.date].push(e);
+                });
+                const sortedDays = Object.keys(dayGroups).sort().reverse();
+                return (
+                  <div className="flex-1 overflow-y-auto p-4 pb-24 relative">
+                    <div className="flex items-center justify-center gap-5 mb-3">
+                      <button onClick={() => setFinMonth(monthKeyAdd(finMonth, -1))} className="p-1.5 rounded-lg hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }} aria-label="上個月"><ChevronLeft className="w-4 h-4" /></button>
+                      <span className="font-bold font-num-naikai text-sm" style={{ color: theme.colors.text }}>{finMonth.slice(0, 4)} 年 {parseInt(finMonth.slice(5), 10)} 月</span>
+                      <button onClick={() => setFinMonth(monthKeyAdd(finMonth, 1))} className="p-1.5 rounded-lg hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }} aria-label="下個月"><ChevronRight className="w-4 h-4" /></button>
+                    </div>
+
+                    <div className="rounded-2xl border p-4 text-center mb-3 shadow-sm" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                      <p className="text-[11px]" style={{ color: theme.colors.secondaryText }}>本月支出</p>
+                      <p className="text-3xl font-bold font-num-naikai my-0.5" style={{ color: theme.colors.text }}>${fmtMoney(total)}</p>
+                      <p className="text-[11px]" style={{ color: theme.colors.secondaryText }}>現金 ${fmtMoney(total - cardSum)}・刷卡 ${fmtMoney(cardSum)}</p>
+                    </div>
+
+                    {catRows.length > 0 && (
+                      <div className="rounded-2xl border p-4 mb-3 space-y-2 shadow-sm" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                        {catRows.map(([c, v]) => {
+                          const cat = EXPENSE_CATEGORIES[c] || EXPENSE_CATEGORIES.other;
+                          return (
+                            <div key={c} className="flex items-center gap-2">
+                              <span className="text-[11px] w-14 shrink-0" style={{ color: theme.colors.text }}>{cat.emoji} {cat.name}</span>
+                              <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
+                                <div className="h-full rounded-full" style={{ width: `${Math.max(4, Math.round((v / maxCat) * 100))}%`, backgroundColor: cat.hex }} />
+                              </div>
+                              <span className="text-[11px] font-bold font-num-naikai w-16 text-right shrink-0" style={{ color: theme.colors.text }}>${fmtMoney(v)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {sortedDays.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-10 opacity-50" style={{ color: theme.colors.secondaryText }}>
+                        <Coffee className="w-10 h-10 mb-2" /><p className="text-sm">這個月還沒有記帳</p>
+                        <p className="text-[11px] mt-1">在 LINE 私聊打「品項 金額」，或按右下 ＋ 補記</p>
+                      </div>
+                    ) : (
+                      sortedDays.map((d) => {
+                        const daySum = dayGroups[d].reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                        return (
+                          <div key={d} className="mb-3">
+                            <div className="flex justify-between items-baseline text-[11px] font-bold text-white rounded-lg px-2.5 py-1 mb-1.5" style={{ backgroundColor: theme.colors.accent }}>
+                              <span className="font-num-naikai">{d.slice(5).replace('-', '/')}（{new Date(d + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'short' }).replace('週', '')}）</span>
+                              <span className="font-num-naikai">${fmtMoney(daySum)}</span>
+                            </div>
+                            {dayGroups[d].map((e) => {
+                              const cat = EXPENSE_CATEGORIES[e.category] || EXPENSE_CATEGORIES.other;
+                              return (
+                                <div key={e.id} onClick={() => setEditingExpense({ ...e })} className="flex items-center gap-2.5 px-2 py-2 rounded-xl cursor-pointer active:scale-[0.98] transition-transform" style={{ backgroundColor: theme.colors.modalBg, marginBottom: 4, border: `1px solid ${theme.colors.border}60` }}>
+                                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.hex }} />
+                                  <span className="flex-1 text-sm truncate" style={{ color: theme.colors.text }}>{e.item}</span>
+                                  {e.card && <span className="text-[9px] px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>💳{e.card}</span>}
+                                  <span className="text-sm font-bold font-num-naikai shrink-0" style={{ color: theme.colors.text }}>${fmtMoney(e.amount)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                );
+              })()}
+
+              {finTab === 'expenses' && (
+                <button
+                  onClick={() => setEditingExpense({ isNew: true, date: todayStr, item: '', amount: '', category: 'other', card: '' })}
+                  className="fixed z-40 rounded-full shadow-xl flex items-center justify-center active:scale-95 transition-all hover:brightness-110"
+                  style={{
+                    right: 'max(16px, env(safe-area-inset-right))',
+                    bottom: 'calc(max(16px, env(safe-area-inset-bottom)) + 8px)',
+                    width: 52, height: 52,
+                    backgroundColor: theme.colors.accent, color: '#FFF',
+                  }}
+                  aria-label="補記一筆"
+                >
+                  <Plus className="w-6 h-6" />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ===== 記帳編輯 / 補記 Modal ===== */}
+      {editingExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] p-4" style={{ backgroundColor: theme.colors.text + '30' }}>
+          <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden border flex flex-col max-h-[85vh] modal-enter" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+            <div className="px-5 py-4 border-b flex justify-between items-center shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+              <h3 className="font-bold text-sm" style={{ color: theme.colors.text }}>{editingExpense.isNew ? '🧾 補記一筆' : '🧾 編輯記帳'}</h3>
+              <button onClick={() => setEditingExpense(null)} className="p-1 rounded-full hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: theme.colors.secondaryText }}>日期</label>
+                  <input type="date" value={editingExpense.date} max={todayStr} onChange={(e) => setEditingExpense((p) => ({ ...p, date: e.target.value }))} className="w-full border rounded-lg px-2 py-1.5 text-sm font-num-naikai" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: theme.colors.secondaryText }}>金額</label>
+                  <input type="number" inputMode="numeric" min="1" value={editingExpense.amount} onChange={(e) => setEditingExpense((p) => ({ ...p, amount: e.target.value }))} placeholder="0" className="w-full border rounded-lg px-2 py-1.5 text-sm font-bold font-num-naikai" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: theme.colors.secondaryText }}>品項</label>
+                <input type="text" value={editingExpense.item} onChange={(e) => setEditingExpense((p) => ({ ...p, item: e.target.value }))} placeholder="例：早餐" className="w-full border rounded-lg px-2 py-1.5 text-sm" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase block mb-1.5" style={{ color: theme.colors.secondaryText }}>分類</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(EXPENSE_CATEGORIES).map(([key, cat]) => (
+                    <button key={key} onClick={() => setEditingExpense((p) => ({ ...p, category: key }))} className="text-[11px] px-2.5 py-1 rounded-full border font-bold active:scale-95 transition-transform" style={{ backgroundColor: editingExpense.category === key ? cat.hex : theme.colors.inputBg, color: editingExpense.category === key ? '#FFF' : theme.colors.secondaryText, borderColor: editingExpense.category === key ? cat.hex : theme.colors.border }}>
+                      {cat.emoji} {cat.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase block mb-1.5" style={{ color: theme.colors.secondaryText }}>支付方式</label>
+                <div className="flex flex-wrap gap-1.5">
+                  <button onClick={() => setEditingExpense((p) => ({ ...p, card: '' }))} className="text-[11px] px-2.5 py-1 rounded-full border font-bold active:scale-95 transition-transform" style={{ backgroundColor: !editingExpense.card ? theme.colors.secondaryText : theme.colors.inputBg, color: !editingExpense.card ? '#FFF' : theme.colors.secondaryText, borderColor: !editingExpense.card ? theme.colors.secondaryText : theme.colors.border }}>
+                    現金
+                  </button>
+                  {finBills.filter((b) => b.type === 'card').map((b) => (
+                    <button key={b.id} onClick={() => setEditingExpense((p) => ({ ...p, card: b.name }))} className="text-[11px] px-2.5 py-1 rounded-full border font-bold active:scale-95 transition-transform" style={{ backgroundColor: editingExpense.card === b.name ? '#6D4C41' : theme.colors.inputBg, color: editingExpense.card === b.name ? '#FFF' : theme.colors.secondaryText, borderColor: editingExpense.card === b.name ? '#6D4C41' : theme.colors.border }}>
+                      💳 {b.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t flex gap-2 shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
+              {!editingExpense.isNew && (
+                <button onClick={deleteExpense} className="flex-1 py-2.5 text-xs font-bold rounded-xl border active:scale-95 transition-transform flex items-center justify-center gap-1" style={{ borderColor: theme.colors.danger, color: theme.colors.danger }}>
+                  <Trash2 className="w-3.5 h-3.5" /> 刪除
+                </button>
+              )}
+              <button onClick={saveExpense} disabled={finSaving} className="flex-[1.6] py-2.5 text-xs font-bold text-white rounded-xl shadow-md active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-1" style={{ backgroundColor: theme.colors.accent }}>
+                {finSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} 儲存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* iOS Safari Install Guide */}
       {showIOSInstallGuide && (
@@ -1164,6 +1676,17 @@ const App = () => {
                     取消通知請在 LINE 對 Bot 傳：解除綁定
                   </p>
                 </div>
+
+                <hr style={{ borderColor: theme.colors.border }} />
+
+                {/* 帳務入口（低調）：也可以直接長按月曆 logo 進入 */}
+                <button
+                  onClick={openFinanceFromSettings}
+                  className="w-full py-2 text-xs font-bold rounded-lg active:scale-95 transition-transform flex items-center justify-center gap-1.5"
+                  style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}
+                >
+                  <Wallet className="w-3.5 h-3.5" /> 帳務
+                </button>
 
                 <hr style={{ borderColor: theme.colors.border }} />
 
