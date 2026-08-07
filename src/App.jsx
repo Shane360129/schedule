@@ -1452,14 +1452,15 @@ const App = () => {
               <button onClick={() => setEditingExpense(null)} className="p-1 rounded-full hover:opacity-70 active:scale-95" style={{ color: theme.colors.secondaryText }}><X className="w-5 h-5" /></button>
             </div>
             <div className="p-5 space-y-4 overflow-y-auto flex-1">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
+              {/* 手機直向排列，避免 date input 固有寬度撐爆兩欄格線造成重疊 */}
+              <div className="space-y-4">
+                <div className="min-w-0">
                   <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: theme.colors.secondaryText }}>日期</label>
-                  <input type="date" value={editingExpense.date} max={todayStr} onChange={(e) => setEditingExpense((p) => ({ ...p, date: e.target.value }))} className="w-full border rounded-lg px-2 py-1.5 text-sm font-num-naikai" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                  <input type="date" value={editingExpense.date} max={todayStr} onChange={(e) => setEditingExpense((p) => ({ ...p, date: e.target.value }))} className="w-full box-border border rounded-lg px-2 py-1.5 text-sm font-num-naikai" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: theme.colors.secondaryText }}>金額</label>
-                  <input type="number" inputMode="numeric" min="1" value={editingExpense.amount} onChange={(e) => setEditingExpense((p) => ({ ...p, amount: e.target.value }))} placeholder="0" className="w-full border rounded-lg px-2 py-1.5 text-sm font-bold font-num-naikai" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                  <input type="number" inputMode="numeric" min="1" value={editingExpense.amount} onChange={(e) => setEditingExpense((p) => ({ ...p, amount: e.target.value }))} placeholder="0" className="w-full box-border border rounded-lg px-2 py-1.5 text-sm font-bold font-num-naikai" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
                 </div>
               </div>
               <div>
