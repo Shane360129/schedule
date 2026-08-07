@@ -645,7 +645,11 @@ const App = () => {
       addToast('帳務空間已連結 ✨');
     } catch (e) {
       console.error('Link finance error:', e);
-      addToast('連結失敗，請重試', 'error');
+      if (e?.code === 'permission-denied') {
+        addToast('資料庫規則尚未開放帳務路徑，請先更新 Firestore 規則', 'error');
+      } else {
+        addToast('連結失敗，請重試', 'error');
+      }
     }
   };
 
