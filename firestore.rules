@@ -1,22 +1,58 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 設計說明：
-    // - 客戶端（App）走匿名登入，路徑裡的不可猜 ID（裝置 uid / 帳務 fid）就是存取憑證，
-    //   所以規則的底線是「必須登入」＋「只開放這兩個子樹」。
-    // - LINE bot 走 Admin SDK，不受這裡限制。
-    // - finance_bindings、webhook_dedup、ai_usage 等後端內部集合，客戶端一律禁止。
 
-    match /artifacts/{appId}/users/{uid}/{document=**} {
+    // === 前端 App 會用到的 ===
+    // 因為「綁定夥伴 UID」設計允許跨 UID 讀寫，
+    // 這邊只能擋「沒登入 (Anonymous Auth)」的人。
+    // 安全性靠 UID 是 28 字元亂碼 + 不公開。
+
+    match /artifacts/schdule-f5cda/users/{uid}/bibi_events/{eventId} {
+      allow read, write: if request.auth != null;
+    }
+    match /artifacts/schdule-f5cda/users/{uid}/bibi_settings/{settingId} {
       allow read, write: if request.auth != null;
     }
 
-    match /artifacts/{appId}/finance/{fid}/{document=**} {
+    // === 帳務 (Finance)：App 帳務頁用 ===
+    // 安全性同上：靠 fin-ID 是亂碼 + 不公開。
+    // space doc 只准讀（App 連結時驗證存在用），內容後端才能寫；
+    // bills 只准讀（卡片/貸款只從 LINE 建立）；expenses 可讀寫（App 補記/編輯/刪除）。
+
+    match /artifacts/schdule-f5cda/finance/{fid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /artifacts/schdule-f5cda/finance/{fid}/bills/{billId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /artifacts/schdule-f5cda/finance/{fid}/expenses/{expenseId} {
       allow read, write: if request.auth != null;
     }
 
-    match /{document=**} {
+    // === Functions 內部用，前端絕對禁止 ===
+    // Admin SDK 不受 Rules 限制，這邊只擋前端誤觸 / 惡意
+
+    match /artifacts/schdule-f5cda/finance_bindings/{lineUserId} {
       allow read, write: if false;
     }
+    match /artifacts/schdule-f5cda/users/{uid}/ai_logs/{logId} {
+      allow read, write: if false;
+    }
+    match /artifacts/schdule-f5cda/users/{uid}/ai_usage/{monthKey} {
+      allow read, write: if false;
+    }
+    match /artifacts/schdule-f5cda/webhook_dedup/{id} {
+      allow read, write: if false;
+    }
+    match /artifacts/schdule-f5cda/ai_rate_limit/{id} {
+      allow read, write: if false;
+    }
+    match /artifacts/schdule-f5cda/ai_conversations/{id} {
+      allow read, write: if false;
+    }
+
+    // 其他全部預設拒絕 (Firestore 不寫就是 deny，明列強調意圖)
   }
 }
