@@ -18,7 +18,7 @@ const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-08-07-v23-review-fixes';
+const BUILD_VERSION = '2026-08-08-v24-audit-fixes';
 
 // 通知開關 (true=開, false=關，省 LINE push 額度)
 const NOTIFY_ON_CREATE = true;
@@ -1727,10 +1727,15 @@ async function tryCheckin(client, ev, text) {
   const targetUid = uids[0];
   const now = new Date();
   const dateStr = formatDateTW(now);
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
+  // 用台北時區取時分 — Functions 主機是 UTC，getHours() 會差 8 小時
+  const tpe = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TAIPEI_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(now);
+  const [tpeH, tpeM] = tpe.split(':').map(Number);
+  const hh = String(tpeH % 24).padStart(2, '0');
+  const mm = String(tpeM).padStart(2, '0');
   const startTime = `${hh}:${mm}`;
-  const endTotal = now.getHours() * 60 + now.getMinutes() + 30;
+  const endTotal = (tpeH % 24) * 60 + tpeM + 30;
   const eh = String(Math.min(23, Math.floor(endTotal / 60))).padStart(2, '0');
   const em = String(endTotal % 60).padStart(2, '0');
   const senderRole = await getSenderRoleForUid(targetUid, ev.source?.userId);
@@ -3159,8 +3164,13 @@ async function replyAskGPT(client, ev, question, options = {}) {
   const sourceId = getSourceId(ev);
   const uids = await getBoundUidsForSource(sourceId);
   if (uids.length === 0) {
+    // 只綁帳務、沒綁行事曆的人給明確指引（AI 目前需要行事曆綁定才能啟動）
+    const finOnly = await getFinanceIdForEvent(ev);
     return safeReply(client, ev.replyToken, withQuickReply({
-      type: 'text', text: '尚未綁定行事曆。先傳：綁定 <你的裝置 ID>',
+      type: 'text',
+      text: finOnly
+        ? 'AI 助理需要先綁定行事曆才能使用（帳務查詢也是走同一個 AI）。\n請先傳：綁定 <你的裝置 ID>\n（App 設定裡有「複製綁定指令」按鈕）'
+        : '尚未綁定行事曆。先傳：綁定 <你的裝置 ID>',
     }));
   }
   const primaryUid = uids[0];
@@ -4036,11 +4046,19 @@ function getFinanceHelpText() {
     '🤖 AI 查詢（唯讀，不會亂記帳）',
     '　「親 我這個月吃飯花多少」',
     '　「親 這期國泰卡最大的三筆是什麼」',
+    '　※ AI 需同時綁定行事曆才能使用',
     '',
     '⏰ 自動私訊通知',
     '　結帳日當天：本期應繳金額',
     '　貸款繳款日前 3 天起倒數提醒',
     '　每月 1 號：上月月結報告',
+    '',
+    '💡 小提醒',
+    '　跟 AI 對話後 5 分鐘內，訊息會優先當 AI 追問；',
+    '　這時要記帳請在金額加「元」，例「早餐 65元」',
+    '　品項開頭避免行事曆動詞（改/刪除/取消/複製…），',
+    '　或前面加日期，例「昨天 複製鑰匙 100」',
+    '　「刪帳」搜尋範圍為最近 90 天',
     '',
     '🔒 隱私：以上全部只在你的私聊生效，',
     '　群組和夥伴完全看不到、查不到。',
@@ -4180,12 +4198,17 @@ async function tryFinanceExpenseCatchAll(client, ev, text) {
 
   let card = null;
   let item = parsed.item;
+  let unknownCardToken = null;
   if (parsed.payToken) {
     if (/^(現金|cash)$/i.test(parsed.payToken)) {
       card = null;
     } else {
       card = matchCardBill(bills, parsed.payToken);
-      if (!card) item = `${item} ${parsed.payToken}`.trim(); // 對不到卡就當品項的一部分
+      if (!card) {
+        item = `${item} ${parsed.payToken}`.trim(); // 對不到卡就當品項的一部分
+        // 長得像卡名（2-6 個非數字字元）就提醒使用者，避免「以為算進卡片了」
+        if (/^[^\d\s]{2,6}$/.test(parsed.payToken)) unknownCardToken = parsed.payToken;
+      }
     }
   }
   if (item.length > 24) return false;
@@ -4210,6 +4233,10 @@ async function tryFinanceExpenseCatchAll(client, ev, text) {
     `${dayLabel}累計 $${fmtMoney(sumExpenses(dayItems))}`,
   ];
   if (parsed.amount >= 10000) lines.push('⚠️ 金額較大，記錯請按「撤回」');
+  if (unknownCardToken) {
+    lines.push(`⚠️ 沒有「${unknownCardToken}」這張卡，已當現金記（未計入任何卡片帳期）。`);
+    lines.push(`要歸戶請先建卡：「信用卡 ${unknownCardToken}卡 15號」，再「撤回」重記`);
+  }
   if (card) {
     const cycle = cardCycleForToday(card.day, todayStr);
     const cycleItems = (await getExpensesInRange(fid, cycle.startStr, cycle.endStr))
@@ -4373,6 +4400,12 @@ async function tryFinanceCommand(client, ev, text) {
 
 async function handleFinanceBind(client, ev, lineUserId, requestedFid) {
   if (requestedFid) {
+    // ID 只允許安全字元 — 含 / 的字串會讓 Firestore doc path 直接 throw
+    if (!/^[A-Za-z0-9_-]{4,64}$/.test(requestedFid)) {
+      return safeReply(client, ev.replyToken, {
+        type: 'text', text: `「${requestedFid.slice(0, 40)}」不是有效的帳務 ID 格式（fin- 開頭的英數字串）。`,
+      });
+    }
     // 帶 ID：接回既有空間
     const snap = await finSpaceRef(requestedFid).get();
     if (!snap.exists) {
@@ -4391,10 +4424,15 @@ async function handleFinanceBind(client, ev, lineUserId, requestedFid) {
         text: '⚠️ 這個帳務空間目前綁定在另一個 LINE 帳號上，無法接手。\n若是要轉移到這個帳號，請先用原帳號傳「帳務解綁」。',
       });
     }
+    // 若原本綁著另一個空間，回覆裡保留舊 ID，避免舊資料從此找不回來
+    const prevFid = await getFinanceIdForLineUser(lineUserId);
     await finBindingRef(lineUserId).set({ financeId: requestedFid, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     await finSpaceRef(requestedFid).set({ ownerLineUserId: lineUserId }, { merge: true });
+    const switched = prevFid && prevFid !== requestedFid
+      ? `\n（原本綁定的是 ${prevFid}，資料仍保留，想切回請傳「帳務綁定 ${prevFid}」）`
+      : '';
     return safeReply(client, ev.replyToken, financeQuickReply({
-      type: 'text', text: `✅ 已接回帳務空間 ${requestedFid}\n直接輸入「品項 金額」就能記帳，例：早餐 65`,
+      type: 'text', text: `✅ 已接回帳務空間 ${requestedFid}${switched}\n直接輸入「品項 金額」就能記帳，例：早餐 65`,
     }));
   }
   const existing = await getFinanceIdForLineUser(lineUserId);
@@ -4436,6 +4474,8 @@ async function replyFinanceStatus(client, ev, lineUserId) {
   const bills = await getFinanceBills(fid);
   const mk = formatDateTW(new Date()).slice(0, 7);
   const monthItems = await getExpensesInRange(fid, `${mk}-01`, clampedDateForMonth(mk, 31));
+  const spaceSnap = await finSpaceRef(fid).get();
+  const pushCount = spaceSnap.exists ? (spaceSnap.data()[`pushCount_${mk}`] || 0) : 0;
   return safeReply(client, ev.replyToken, financeQuickReply({
     type: 'text',
     text: [
@@ -4443,6 +4483,7 @@ async function replyFinanceStatus(client, ev, lineUserId) {
       `帳務 ID：${fid}`,
       `卡片/貸款：${bills.length} 筆`,
       `本月記帳：${monthItems.length} 筆・$${fmtMoney(sumExpenses(monthItems))}`,
+      `本月帳務推播：${pushCount} 則`,
       '',
       '（App 帳務頁：長按月曆 logo → 貼上帳務 ID）',
     ].join('\n'),
@@ -4966,7 +5007,8 @@ exports.lineWebhook = onRequest(
             await tryExportICS(client, ev, text.replace(/^匯出[\s　]*/, '').trim());
           } else if (/^\d+[\s　]*(分鐘?|小時|時|hr|min)[\s　]*後/.test(text)) {
             await tryDelayedReminder(client, ev, text);
-          } else if (text === '剩下' || text === '今天剩' || text === '今天還剩' || text === '剩什麼') {
+          } else if (text === '剩下' || text === '今天剩' || text === '今天還剩' ||
+                     text === '剩什麼' || text === '今天剩什麼') {
             await replyRemainingToday(client, ev);
           } else if (text === '空檔' || text === '明天空檔' || text === '明天有空嗎') {
             await replyFreeSlots(client, ev, 'tomorrow');
@@ -5037,6 +5079,9 @@ exports.lineWebhook = onRequest(
             await replyAgenda(client, ev, range);
           } else if (ev.source?.type === 'group' || ev.source?.type === 'room') {
             // 群組／多人聊天室：非指令訊息保持安靜，避免 AI 被亂觸發
+          } else if (/\d[元塊]/.test(text) && await tryFinanceExpenseCatchAll(client, ev, text)) {
+            // 記帳的明確逃生口：金額後面帶「元/塊」（例「早餐 65元」）
+            // 就算在 AI 對話 5 分鐘窗口內也強制當記帳，不會被 AI 追問吃掉
           } else if (text.length >= 2 && await hasRecentAIConversation(sourceId)) {
             // AI 對話追問優先於記帳 catch-all：
             // 否則「AI 問幾點 → 使用者答『下午 3』」會被記成一筆 $3 支出
@@ -5555,6 +5600,10 @@ exports.notifyOnExpenseDelete = onDocumentDeleted(
         type: 'text',
         text: `🗑️ 已刪除記帳：${(data.date || '').slice(5).replace('-', '/')} ${cat.emoji} ${data.item} $${fmtMoney(data.amount)}`,
       });
+      const mk = formatDateTW(new Date()).slice(0, 7);
+      await finSpaceRef(fid).set({
+        [`pushCount_${mk}`]: admin.firestore.FieldValue.increment(1),
+      }, { merge: true });
     } catch (e) {
       console.warn('[expenseDelete] push failed', e?.message);
     }
