@@ -616,7 +616,8 @@ const App = () => {
   const handleLogoPressEnd = (e) => {
     clearTimeout(logoPressTimer.current);
     if (e.type === 'touchend' || e.type === 'touchcancel') logoLastTouchAt.current = Date.now();
-    if (e.type === 'mouseleave') { logoLongPressed.current = false; return; }
+    // touchcancel = 被系統手勢/通知打斷，視為取消而非放開，不導頁
+    if (e.type === 'mouseleave' || e.type === 'touchcancel') { logoLongPressed.current = false; return; }
     if (logoLongPressed.current) {
       // 多數瀏覽器放開後會補發 click → 走 handleLogoClick 導頁；
       // 少數長按後不發 click 的瀏覽器由這個備援計時器導頁
@@ -1292,9 +1293,9 @@ const App = () => {
                       const pct = b.limit ? Math.min(100, Math.round((spent / b.limit) * 100)) : 0;
                       return (
                         <div key={b.id} className="rounded-2xl border p-4 shadow-sm" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="font-bold text-sm" style={{ color: theme.colors.text }}>💳 {b.name}</span>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: dLeft <= 3 ? '#F6E3DF' : theme.colors.gridHeaderBg, color: dLeft <= 3 ? '#B96A5E' : theme.colors.secondaryText }}>
+                          <div className="flex justify-between items-center gap-2 mb-1">
+                            <span className="font-bold text-sm min-w-0 truncate" style={{ color: theme.colors.text }}>💳 {b.name}</span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0" style={{ backgroundColor: dLeft <= 3 ? '#F6E3DF' : theme.colors.gridHeaderBg, color: dLeft <= 3 ? '#B96A5E' : theme.colors.secondaryText }}>
                               {dLeft === 0 ? '今天結帳' : `${cycle.endStr.slice(5).replace('-', '/')} 結帳・還 ${dLeft} 天`}
                             </span>
                           </div>
@@ -1323,9 +1324,9 @@ const App = () => {
                     const dLeft = dateStrDiffDays(next, todayStr);
                     return (
                       <div key={b.id} className="rounded-2xl border p-4 shadow-sm" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-bold text-sm" style={{ color: theme.colors.text }}>🏦 {b.name}</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: dLeft <= 3 ? '#F6E3DF' : theme.colors.gridHeaderBg, color: dLeft <= 3 ? '#B96A5E' : theme.colors.secondaryText }}>
+                        <div className="flex justify-between items-center gap-2 mb-1">
+                          <span className="font-bold text-sm min-w-0 truncate" style={{ color: theme.colors.text }}>🏦 {b.name}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0" style={{ backgroundColor: dLeft <= 3 ? '#F6E3DF' : theme.colors.gridHeaderBg, color: dLeft <= 3 ? '#B96A5E' : theme.colors.secondaryText }}>
                             {dLeft === 0 ? '今天繳款' : `${next.slice(5).replace('-', '/')} 繳款・還 ${dLeft} 天`}
                           </span>
                         </div>
@@ -1383,7 +1384,7 @@ const App = () => {
                               <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
                                 <div className="h-full rounded-full" style={{ width: `${Math.max(4, Math.round((v / maxCat) * 100))}%`, backgroundColor: cat.hex }} />
                               </div>
-                              <span className="text-[11px] font-bold font-num-naikai w-16 text-right shrink-0" style={{ color: theme.colors.text }}>${fmtMoney(v)}</span>
+                              <span className="text-[11px] font-bold font-num-naikai min-w-[64px] text-right shrink-0 whitespace-nowrap" style={{ color: theme.colors.text }}>${fmtMoney(v)}</span>
                             </div>
                           );
                         })}
@@ -1410,7 +1411,7 @@ const App = () => {
                                 <div key={e.id} onClick={() => setEditingExpense({ ...e })} className="flex items-center gap-2.5 px-2 py-2 rounded-xl cursor-pointer active:scale-[0.98] transition-transform" style={{ backgroundColor: theme.colors.modalBg, marginBottom: 4, border: `1px solid ${theme.colors.border}60` }}>
                                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.hex }} />
                                   <span className="flex-1 text-sm truncate" style={{ color: theme.colors.text }}>{e.item}</span>
-                                  {e.card && <span className="text-[9px] px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>💳{e.card}</span>}
+                                  {e.card && <span className="text-[9px] px-1.5 py-0.5 rounded shrink-0 max-w-[6rem] truncate" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>💳{e.card}</span>}
                                   <span className="text-sm font-bold font-num-naikai shrink-0" style={{ color: theme.colors.text }}>${fmtMoney(e.amount)}</span>
                                 </div>
                               );
