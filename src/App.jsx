@@ -665,9 +665,8 @@ const App = () => {
 
   const saveExpense = async () => {
     if (!editingExpense || !financeId) return;
-    const item = (editingExpense.item || '').trim();
+    const item = (editingExpense.item || '').trim() || '消費'; // 品項可留空，預設「消費」
     const amount = Math.round(Number(editingExpense.amount));
-    if (!item) { addToast('請輸入品項', 'error'); return; }
     if (!Number.isFinite(amount) || amount < 1 || amount > 9999999) { addToast('請輸入正確金額', 'error'); return; }
     if (!editingExpense.date || isNaN(new Date(editingExpense.date + 'T00:00:00').getTime())) { addToast('請選擇日期', 'error'); return; }
     if (editingExpense.date > formatDate(new Date())) { addToast('記帳日期不能是未來', 'error'); return; }
@@ -1466,7 +1465,7 @@ const App = () => {
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase block mb-1" style={{ color: theme.colors.secondaryText }}>品項</label>
-                <input type="text" value={editingExpense.item} onChange={(e) => setEditingExpense((p) => ({ ...p, item: e.target.value }))} placeholder="例：早餐" className="w-full border rounded-lg px-2 py-1.5 text-sm" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
+                <input type="text" value={editingExpense.item} onChange={(e) => setEditingExpense((p) => ({ ...p, item: e.target.value }))} placeholder="例：早餐（可留空，記為「消費」）" className="w-full border rounded-lg px-2 py-1.5 text-sm" style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.inputBorder, color: theme.colors.text }} />
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase block mb-1.5" style={{ color: theme.colors.secondaryText }}>分類</label>

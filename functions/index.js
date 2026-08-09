@@ -4168,11 +4168,13 @@ function getFinanceHelpText() {
     '　帳務解綁　— 解除綁定（資料保留）',
     '　刪除帳務空間 → 回覆「確認刪除」（全刪、不可復原）',
     '',
-    '🧾 記帳（直接打，不用任何前綴）',
-    '　「早餐 65」',
-    '　「午餐 151 國泰」— 標記刷卡、算進帳期',
-    '　「昨天 宵夜 120」「前天 咖啡 80」',
-    '　「8/2 晚餐 420 國泰」— 補記過去日期',
+    '🧾 記帳（直接打，不用任何前綴；沒寫日期＝今天）',
+    '　「早餐 65」— 商品＋金額',
+    '　「午餐 151 國泰」— 商品＋金額＋消費方式（算進卡片帳期）',
+    '　「晚餐 320 現金」',
+    '　「65 國泰」「150元」— 只打金額也行，品項記為「消費」',
+    '　「100 加油」— 金額在前也可以',
+    '　「昨天 宵夜 120」「8/2 晚餐 420 國泰」— 補記過去日期',
     '　分類自動判斷（餐飲/交通/購物/娛樂/居住/醫療/其他）',
     '',
     '💳 信用卡 / 貸款',
@@ -4312,15 +4314,29 @@ function parseExpenseText(text, todayStr) {
     dateStr = cand;
     working = working.slice(m[0].length);
   }
+  // 標準式：「品項 金額 [支付]」
   m = working.match(/^(.+?)[\s　]+(\d{1,7})(?:元|塊)?(?:[\s　]+(\S{1,12}))?$/);
+  if (m) {
+    const item = m[1].trim();
+    const amount = parseInt(m[2], 10);
+    const payToken = m[3] || null;
+    const itemOk = item && item.length <= 24 && !/^[\d\s\/\-:：.,]+$/.test(item);
+    if (itemOk && amount >= 1 && amount <= 9999999) {
+      return { dateStr, item, amount, payToken, shorthand: false };
+    }
+  }
+  // 簡寫式：「金額 [卡名/現金/品項]」→ 沒品項時記為「消費」；
+  // 「100 加油」這種金額在前的倒序也走這裡（token 對不到卡就當品項）
+  m = working.match(/^(\d{1,7})(元|塊)?(?:[\s　]+(\S{1,12}))?$/);
   if (!m) return null;
-  const item = m[1].trim();
-  const amount = parseInt(m[2], 10);
-  const payToken = m[3] || null;
-  if (!item || item.length > 24) return null;
-  if (/^[\d\s\/\-:：.,]+$/.test(item)) return null; // 純數字/日期樣式不當品項
+  const amount = parseInt(m[1], 10);
+  const hasUnit = !!m[2];
+  const token = m[3] || null;
   if (!amount || amount < 1 || amount > 9999999) return null;
-  return { dateStr, item, amount, payToken };
+  if (token && /^[\d\s\/\-:：.,]+$/.test(token)) return null; // 「123 456」不當記帳
+  // 裸個位數（無單位、無 token）不收：避免 AI 對話裡回「3」被記成 $3
+  if (!token && !hasUnit && amount < 10) return null;
+  return { dateStr, item: null, amount, payToken: token, shorthand: true };
 }
 
 // --- 記帳 catch-all：私聊 + 已綁定才會嘗試。回傳 true = 已處理 ---
@@ -4348,7 +4364,16 @@ async function tryFinanceExpenseCatchAll(client, ev, text) {
   let card = null;
   let item = parsed.item;
   let unknownCardToken = null;
-  if (parsed.payToken) {
+  if (parsed.shorthand) {
+    // 簡寫式：token 是卡名 → 品項記「消費」；token 對不到卡 → token 本身就是品項；
+    // 沒 token → 現金「消費」
+    if (parsed.payToken && !/^(現金|cash)$/i.test(parsed.payToken)) {
+      card = matchCardBill(bills, parsed.payToken);
+      item = card ? '消費' : parsed.payToken;
+    } else {
+      item = '消費';
+    }
+  } else if (parsed.payToken) {
     if (/^(現金|cash)$/i.test(parsed.payToken)) {
       card = null;
     } else {
