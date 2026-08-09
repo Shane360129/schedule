@@ -4174,6 +4174,7 @@ function getFinanceHelpText() {
     '　「晚餐 320 現金」',
     '　「65 國泰」「150元」— 只打金額也行，品項記為「消費」',
     '　「100 加油」— 金額在前也可以',
+    '　卡名打關鍵字即可：cube／國泰／刷cube 都對得到「國泰cube」',
     '　「昨天 宵夜 120」「8/2 晚餐 420 國泰」— 補記過去日期',
     '　分類自動判斷（餐飲/交通/購物/娛樂/居住/醫療/其他）',
     '',
@@ -4268,14 +4269,20 @@ function sumExpenses(items) {
   return items.reduce((s, e) => s + (Number(e.amount) || 0), 0);
 }
 
-// 卡名比對：「國泰」可對到「國泰卡」，去掉尾字「卡」後做前綴比對
+// 卡名比對：三層依序嘗試 — 完全相等 → 前綴 → 關鍵字包含（雙向）。
+// 英文不分大小寫、去掉「刷」前綴與「卡」尾字，
+// 例：卡名「國泰cube」可用 國泰 / cube / CUBE / 刷cube / 國泰卡 對到。
 function matchCardBill(bills, token) {
   if (!token) return null;
-  const norm = (s) => String(s || '').replace(/卡$/, '');
+  const norm = (s) => String(s || '').toLowerCase().replace(/^刷/, '').replace(/卡$/, '').trim();
   const t = norm(token);
   if (!t) return null;
-  return bills.find((b) => b.type === 'card' &&
-    (norm(b.name) === t || norm(b.name).startsWith(t) || t.startsWith(norm(b.name)))) || null;
+  const cards = bills.filter((b) => b.type === 'card');
+  return cards.find((b) => norm(b.name) === t)
+    || cards.find((b) => norm(b.name).startsWith(t) || t.startsWith(norm(b.name)))
+    // 關鍵字層要求至少 2 字元，避免單一字（如「泰」）亂對
+    || (t.length >= 2 ? cards.find((b) => norm(b.name).includes(t) || t.includes(norm(b.name))) : null)
+    || null;
 }
 
 async function recordFinanceLastOp(fid, op) {
@@ -4781,10 +4788,13 @@ async function handleFinanceBillDelete(client, ev, fid, name) {
     }));
   }
   const bills = await getFinanceBills(fid);
-  const norm = (s) => String(s || '').replace(/卡$/, '');
+  const norm = (s) => String(s || '').toLowerCase().replace(/卡$/, '').trim();
   const hit = bills.find((b) => b.name === name) ||
     bills.find((b) => norm(b.name) === norm(name)) ||
-    bills.find((b) => norm(b.name).startsWith(norm(name)));
+    bills.find((b) => norm(b.name).startsWith(norm(name))) ||
+    (norm(name).length >= 2
+      ? bills.find((b) => norm(b.name).includes(norm(name)))
+      : null);
   if (!hit) {
     return safeReply(client, ev.replyToken, financeQuickReply({
       type: 'text', text: `找不到「${name}」。傳「帳單」看看現有清單。`,
