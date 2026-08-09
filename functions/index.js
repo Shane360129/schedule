@@ -18,7 +18,7 @@ const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-08-08-v24-audit-fixes';
+const BUILD_VERSION = '2026-08-08-v25-themed-cards';
 
 // 通知開關 (true=開, false=關，省 LINE push 額度)
 const NOTIFY_ON_CREATE = true;
@@ -434,11 +434,72 @@ function getRangeFromText(text) {
   return null;
 }
 
-function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {}, subtitle = null } = {}) {
+// -------- Flex 卡片主題：公主風 / 航海風，依日期奇偶交替 --------
+// 版權考量：不能用迪士尼/航海王的角色圖像，用配色 + 通用符號致敬，
+// 色票對齊 App 端 THEMES 的 kuromi（粉紅戀愛）與 onepiece（航海王）。
+const FLEX_THEMES = {
+  classic: {
+    name: '經典', deco: '', deco2: '',
+    headerText: '#FFFFFF', headerBg: '#BCAAA4', gradient: null,
+    accent: '#8D6E63', accentSoft: '#EFEBE9', text: '#333333', sub: '#999999',
+  },
+  princess: {
+    name: '公主風', deco: '👑', deco2: '✨',
+    headerText: '#FFFFFF', headerBg: '#F48FB1', gradient: ['#F48FB1', '#CE93D8'],
+    accent: '#D07890', accentSoft: '#FCE4EC', text: '#5E4048', sub: '#9C8288',
+  },
+  pirate: {
+    name: '航海風', deco: '⚓', deco2: '🌊',
+    headerText: '#FFFFFF', headerBg: '#29B6F6', gradient: ['#4FC3F7', '#0277BD'],
+    accent: '#0277BD', accentSoft: '#E3F2FD', text: '#37474F', sub: '#78909C',
+  },
+};
+
+// 偶數日 → 公主風、奇數日 → 航海風（同一天所有卡片風格一致）
+function flexThemeForToday(todayStr) {
+  return parseInt(todayStr.slice(8), 10) % 2 === 0 ? FLEX_THEMES.princess : FLEX_THEMES.pirate;
+}
+
+// 主題化的標頭 box（有漸層用漸層，否則純色）
+function themedHeaderBox(th, contents, paddingAll = 'lg') {
+  const box = { type: 'box', layout: 'vertical', paddingAll, contents };
+  if (th.gradient) {
+    box.background = {
+      type: 'linearGradient', angle: '135deg',
+      startColor: th.gradient[0], endColor: th.gradient[1],
+    };
+  } else {
+    box.backgroundColor = th.headerBg;
+  }
+  return box;
+}
+
+function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {}, subtitle = null, theme = null } = {}) {
+  const th = theme || FLEX_THEMES.classic;
   const ownerOf = (ev) => computeOwnerLabel(ev.eventType, uidRoles[ev._uid]);
   const todayStr = formatDateTW(new Date());
   const showDateHeader = dateGroups.length > 1;
   const bodyContents = [];
+
+  // 雙欄時間軸列（非 compact 用）：左＝時間、中＝軸點、右＝標題+負責人
+  const timelineRow = (leftText, isAllDay, titleText, ownerText) => ({
+    type: 'box', layout: 'horizontal', spacing: 'md', margin: 'lg',
+    contents: [
+      { type: 'text', text: leftText, size: 'sm', weight: 'bold',
+        color: th.accent, flex: 2, align: 'end', gravity: 'top', margin: 'xs' },
+      { type: 'box', layout: 'vertical', flex: 0, width: '12px', paddingTop: '4px',
+        contents: [{
+          type: 'box', layout: 'vertical', width: '10px', height: '10px',
+          cornerRadius: isAllDay ? '2px' : '5px', backgroundColor: th.accent,
+          contents: [{ type: 'filler' }],
+        }] },
+      { type: 'box', layout: 'vertical', flex: 6,
+        contents: [
+          { type: 'text', text: titleText, size: 'lg', weight: 'bold', wrap: true, color: th.text },
+          { type: 'text', text: ownerText, size: 'xs', color: th.sub },
+        ] },
+    ],
+  });
 
   dateGroups.forEach((g, idx) => {
     if (compact && g.events.length === 0) return; // 整月卡片自動跳過空檔
@@ -449,13 +510,13 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {}, su
         text: isToday ? `▶ ${formatDateLabel(g.date)}　今天` : formatDateLabel(g.date),
         weight: 'bold',
         size: compact ? 'sm' : 'md',
-        color: isToday ? '#8D6E63' : '#555555',
+        color: isToday ? th.accent : '#555555',
         margin: idx === 0 ? 'none' : 'xl',
       });
       bodyContents.push({
         type: 'separator',
         margin: 'xs',
-        color: isToday ? '#BCAAA4' : '#EEEEEE',
+        color: isToday ? th.headerBg : '#EEEEEE',
       });
     }
     if (g.events.length === 0) {
@@ -479,20 +540,24 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {}, su
       const baseTitle = isMulti && compact
         ? `${ev.title || '(未命名)'} → ${ev.endDate.slice(5).replace('-', '/')}`
         : (ev.title || '(未命名)');
+      if (!compact) {
+        bodyContents.push(timelineRow('📌 全天', true, baseTitle, ownerOf(ev)));
+        return;
+      }
       bodyContents.push({
         type: 'box',
         layout: 'horizontal',
         spacing: 'sm',
-        margin: compact ? 'sm' : 'md',
+        margin: 'sm',
         contents: [
-          { type: 'text', text: '📌 全天', size: compact ? 'xs' : 'sm',
-            color: '#8D6E63', weight: 'bold', flex: 2, gravity: 'top', margin: 'xs' },
+          { type: 'text', text: '📌 全天', size: 'xs',
+            color: th.accent, weight: 'bold', flex: 2, gravity: 'top', margin: 'xs' },
           {
             type: 'box', layout: 'vertical', flex: 5,
             contents: [
-              { type: 'text', text: baseTitle, size: compact ? 'md' : 'lg',
-                wrap: true, weight: 'bold', color: '#6D4C41' },
-              { type: 'text', text: ownerOf(ev), size: 'xs', color: '#999999' },
+              { type: 'text', text: baseTitle, size: 'md',
+                wrap: true, weight: 'bold', color: th.text },
+              { type: 'text', text: ownerOf(ev), size: 'xs', color: th.sub },
             ],
           },
         ],
@@ -503,20 +568,24 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {}, su
       const baseTitle = isMulti && compact
         ? `${ev.title || '(未命名)'} → ${ev.endDate.slice(5).replace('-', '/')}`
         : (ev.title || '(未命名)');
+      if (!compact) {
+        bodyContents.push(timelineRow(ev.startTime || '--:--', false, baseTitle, ownerOf(ev)));
+        return;
+      }
       bodyContents.push({
         type: 'box',
         layout: 'horizontal',
         spacing: 'sm',
-        margin: compact ? 'sm' : 'md',
+        margin: 'sm',
         contents: [
-          { type: 'text', text: ev.startTime || '', size: compact ? 'sm' : 'md',
-            weight: 'bold', color: '#8D6E63', flex: 2, gravity: 'top', margin: 'xs' },
+          { type: 'text', text: ev.startTime || '', size: 'sm',
+            weight: 'bold', color: th.accent, flex: 2, gravity: 'top', margin: 'xs' },
           {
             type: 'box', layout: 'vertical', flex: 5,
             contents: [
-              { type: 'text', text: baseTitle, size: compact ? 'md' : 'lg',
-                wrap: true, weight: 'bold', color: '#333333' },
-              { type: 'text', text: ownerOf(ev), size: 'xs', color: '#999999' },
+              { type: 'text', text: baseTitle, size: 'md',
+                wrap: true, weight: 'bold', color: th.text },
+              { type: 'text', text: ownerOf(ev), size: 'xs', color: th.sub },
             ],
           },
         ],
@@ -538,25 +607,19 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {}, su
     contents: {
       type: 'bubble',
       size: 'giga',
-      header: {
-        type: 'box',
-        layout: 'vertical',
-        contents: [
-          {
-            type: 'text',
-            text: title,
-            weight: 'bold',
-            size: compact ? 'md' : 'lg',
-            color: '#FFFFFF',
-          },
-          ...(subtitle ? [{
-            type: 'text', text: subtitle, size: 'xs',
-            color: '#FFFFFFDD', margin: 'sm', wrap: true,
-          }] : []),
-        ],
-        backgroundColor: '#BCAAA4',
-        paddingAll: 'lg',
-      },
+      header: themedHeaderBox(th, [
+        {
+          type: 'text',
+          text: th.deco ? `${th.deco} ${title}` : title,
+          weight: 'bold',
+          size: compact ? 'md' : 'lg',
+          color: th.headerText,
+        },
+        ...(subtitle ? [{
+          type: 'text', text: subtitle, size: 'xs',
+          color: '#FFFFFFDD', margin: 'sm', wrap: true,
+        }] : []),
+      ]),
       body: {
         type: 'box',
         layout: 'vertical',
@@ -567,6 +630,89 @@ function buildAgendaFlex(title, dateGroups, { compact = false, uidRoles = {}, su
         }],
       },
     },
+  };
+}
+
+// -------- Carousel：本週/下週等多日查詢，一天一張卡橫向滑動 --------
+function buildAgendaCarousel(title, dateGroups, { uidRoles = {}, theme = null } = {}) {
+  const th = theme || FLEX_THEMES.classic;
+  const todayStr = formatDateTW(new Date());
+  const ownerOf = (ev) => computeOwnerLabel(ev.eventType, uidRoles[ev._uid]);
+  const totalCount = dateGroups.reduce((s, g) => s + g.events.length, 0);
+
+  const dayRow = (ev) => {
+    const isMulti = ev.startDate !== ev.endDate;
+    const baseTitle = isMulti
+      ? `${ev.title || '(未命名)'} → ${ev.endDate.slice(5).replace('-', '/')}`
+      : (ev.title || '(未命名)');
+    return {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
+      contents: [
+        { type: 'text', text: ev.isAllDay ? '全天' : (ev.startTime || '--:--'),
+          size: 'xs', weight: 'bold', color: th.accent, flex: 2, gravity: 'top', margin: 'xs' },
+        { type: 'box', layout: 'vertical', flex: 6,
+          contents: [
+            { type: 'text', text: baseTitle, size: 'md', weight: 'bold', wrap: true, color: th.text },
+            { type: 'text', text: ownerOf(ev), size: 'xxs', color: th.sub },
+          ] },
+      ],
+    };
+  };
+
+  const bubbles = [];
+  // 第一張：總覽卡
+  const overviewBody = {
+    type: 'box', layout: 'vertical', justifyContent: 'center', paddingAll: 'xl', height: '170px',
+    contents: [
+      { type: 'text', text: th.deco ? `${th.deco} ${th.deco2}`.trim() : '📅', size: 'xxl', align: 'center' },
+      { type: 'text', text: title, size: 'lg', weight: 'bold', align: 'center',
+        color: th.headerText, margin: 'md', wrap: true },
+      { type: 'text', text: `共 ${totalCount} 個行程・往右滑看每天 →`, size: 'xs',
+        align: 'center', color: '#FFFFFFDD', margin: 'sm' },
+    ],
+  };
+  if (th.gradient) {
+    overviewBody.background = {
+      type: 'linearGradient', angle: '135deg',
+      startColor: th.gradient[0], endColor: th.gradient[1],
+    };
+  } else {
+    overviewBody.backgroundColor = th.headerBg;
+  }
+  bubbles.push({ type: 'bubble', size: 'kilo', body: overviewBody });
+
+  // 之後：一天一張
+  for (const g of dateGroups) {
+    const isToday = g.dateStr === todayStr;
+    const rows = [];
+    if (g.events.length === 0) {
+      rows.push({ type: 'text', text: '（空檔）☕', size: 'sm', color: th.sub, align: 'center', margin: 'lg' });
+    } else {
+      g.events.slice(0, 8).forEach((ev) => rows.push(dayRow(ev)));
+      if (g.events.length > 8) {
+        rows.push({ type: 'text', text: `…共 ${g.events.length} 件`, size: 'xs', color: th.sub, margin: 'sm', align: 'center' });
+      }
+    }
+    bubbles.push({
+      type: 'bubble', size: 'kilo',
+      header: themedHeaderBox(
+        isToday ? th : { ...th, gradient: null, headerBg: th.accentSoft, headerText: th.accent },
+        [{
+          type: 'text',
+          text: isToday ? `👉 ${formatDateLabel(g.date)}　今天` : formatDateLabel(g.date),
+          weight: 'bold', size: 'sm',
+          color: isToday ? th.headerText : th.accent,
+        }],
+        'md'
+      ),
+      body: { type: 'box', layout: 'vertical', paddingAll: 'md', contents: rows },
+    });
+  }
+
+  return {
+    type: 'flex',
+    altText: title,
+    contents: { type: 'carousel', contents: bubbles.slice(0, 12) },
   };
 }
 
@@ -3750,9 +3896,12 @@ async function replyAgenda(client, ev, range) {
     });
   }
 
-  return safeReply(client, ev.replyToken, withQuickReply(
-    buildAgendaFlex(range.title, dateGroups, { compact: compactMode, uidRoles })
-  ));
+  const theme = flexThemeForToday(formatDateTW(new Date()));
+  // 2~11 天的範圍（本週/下週/週末）→ Carousel 一天一張；單日 → 時間軸單卡；整月 → compact 列表
+  const message = (!compactMode && dateGroups.length > 1 && dateGroups.length <= 11)
+    ? buildAgendaCarousel(range.title, dateGroups, { uidRoles, theme })
+    : buildAgendaFlex(range.title, dateGroups, { compact: compactMode, uidRoles, theme });
+  return safeReply(client, ev.replyToken, withQuickReply(message));
 }
 
 async function incrementPushCount(uid, count = 1, category = 'other') {
@@ -4678,6 +4827,101 @@ function buildMonthSummaryLines(mk, items, prevItems) {
   return lines;
 }
 
+// 月結 Flex 長條圖卡片（「本月花費」查詢與每月 1 號月結推播共用）
+function buildMonthReportFlex(mk, items, prevItems, theme) {
+  const th = theme || FLEX_THEMES.classic;
+  const total = sumExpenses(items);
+  const byCat = {};
+  let cardSum = 0;
+  items.forEach((e) => {
+    byCat[e.category] = (byCat[e.category] || 0) + (Number(e.amount) || 0);
+    if (e.card) cardSum += Number(e.amount) || 0;
+  });
+  const catRows = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const maxV = catRows.length > 0 ? catRows[0][1] : 1;
+
+  const body = [];
+  for (const [c, v] of catRows) {
+    const cat = EXPENSE_CATEGORIES[c] || EXPENSE_CATEGORIES.other;
+    const pct = total > 0 ? Math.round((v / total) * 100) : 0;
+    body.push({
+      type: 'box', layout: 'horizontal', margin: 'md',
+      contents: [
+        { type: 'text', text: `${cat.emoji} ${cat.name}`, size: 'sm', color: th.text, flex: 4 },
+        { type: 'text', text: `$${fmtMoney(v)}（${pct}%）`, size: 'sm', weight: 'bold',
+          color: th.text, flex: 5, align: 'end' },
+      ],
+    });
+    body.push({
+      type: 'box', layout: 'vertical', height: '8px', backgroundColor: th.accentSoft,
+      cornerRadius: '4px', margin: 'sm',
+      contents: [{
+        type: 'box', layout: 'vertical', width: `${Math.max(4, Math.round((v / maxV) * 100))}%`,
+        height: '8px', cornerRadius: '4px', backgroundColor: th.accent,
+        contents: [{ type: 'filler' }],
+      }],
+    });
+  }
+  if (prevItems && prevItems.length > 0) {
+    const diff = total - sumExpenses(prevItems);
+    if (diff !== 0) {
+      body.push({
+        type: 'text', margin: 'lg', size: 'xs', align: 'center', color: th.sub,
+        text: diff > 0 ? `比上月多 $${fmtMoney(diff)}` : `比上月少 $${fmtMoney(-diff)} 👍`,
+      });
+    }
+  }
+
+  return {
+    type: 'flex',
+    altText: `📊 ${parseInt(mk.slice(5), 10)} 月支出 $${fmtMoney(total)}`,
+    contents: {
+      type: 'bubble',
+      size: 'mega',
+      header: themedHeaderBox(th, [
+        { type: 'text', text: `${th.deco} ${parseInt(mk.slice(5), 10)} 月記帳月結`.trim(),
+          size: 'sm', weight: 'bold', color: th.headerText },
+        { type: 'text', text: `$${fmtMoney(total)}`, size: '3xl', weight: 'bold',
+          color: th.headerText, margin: 'sm' },
+        { type: 'text', text: `現金 $${fmtMoney(total - cardSum)}・刷卡 $${fmtMoney(cardSum)}`,
+          size: 'xs', color: '#FFFFFFDD', margin: 'sm' },
+      ]),
+      body: { type: 'box', layout: 'vertical', paddingAll: 'lg', contents: body },
+    },
+  };
+}
+
+// 結帳日 Hero 大數字卡（應繳金額置中放大）
+function buildStatementHeroFlex(cardName, amount, cycle, theme) {
+  const th = theme || FLEX_THEMES.classic;
+  const heroBody = {
+    type: 'box', layout: 'vertical', justifyContent: 'center', paddingAll: 'xxl',
+    contents: [
+      { type: 'text', text: `${th.deco} 今天是結帳日 ${th.deco2}`.trim(),
+        size: 'sm', color: '#FFFFFFDD', align: 'center' },
+      { type: 'text', text: `💳 ${cardName}`, size: 'lg', weight: 'bold',
+        color: th.headerText, align: 'center', margin: 'md' },
+      { type: 'text', text: `$${fmtMoney(amount)}`, size: '3xl', weight: 'bold',
+        color: th.headerText, align: 'center', margin: 'md' },
+      { type: 'text', size: 'xs', color: '#FFFFFFCC', align: 'center', margin: 'sm',
+        text: `本期應繳（${cycle.startStr.slice(5).replace('-', '/')} ~ ${cycle.endStr.slice(5).replace('-', '/')}）` },
+    ],
+  };
+  if (th.gradient) {
+    heroBody.background = {
+      type: 'linearGradient', angle: '135deg',
+      startColor: th.gradient[0], endColor: th.gradient[1],
+    };
+  } else {
+    heroBody.backgroundColor = th.headerBg;
+  }
+  return {
+    type: 'flex',
+    altText: `💳 ${cardName}今天結帳，本期應繳 $${fmtMoney(amount)}`,
+    contents: { type: 'bubble', size: 'mega', body: heroBody },
+  };
+}
+
 async function replyExpenseMonthSummary(client, ev, fid, mk) {
   const items = await getExpensesInRange(fid, `${mk}-01`, clampedDateForMonth(mk, 31));
   if (items.length === 0) {
@@ -4687,9 +4931,10 @@ async function replyExpenseMonthSummary(client, ev, fid, mk) {
   }
   const prevMk = addMonthKey(mk, -1);
   const prevItems = await getExpensesInRange(fid, `${prevMk}-01`, clampedDateForMonth(prevMk, 31));
-  return safeReply(client, ev.replyToken, financeQuickReply({
-    type: 'text', text: buildMonthSummaryLines(mk, items, prevItems).join('\n'),
-  }));
+  const theme = flexThemeForToday(formatDateTW(new Date()));
+  return safeReply(client, ev.replyToken, financeQuickReply(
+    buildMonthReportFlex(mk, items, prevItems, theme)
+  ));
 }
 
 async function replyExpenseRecent(client, ev, fid) {
@@ -5251,17 +5496,18 @@ exports.dailyMorningSummary = onSchedule(
           return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
         });
 
-        // 一律推放大版 Flex 卡片（與「今日」查詢同款），天氣放標頭副標；
+        // 一律推放大版 Flex 卡片（雙欄時間軸），天氣放標頭副標、依日期套主題；
         // 空日也用卡片，body 會顯示「今天沒有行程，好好休息 ☕」
         const todayDate = new Date(`${today}T00:00:00+08:00`);
+        const theme = flexThemeForToday(today);
         const flex = buildAgendaFlex(
-          `🌙 今日行程　${formatDateLabel(todayDate)}`,
+          `今日行程　${formatDateLabel(todayDate)}`,
           [{ date: todayDate, dateStr: today, events: dayEvents }],
-          { uidRoles: { [uid]: roles }, subtitle: weatherBlurb || null }
+          { uidRoles: { [uid]: roles }, subtitle: weatherBlurb || null, theme }
         );
         flex.altText = dayEvents.length > 0
-          ? `🌙 今日行程 ${dayEvents.length} 件`
-          : '🌙 今天沒有行程，好好休息 💤';
+          ? `${theme.deco} 今日行程 ${dayEvents.length} 件`
+          : `${theme.deco} 今天沒有行程，好好休息 💤`;
         await pushToTargets(uid, lineUserIds, flex, 'morning');
       } catch (err) {
         console.error('[dailyMorningSummary] user error', { path: doc.ref.path, err: err?.message || err });
@@ -5524,21 +5770,26 @@ exports.financeDailyNotify = onSchedule(
     if (bindingsSnap.empty) return;
     const client = lineClient();
 
+    const theme = flexThemeForToday(todayStr);
+
     for (const bindDoc of bindingsSnap.docs) {
       try {
         const lineUserId = bindDoc.id;
         const fid = bindDoc.data().financeId;
         if (!fid) continue;
-        const lines = [];
+        // 同一天所有帳務訊息合併成一次 push（最多 5 個訊息物件，LINE 計費以
+        // 「一次 push × 收件人」算 1 則，Flex 卡片化不會增加額度消耗）
+        const messages = [];
+        const textLines = [];
 
-        // 月結報告（1 號）
+        // 月結報告（1 號）→ 長條圖卡片
         if (isFirstOfMonth) {
           const lastMk = addMonthKey(mk, -1);
           const lastItems = await getExpensesInRange(fid, `${lastMk}-01`, clampedDateForMonth(lastMk, 31));
           if (lastItems.length > 0) {
             const prevMk = addMonthKey(lastMk, -1);
             const prevItems = await getExpensesInRange(fid, `${prevMk}-01`, clampedDateForMonth(prevMk, 31));
-            lines.push(...buildMonthSummaryLines(lastMk, lastItems, prevItems));
+            messages.push(buildMonthReportFlex(lastMk, lastItems, prevItems, theme));
           }
         }
 
@@ -5551,21 +5802,28 @@ exports.financeDailyNotify = onSchedule(
               const cycle = cardCycleForToday(b.day, todayStr); // endStr === today
               const items = (await getExpensesInRange(fid, cycle.startStr, cycle.endStr))
                 .filter((e) => e.card === b.name);
-              lines.push(`💳 ${b.name}今天結帳，本期應繳 $${fmtMoney(sumExpenses(items))}`);
+              const due = sumExpenses(items);
+              if (messages.length < 4) {
+                // 結帳日 → Hero 大數字卡
+                messages.push(buildStatementHeroFlex(b.name, due, cycle, theme));
+              } else {
+                textLines.push(`💳 ${b.name}今天結帳，本期應繳 $${fmtMoney(due)}`);
+              }
             }
           } else {
             const next = nextMonthlyOccurrence(b.day, todayStr);
             const dLeft = daysBetween(next, todayStr);
             if (dLeft === 0) {
-              lines.push(`🏦 ${b.name}今天繳款${b.amount ? ` $${fmtMoney(b.amount)}` : ''}`);
+              textLines.push(`🏦 ${b.name}今天繳款${b.amount ? ` $${fmtMoney(b.amount)}` : ''}`);
             } else if (dLeft >= 1 && dLeft <= 3) {
-              lines.push(`🏦 ${b.name}繳款日 ${next.slice(5).replace('-', '/')}（還 ${dLeft} 天）${b.amount ? `$${fmtMoney(b.amount)}` : ''}`);
+              textLines.push(`🏦 ${b.name}繳款日 ${next.slice(5).replace('-', '/')}（還 ${dLeft} 天）${b.amount ? `$${fmtMoney(b.amount)}` : ''}`);
             }
           }
         }
 
-        if (lines.length === 0) continue;
-        await client.pushMessage(lineUserId, { type: 'text', text: lines.join('\n') });
+        if (textLines.length > 0) messages.push({ type: 'text', text: textLines.join('\n') });
+        if (messages.length === 0) continue;
+        await client.pushMessage(lineUserId, messages.slice(0, 5));
         await finSpaceRef(fid).set({
           [`pushCount_${mk}`]: admin.firestore.FieldValue.increment(1),
         }, { merge: true });
