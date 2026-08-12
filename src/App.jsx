@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2,
   Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle, Calendar,
-  ArrowLeft, Wallet
+  ArrowLeft, Wallet, MessageCircle, Send
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -10,7 +10,7 @@ import {
   setPersistence, browserLocalPersistence, inMemoryPersistence
 } from 'firebase/auth';
 import {
-  getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, arrayUnion, where, serverTimestamp
+  getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, arrayUnion, where, serverTimestamp, orderBy, limit
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -358,8 +358,13 @@ const App = () => {
   const [isStandalone, setIsStandalone] = useState(false);
   const [showIOSInstallGuide, setShowIOSInstallGuide] = useState(false);
 
-  // --- 帳務頁 (隱藏頁：長按 logo 進入) ---
-  const [view, setView] = useState('calendar'); // 'calendar' | 'finance'
+  // --- 帳務頁 (隱藏頁：長按 logo 進入) / 聊天室 ---
+  const [view, setView] = useState('calendar'); // 'calendar' | 'finance' | 'chat'
+  const [chatRole, setChatRole] = useState(safeStorage.getItem('bibi_chat_role') || '');
+  const [chatMsgs, setChatMsgs] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const chatListRef = useRef(null);
   const [financeId, setFinanceId] = useState(safeStorage.getItem('bibi_finance_id') || '');
   const [financeIdInput, setFinanceIdInput] = useState('');
   const [finTab, setFinTab] = useState('bills'); // 'bills' | 'expenses'
@@ -441,7 +446,7 @@ const App = () => {
       else if (isDayViewModalOpen) setIsDayViewModalOpen(false);
       else if (isSettingsModalOpen) setIsSettingsModalOpen(false);
       else if (editingExpense) setEditingExpense(null);
-      else if (view === 'finance') setView('calendar');
+      else if (view !== 'calendar') setView('calendar');
       else if (holidayType) setHolidayType(null);
     };
     window.addEventListener('keydown', onKey);
@@ -593,6 +598,66 @@ const App = () => {
       setFinMonthExpenses(rows);
     }, (err) => console.error('Finance month expenses error:', err));
   }, [financeId, view, finMonth]);
+
+  // --- 聊天室：即時訂閱 + 傳送 ---
+  useEffect(() => {
+    const targetUid = customUserId || user?.uid;
+    if (!targetUid || view !== 'chat') return;
+    const chatCol = collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_chat');
+    const qc = query(chatCol, orderBy('at', 'desc'), limit(100));
+    return onSnapshot(qc, (snap) => {
+      const rows = [];
+      snap.forEach((d) => rows.push({ id: d.id, ...d.data() }));
+      // 尚未拿到 server timestamp 的（剛送出的）排最後 = 畫面最下方
+      rows.sort((a, b) => (a.at?.seconds ?? Infinity) - (b.at?.seconds ?? Infinity));
+      setChatMsgs(rows);
+    }, (err) => {
+      console.error('Chat error:', err);
+      if (err?.code === 'permission-denied') addToast('資料庫規則尚未開放聊天室路徑', 'error');
+    });
+  }, [user, customUserId, view]);
+
+  // 新訊息自動捲到底
+  useEffect(() => {
+    if (view === 'chat' && chatListRef.current) {
+      chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+    }
+  }, [chatMsgs.length, view]);
+
+  const pickChatRole = (role) => {
+    safeStorage.setItem('bibi_chat_role', role);
+    setChatRole(role);
+  };
+
+  const sendChatMsg = async () => {
+    const text = chatInput.trim();
+    const targetUid = customUserId || user?.uid;
+    if (!text || !targetUid || !chatRole || chatSending) return;
+    if (text.length > 1000) { addToast('訊息太長了（上限 1000 字）', 'error'); return; }
+    setChatSending(true);
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_chat'), {
+        text, by: chatRole, at: serverTimestamp(),
+      });
+      setChatInput('');
+    } catch (e) {
+      console.error('Send chat error:', e);
+      addToast(e?.code === 'permission-denied' ? '資料庫規則尚未開放聊天室路徑' : '傳送失敗，請重試', 'error');
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  const deleteChatMsg = async (msg) => {
+    const targetUid = customUserId || user?.uid;
+    if (!targetUid || msg.by !== chatRole) return; // 只能刪自己的
+    if (!window.confirm('刪除這則訊息？')) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', targetUid, 'bibi_chat', msg.id));
+    } catch (e) {
+      addToast('刪除失敗', 'error');
+    }
+  };
 
   // --- 帳務：logo 長按進入 ---
   // 不在計時器觸發當下就切頁：手指還壓著就換 DOM，iOS 放開時補發的合成 click
@@ -1062,6 +1127,7 @@ const App = () => {
               </button>
             )}
           </div>
+          <button onClick={() => { triggerHaptic(); setView('chat'); }} className="p-2.5 rounded-xl shadow-sm border hover:brightness-95 transition-all active:scale-95" style={{ backgroundColor: theme.colors.modalBg, color: theme.colors.secondaryText, borderColor: theme.colors.border }} aria-label="聊天室"><MessageCircle className="w-5 h-5" /></button>
           <button onClick={openSettings} className="p-2.5 rounded-xl shadow-sm border hover:brightness-95 transition-all active:scale-95" style={{ backgroundColor: theme.colors.modalBg, color: theme.colors.secondaryText, borderColor: theme.colors.border }}><Settings className="w-5 h-5" /></button>
         </div>
       </header>
@@ -1438,6 +1504,111 @@ const App = () => {
                   <Plus className="w-6 h-6" />
                 </button>
               )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ===== 聊天室（兩人即時，Firestore 同步） ===== */}
+      {view === 'chat' && (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <header className="flex-none flex items-center justify-between px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] z-10" style={{ backgroundColor: theme.colors.headerBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
+            <div className="flex items-center gap-2">
+              <button onClick={() => { triggerHaptic(); setView('calendar'); }} className="p-2 rounded-xl hover:opacity-70 active:scale-95 transition-all" style={{ color: theme.colors.secondaryText }} aria-label="返回月曆">
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h1 className="text-lg font-bold flex items-center gap-1.5" style={{ color: theme.colors.text }}>💬 聊天室</h1>
+            </div>
+            {chatRole && (
+              <button onClick={() => setChatRole('')} className="text-[10px] px-2 py-1 rounded-lg hover:opacity-70 active:scale-95 transition-all" style={{ color: theme.colors.secondaryText }}>
+                我是 {chatRole === 'me' ? roleSettings.role1 : roleSettings.role2}・切換
+              </button>
+            )}
+          </header>
+
+          {!chatRole ? (
+            /* 首次進入：選身分（決定訊息顯示在左邊還右邊） */
+            <div className="flex-1 flex items-center justify-center p-6">
+              <div className="w-full max-w-sm rounded-2xl border p-6 text-center" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+                <div className="text-3xl mb-3">💬</div>
+                <h2 className="font-bold mb-1" style={{ color: theme.colors.text }}>你是誰？</h2>
+                <p className="text-[11px] mb-5" style={{ color: theme.colors.secondaryText }}>只問這一次，存在這台裝置上（右上角隨時可切換）</p>
+                <div className="flex gap-3">
+                  {[['me', roleSettings.role1], ['partner', roleSettings.role2]].map(([r, name]) => (
+                    <button key={r} onClick={() => { triggerHaptic(); pickChatRole(r); }} className="flex-1 py-3 text-sm font-bold text-white rounded-xl shadow-sm active:scale-95 transition-transform" style={{ backgroundColor: theme.colors.accent }}>
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div ref={chatListRef} className="flex-1 overflow-y-auto px-4 py-3" style={{ backgroundColor: theme.colors.gridEmptyBg }}>
+                {chatMsgs.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-16 opacity-50" style={{ color: theme.colors.secondaryText }}>
+                    <MessageCircle className="w-10 h-10 mb-2" />
+                    <p className="text-sm">還沒有訊息，說點什麼吧！</p>
+                    <p className="text-[10px] mt-1">訊息即時同步，兩人都看得到</p>
+                  </div>
+                )}
+                {(() => {
+                  let prevDay = '';
+                  return chatMsgs.map((m) => {
+                    const mine = m.by === chatRole;
+                    const d = m.at?.seconds ? new Date(m.at.seconds * 1000) : null;
+                    const dayStr = d ? formatDate(d) : '';
+                    const showDay = dayStr && dayStr !== prevDay;
+                    if (dayStr) prevDay = dayStr;
+                    const timeStr = d
+                      ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+                      : '…';
+                    return (
+                      <React.Fragment key={m.id}>
+                        {showDay && (
+                          <div className="flex justify-center my-3">
+                            <span className="text-[10px] px-2.5 py-0.5 rounded-full font-num-naikai" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>
+                              {dayStr.slice(5).replace('-', '/')}
+                            </span>
+                          </div>
+                        )}
+                        <div className={`flex items-end gap-1.5 mb-1.5 ${mine ? 'flex-row-reverse' : ''}`}>
+                          <div
+                            onClick={() => mine && deleteChatMsg(m)}
+                            className={`max-w-[75%] px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words shadow-sm ${mine ? 'rounded-2xl rounded-br-md cursor-pointer' : 'rounded-2xl rounded-bl-md'}`}
+                            style={mine
+                              ? { backgroundColor: theme.colors.accent, color: '#FFF' }
+                              : { backgroundColor: theme.colors.modalBg, color: theme.colors.text, border: `1px solid ${theme.colors.border}` }}
+                          >
+                            {m.text}
+                          </div>
+                          <span className="text-[9px] shrink-0 font-num-naikai" style={{ color: theme.colors.secondaryText }}>{timeStr}</span>
+                        </div>
+                      </React.Fragment>
+                    );
+                  });
+                })()}
+              </div>
+              <div className="flex-none flex items-center gap-2 px-3 pt-2 border-t" style={{ backgroundColor: theme.colors.headerBg, borderColor: theme.colors.border + '60', paddingBottom: 'calc(max(10px, env(safe-area-inset-bottom)) + 2px)' }}>
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) sendChatMsg(); }}
+                  placeholder="輸入訊息…"
+                  className="flex-1 min-w-0 text-sm border rounded-full px-4 py-2.5 outline-none"
+                  style={{ backgroundColor: theme.colors.inputBg, borderColor: theme.colors.border, color: theme.colors.text }}
+                />
+                <button
+                  onClick={sendChatMsg}
+                  disabled={chatSending || !chatInput.trim()}
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-white shadow-md active:scale-95 transition-transform disabled:opacity-40 shrink-0"
+                  style={{ backgroundColor: theme.colors.accent }}
+                  aria-label="傳送"
+                >
+                  {chatSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </button>
+              </div>
             </>
           )}
         </div>

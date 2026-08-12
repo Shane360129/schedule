@@ -13,6 +13,9 @@ service cloud.firestore {
     match /artifacts/schdule-f5cda/users/{uid}/bibi_settings/{settingId} {
       allow read, write: if request.auth != null;
     }
+    match /artifacts/schdule-f5cda/users/{uid}/bibi_chat/{msgId} {
+      allow read, write: if request.auth != null;
+    }
 
     // === 帳務 (Finance)：App 帳務頁用 ===
     // 安全性同上：靠 fin-ID 是亂碼 + 不公開。
