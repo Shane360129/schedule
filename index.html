@@ -35,6 +35,20 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
+
+  <script>
+    // 選了「午夜黑咖」主題的裝置：在第一次繪製前就把底色換成黑，
+    // 避免每次開啟都先閃一下米色 (React 掛載後才會套主題)。
+    try {
+      if (localStorage.getItem('bibi_theme') === 'dark') {
+        var darkStyle = document.createElement('style');
+        darkStyle.textContent = 'body{background-color:#0E0E10!important;color:#EAE5DF!important}.initial-loader{background-color:#0E0E10!important;color:#C2A385!important}';
+        document.head.appendChild(darkStyle);
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute('content', '#0E0E10');
+      }
+    } catch (e) {}
+  </script>
 </head>
 <body style="background-color: #F5F1E9; color: #5D4037; overflow: hidden;">
   <div id="root">
