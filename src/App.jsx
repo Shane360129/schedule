@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2,
   Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle, Calendar,
-  ArrowLeft, Wallet, MessageCircle, Send
+  ArrowLeft, Wallet, MessageCircle, Send, Reply
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -10,7 +10,8 @@ import {
   setPersistence, browserLocalPersistence, inMemoryPersistence
 } from 'firebase/auth';
 import {
-  getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, arrayUnion, where, serverTimestamp, orderBy, limit
+  getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, arrayUnion, where, serverTimestamp, orderBy, limit
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -25,7 +26,21 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+// 公司網路 (Cloudflare Zero Trust / 各種代理防火牆) 會攔截或緩衝 Firestore 預設的
+// WebChannel 串流連線，造成 onSnapshot 收不到即時更新、連線反覆斷掉。
+// 強制 long-polling 讓每個請求都是會結束的短連線，代理環境才穩；
+// persistentLocalCache 讓斷線瞬間仍先顯示上次同步的資料，不會整頁空掉。
+let db;
+try {
+  db = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+    experimentalLongPollingOptions: { timeoutSeconds: 25 },
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  });
+} catch (e) {
+  console.warn('initializeFirestore with proxy-safe settings failed, falling back to defaults:', e);
+  db = getFirestore(app);
+}
 const appId = 'schdule-f5cda';
 
 // --- Helper: Haptic Feedback ---
@@ -62,7 +77,8 @@ const THEMES = {
       bg: '#FAF9F6', text: '#5F524C', secondaryText: '#998B82', headerBg: '#F5F0EB',
       gridHeaderBg: '#EBE5DF', gridBg: '#FFFFFF', gridEmptyBg: '#FAF9F6', gridWeekendBg: '#F7F3F0',
       border: '#E0D6CC', accent: '#BCAAA4', weekendText: '#C88A8A', weekdayText: '#A18E84',
-      modalBg: '#FFFFFF', modalHeaderBg: '#F5F0EB', inputBg: '#FFFFFF', inputBorder: '#E0D6CC', danger: '#D48888'
+      modalBg: '#FFFFFF', modalHeaderBg: '#F5F0EB', inputBg: '#FFFFFF', inputBorder: '#E0D6CC', danger: '#D48888',
+      onAccent: '#FFFFFF'
     }
   },
   kuromi: {
@@ -72,7 +88,8 @@ const THEMES = {
       bg: '#FFF9FB', text: '#5E4048', secondaryText: '#9C8288', headerBg: '#FFF0F5',
       gridHeaderBg: '#FCE4EC', gridBg: '#FFFFFF', gridEmptyBg: '#FFF9FB80', gridWeekendBg: '#FFF0F3',
       border: '#F3D0D9', accent: '#D07890', weekendText: '#C06C84', weekdayText: '#D8A7B1',
-      modalBg: '#FFFFFF', modalHeaderBg: '#FFF0F5', inputBg: '#FFFFFF', inputBorder: '#F3D0D9', danger: '#E57373'
+      modalBg: '#FFFFFF', modalHeaderBg: '#FFF0F5', inputBg: '#FFFFFF', inputBorder: '#F3D0D9', danger: '#E57373',
+      onAccent: '#FFFFFF'
     }
   },
   minimal: {
@@ -82,7 +99,8 @@ const THEMES = {
       bg: '#FFFFFF', text: '#000000', secondaryText: '#4B5563', headerBg: '#FFFFFF',
       gridHeaderBg: '#F3F4F6', gridBg: '#FFFFFF', gridEmptyBg: '#FAFAFA', gridWeekendBg: '#F9FAFB',
       border: '#D1D5DB', accent: '#000000', weekendText: '#DC2626', weekdayText: '#374151',
-      modalBg: '#FFFFFF', modalHeaderBg: '#F9FAFB', inputBg: '#FFFFFF', inputBorder: '#9CA3AF', danger: '#B91C1C'
+      modalBg: '#FFFFFF', modalHeaderBg: '#F9FAFB', inputBg: '#FFFFFF', inputBorder: '#9CA3AF', danger: '#B91C1C',
+      onAccent: '#FFFFFF'
     }
   },
   onepiece: {
@@ -104,10 +122,48 @@ const THEMES = {
       modalBg: '#FFFFFF',
       modalHeaderBg: '#E3F2FD', 
       inputBg: '#FFFFFF',
-      inputBorder: '#81D4FA', 
-      danger: '#EF5350'       // Soft Red
+      inputBorder: '#81D4FA',
+      danger: '#EF5350',      // Soft Red
+      onAccent: '#FFFFFF'
+    }
+  },
+  dark: {
+    id: 'dark',
+    name: '午夜黑咖',
+    dark: true, // 聊天室等區塊據此切換深色配色
+    colors: {
+      bg: '#0E0E10',          // 近黑主背景
+      text: '#EAE5DF',        // 暖白文字
+      secondaryText: '#98908A',
+      headerBg: '#141416',
+      gridHeaderBg: '#1D1D20',
+      gridBg: '#17171A',
+      gridEmptyBg: '#111113',
+      gridWeekendBg: '#1B171A', // 週末微暖色調
+      border: '#2C2C31',
+      accent: '#C2A385',      // 拿鐵金 (品牌色)，黑底上當主色
+      weekendText: '#D99090',
+      weekdayText: '#A29890',
+      modalBg: '#1B1B1E',
+      modalHeaderBg: '#222226',
+      inputBg: '#222226',
+      inputBorder: '#3A3A41',
+      danger: '#E08888',
+      onAccent: '#181310'     // 金色按鈕上用深字，白字在金底上會糊
     }
   }
+};
+
+// 聊天室配色 (Gemini 風格)：亮色主題共用原本的淺色系，深色主題換成對應暗色
+const CHAT_COLORS_LIGHT = {
+  bg: '#F0F4F9', surface: '#FFFFFF', border: '#E0E3E7', inputBorder: '#DDE3EA',
+  text: '#1F1F1F', secondary: '#575B5F', ownBubble: '#D3E3FD', ownText: '#1F1F1F', datePill: '#E1E6ED',
+  quoteOwnBg: 'rgba(255,255,255,0.6)', quoteOtherBg: '#F0F4F9', quoteBar: '#7BA7F0'
+};
+const CHAT_COLORS_DARK = {
+  bg: '#101013', surface: '#1E1E22', border: '#2C2C31', inputBorder: '#3A3A41',
+  text: '#EAE5DF', secondary: '#98908A', ownBubble: '#3B4A61', ownText: '#E9EEF8', datePill: '#232328',
+  quoteOwnBg: 'rgba(255,255,255,0.12)', quoteOtherBg: 'rgba(255,255,255,0.07)', quoteBar: '#8AB4F8'
 };
 
 // --- Palette (Techo + Morandi + Pastels) ---
@@ -311,6 +367,7 @@ const App = () => {
   // Theme State
   const [currentThemeId, setCurrentThemeId] = useState(safeStorage.getItem('bibi_theme') || 'original');
   const theme = THEMES[currentThemeId] || THEMES.original;
+  const chatC = theme.dark ? CHAT_COLORS_DARK : CHAT_COLORS_LIGHT;
 
   // Font State (Locked to NaikaiFont)
   const currentFont = FONTS.naikai;
@@ -365,6 +422,13 @@ const App = () => {
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const chatListRef = useRef(null);
+  const [chatReplyTo, setChatReplyTo] = useState(null); // { id, by, text }：回覆模式中的目標訊息
+  const [chatFlashId, setChatFlashId] = useState(null); // 點引用跳回原訊息時短暫高亮
+  const chatInputRef = useRef(null);
+  const chatMsgEls = useRef({});        // 訊息 id → DOM 節點，供「跳回原訊息」捲動用
+  const chatPressTimer = useRef(null);
+  const chatPressFired = useRef(false); // 長按觸發後吃掉接著的 click，避免誤觸刪除/跳轉
+  const chatLastTouchAt = useRef(0);    // 忽略 touch 之後瀏覽器補發的合成 mouse 事件
   const [financeId, setFinanceId] = useState(safeStorage.getItem('bibi_finance_id') || '');
   const [financeIdInput, setFinanceIdInput] = useState('');
   const [finTab, setFinTab] = useState('bills'); // 'bills' | 'expenses'
@@ -629,6 +693,31 @@ const App = () => {
     setChatRole(role);
   };
 
+  // --- 回覆指定訊息 (LINE 式)：長按氣泡 (手機) / hover 回覆鈕 (桌機) 進入回覆模式 ---
+  const startReplyTo = (m) => {
+    triggerHaptic();
+    setChatReplyTo({ id: m.id, by: m.by, text: m.text });
+    setTimeout(() => chatInputRef.current?.focus(), 60);
+  };
+  const bubblePressStart = (m, isTouch) => {
+    if (isTouch) chatLastTouchAt.current = Date.now();
+    else if (Date.now() - chatLastTouchAt.current < 700) return; // touch 後的合成 mousedown
+    clearTimeout(chatPressTimer.current);
+    chatPressFired.current = false;
+    chatPressTimer.current = setTimeout(() => { chatPressFired.current = true; startReplyTo(m); }, 450);
+  };
+  const bubblePressEnd = (isTouch) => {
+    if (isTouch) chatLastTouchAt.current = Date.now();
+    clearTimeout(chatPressTimer.current);
+  };
+  const jumpToChatMsg = (id) => {
+    const el = chatMsgEls.current[id];
+    if (!el) { addToast('找不到原訊息（可能已刪除或太久遠）', 'error'); return; }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setChatFlashId(id);
+    setTimeout(() => setChatFlashId(null), 1400);
+  };
+
   const sendChatMsg = async () => {
     const text = chatInput.trim();
     const targetUid = customUserId || user?.uid;
@@ -636,10 +725,12 @@ const App = () => {
     if (text.length > 1000) { addToast('訊息太長了（上限 1000 字）', 'error'); return; }
     setChatSending(true);
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_chat'), {
-        text, by: chatRole, at: serverTimestamp(),
-      });
+      const payload = { text, by: chatRole, at: serverTimestamp() };
+      // 引用只存摘要快照，原訊息之後被刪除也還顯示得出來
+      if (chatReplyTo) payload.replyTo = { id: chatReplyTo.id, by: chatReplyTo.by, text: String(chatReplyTo.text || '').slice(0, 120) };
+      await addDoc(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_chat'), payload);
       setChatInput('');
+      setChatReplyTo(null);
     } catch (e) {
       console.error('Send chat error:', e);
       addToast(e?.code === 'permission-denied' ? '資料庫規則尚未開放聊天室路徑' : '傳送失敗，請重試', 'error');
@@ -1119,7 +1210,7 @@ const App = () => {
               <button
                 onClick={handleToday}
                 className="ml-1 px-2.5 py-1 text-xs font-bold rounded-lg active:scale-95 transition-all flex items-center gap-1"
-                style={{ backgroundColor: theme.colors.accent, color: '#FFF' }}
+                style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}
                 aria-label="回到本月"
               >
                 <Calendar className="w-3.5 h-3.5" />
@@ -1167,7 +1258,7 @@ const App = () => {
                 <div className="flex flex-col items-center pt-1 mb-0.5 px-0 min-h-[38px] justify-start">
                    <span 
                      className={`text-lg sm:text-xl font-bold font-num-naikai h-7 w-7 flex items-center justify-center rounded-full transition-all ${isToday ? 'shadow-md' : ''}`}
-                     style={{ backgroundColor: isToday ? theme.colors.accent : 'transparent', color: isToday ? '#fff' : dateTextColor }}
+                     style={{ backgroundColor: isToday ? theme.colors.accent : 'transparent', color: isToday ? theme.colors.onAccent : dateTextColor }}
                    >
                      {cell.day}
                    </span>
@@ -1264,7 +1355,7 @@ const App = () => {
           width: 56,
           height: 56,
           backgroundColor: theme.colors.accent,
-          color: '#FFF',
+          color: theme.colors.onAccent,
         }}
         aria-label="新增行程"
       >
@@ -1305,7 +1396,7 @@ const App = () => {
                     ['3', '貼到下方欄位'],
                   ].map(([n, t]) => (
                     <div key={n} className="flex items-center gap-3">
-                      <span className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0" style={{ backgroundColor: theme.colors.accent }}>{n}</span>
+                      <span className="w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center shrink-0" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}>{n}</span>
                       <span className="text-xs" style={{ color: theme.colors.text }}>{t}</span>
                     </div>
                   ))}
@@ -1318,7 +1409,7 @@ const App = () => {
                   className="w-full text-sm border rounded-xl p-2.5 mb-3 outline-none font-num-naikai"
                   style={{ borderColor: theme.colors.inputBorder, backgroundColor: theme.colors.inputBg, color: theme.colors.text }}
                 />
-                <button onClick={handleLinkFinanceId} className="w-full py-2.5 text-sm font-bold text-white rounded-xl shadow-sm active:scale-95 transition-transform" style={{ backgroundColor: theme.colors.accent }}>
+                <button onClick={handleLinkFinanceId} className="w-full py-2.5 text-sm font-bold rounded-xl shadow-sm active:scale-95 transition-transform" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}>
                   連結帳務空間
                 </button>
               </div>
@@ -1466,7 +1557,7 @@ const App = () => {
                         const daySum = dayGroups[d].reduce((s, e) => s + (Number(e.amount) || 0), 0);
                         return (
                           <div key={d} className="mb-3">
-                            <div className="flex justify-between items-baseline text-[11px] font-bold text-white rounded-lg px-2.5 py-1 mb-1.5" style={{ backgroundColor: theme.colors.accent }}>
+                            <div className="flex justify-between items-baseline text-[11px] font-bold rounded-lg px-2.5 py-1 mb-1.5" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}>
                               <span className="font-num-naikai">{d.slice(5).replace('-', '/')}（{new Date(d + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'short' }).replace('週', '')}）</span>
                               <span className="font-num-naikai">${fmtMoney(daySum)}</span>
                             </div>
@@ -1497,7 +1588,7 @@ const App = () => {
                     right: 'max(16px, env(safe-area-inset-right))',
                     bottom: 'calc(max(16px, env(safe-area-inset-bottom)) + 8px)',
                     width: 52, height: 52,
-                    backgroundColor: theme.colors.accent, color: '#FFF',
+                    backgroundColor: theme.colors.accent, color: theme.colors.onAccent,
                   }}
                   aria-label="補記一筆"
                 >
@@ -1512,17 +1603,17 @@ const App = () => {
       {/* ===== 聊天室（兩人即時，Firestore 同步） ===== */}
       {view === 'chat' && (
         <div className="flex-1 flex flex-col overflow-hidden">
-          <header className="flex-none z-10" style={{ backgroundColor: '#FFFFFF', borderBottom: '1px solid #E0E3E7' }}>
+          <header className="flex-none z-10" style={{ backgroundColor: chatC.surface, borderBottom: `1px solid ${chatC.border}` }}>
             <div className="mx-auto w-full max-w-3xl flex items-center justify-between px-3 pb-2.5 pt-[calc(env(safe-area-inset-top)+10px)]">
               <div className="flex items-center gap-2">
-                <button onClick={() => { triggerHaptic(); setView('calendar'); }} className="p-2 rounded-full hover:bg-[#F0F4F9] active:scale-95 transition-all" style={{ color: '#575B5F' }} aria-label="返回月曆">
+                <button onClick={() => { triggerHaptic(); setChatReplyTo(null); setView('calendar'); }} className="p-2 rounded-full hover:opacity-60 active:scale-95 transition-all" style={{ color: chatC.secondary }} aria-label="返回月曆">
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div className="w-7 h-7 rounded-full flex items-center justify-center text-sm" style={{ background: 'linear-gradient(135deg, #4285F4, #9B72CB, #D96570)' }}>💬</div>
-                <h1 className="text-base font-bold" style={{ color: '#1F1F1F' }}>聊天室</h1>
+                <h1 className="text-base font-bold" style={{ color: chatC.text }}>聊天室</h1>
               </div>
               {chatRole && (
-                <button onClick={() => setChatRole('')} className="text-[11px] px-3 py-1.5 rounded-full hover:bg-[#F0F4F9] active:scale-95 transition-all" style={{ color: '#575B5F', border: '1px solid #E0E3E7' }}>
+                <button onClick={() => setChatRole('')} className="text-[11px] px-3 py-1.5 rounded-full hover:opacity-60 active:scale-95 transition-all" style={{ color: chatC.secondary, border: `1px solid ${chatC.border}` }}>
                   我是 {chatRole === 'me' ? roleSettings.role1 : roleSettings.role2}・切換
                 </button>
               )}
@@ -1531,11 +1622,11 @@ const App = () => {
 
           {!chatRole ? (
             /* 首次進入：選身分（決定訊息顯示在左邊還右邊）— Gemini 風格 */
-            <div className="flex-1 flex items-center justify-center p-6" style={{ backgroundColor: '#F0F4F9' }}>
-              <div className="w-full max-w-sm rounded-3xl p-8 text-center shadow-sm" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E0E3E7' }}>
+            <div className="flex-1 flex items-center justify-center p-6" style={{ backgroundColor: chatC.bg }}>
+              <div className="w-full max-w-sm rounded-3xl p-8 text-center shadow-sm" style={{ backgroundColor: chatC.surface, border: `1px solid ${chatC.border}` }}>
                 <div className="w-14 h-14 rounded-full mx-auto mb-4 flex items-center justify-center text-2xl" style={{ background: 'linear-gradient(135deg, #4285F4, #9B72CB, #D96570)' }}>💬</div>
-                <h2 className="font-bold mb-1 text-lg" style={{ color: '#1F1F1F' }}>你是誰？</h2>
-                <p className="text-[11px] mb-6" style={{ color: '#575B5F' }}>只問這一次，存在這台裝置上（右上角隨時可切換）</p>
+                <h2 className="font-bold mb-1 text-lg" style={{ color: chatC.text }}>你是誰？</h2>
+                <p className="text-[11px] mb-6" style={{ color: chatC.secondary }}>只問這一次，存在這台裝置上（右上角隨時可切換）</p>
                 <div className="flex gap-3">
                   {[['me', roleSettings.role1], ['partner', roleSettings.role2]].map(([r, name]) => (
                     <button key={r} onClick={() => { triggerHaptic(); pickChatRole(r); }} className="flex-1 py-3 text-sm font-bold text-white rounded-full shadow-sm active:scale-95 transition-transform hover:brightness-105" style={{ background: 'linear-gradient(135deg, #4285F4, #9B72CB)' }}>
@@ -1548,10 +1639,10 @@ const App = () => {
           ) : (
             <>
               {/* Gemini 風格：冷色底、置中欄（桌機寬度 max-w-3xl）、對方帶漸層頭像 */}
-              <div ref={chatListRef} className="flex-1 overflow-y-auto" style={{ backgroundColor: '#F0F4F9' }}>
+              <div ref={chatListRef} className="flex-1 overflow-y-auto" style={{ backgroundColor: chatC.bg }}>
                 <div className="mx-auto w-full max-w-3xl px-4 py-4">
                   {chatMsgs.length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-20" style={{ color: '#575B5F' }}>
+                    <div className="flex flex-col items-center justify-center py-20" style={{ color: chatC.secondary }}>
                       <div className="w-12 h-12 rounded-full mb-3 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #4285F4, #9B72CB, #D96570)' }}>
                         <MessageCircle className="w-6 h-6 text-white" />
                       </div>
@@ -1575,26 +1666,53 @@ const App = () => {
                         <React.Fragment key={m.id}>
                           {showDay && (
                             <div className="flex justify-center my-4">
-                              <span className="text-[10px] px-3 py-1 rounded-full font-num-naikai" style={{ backgroundColor: '#E1E6ED', color: '#575B5F' }}>
+                              <span className="text-[10px] px-3 py-1 rounded-full font-num-naikai" style={{ backgroundColor: chatC.datePill, color: chatC.secondary }}>
                                 {dayStr.slice(5).replace('-', '/')}
                               </span>
                             </div>
                           )}
-                          <div className={`flex items-end gap-2 mb-2 ${mine ? 'flex-row-reverse' : ''}`}>
+                          <div className={`group flex items-end gap-2 mb-2 ${mine ? 'flex-row-reverse' : ''}`}>
                             {!mine && (
                               <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-white text-[11px] font-bold" style={{ background: 'linear-gradient(135deg, #4285F4, #9B72CB, #D96570)' }}>
                                 {(partnerName || '?').slice(0, 1)}
                               </div>
                             )}
                             <div
-                              onClick={() => mine && deleteChatMsg(m)}
-                              className={`max-w-[75%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${mine ? 'rounded-3xl rounded-br-lg cursor-pointer' : 'rounded-3xl rounded-bl-lg shadow-sm'}`}
+                              ref={(el) => { if (el) chatMsgEls.current[m.id] = el; else delete chatMsgEls.current[m.id]; }}
+                              onClick={() => { if (chatPressFired.current) { chatPressFired.current = false; return; } if (mine) deleteChatMsg(m); }}
+                              onTouchStart={() => bubblePressStart(m, true)}
+                              onTouchEnd={() => bubblePressEnd(true)}
+                              onTouchMove={() => bubblePressEnd(true)}
+                              onMouseDown={() => bubblePressStart(m, false)}
+                              onMouseUp={() => bubblePressEnd(false)}
+                              onMouseLeave={() => bubblePressEnd(false)}
+                              onContextMenu={(e) => e.preventDefault()}
+                              className={`max-w-[75%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${mine ? 'rounded-3xl rounded-br-lg cursor-pointer' : 'rounded-3xl rounded-bl-lg shadow-sm'}${chatFlashId === m.id ? ' chat-flash' : ''}`}
                               style={mine
-                                ? { backgroundColor: '#D3E3FD', color: '#1F1F1F' }
-                                : { backgroundColor: '#FFFFFF', color: '#1F1F1F', border: '1px solid #E0E3E7' }}
+                                ? { backgroundColor: chatC.ownBubble, color: chatC.ownText }
+                                : { backgroundColor: chatC.surface, color: chatC.text, border: `1px solid ${chatC.border}` }}
                             >
+                              {m.replyTo && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); if (chatPressFired.current) { chatPressFired.current = false; return; } jumpToChatMsg(m.replyTo.id); }}
+                                  className="block w-full text-left mb-1.5 px-2.5 py-1.5 rounded-lg text-[11px] leading-snug active:opacity-70"
+                                  style={{ backgroundColor: mine ? chatC.quoteOwnBg : chatC.quoteOtherBg, borderLeft: `3px solid ${chatC.quoteBar}` }}
+                                >
+                                  <span className="block font-bold opacity-80">{m.replyTo.by === 'me' ? roleSettings.role1 : roleSettings.role2}</span>
+                                  <span className="block opacity-70 line-clamp-2 break-words">{m.replyTo.text}</span>
+                                </button>
+                              )}
                               {m.text}
                             </div>
+                            {/* 桌機 hover 才出現的回覆鈕；手機直接長按氣泡 */}
+                            <button
+                              onClick={() => startReplyTo(m)}
+                              className="hidden sm:group-hover:flex w-7 h-7 rounded-full items-center justify-center shrink-0 self-center active:scale-90 transition-all hover:opacity-80"
+                              style={{ backgroundColor: chatC.datePill, color: chatC.secondary }}
+                              aria-label="回覆這則訊息"
+                            >
+                              <Reply className="w-3.5 h-3.5" />
+                            </button>
                             <span className="text-[9px] shrink-0 font-num-naikai pb-1" style={{ color: '#9AA0A6' }}>{timeStr}</span>
                           </div>
                         </React.Fragment>
@@ -1604,17 +1722,32 @@ const App = () => {
                 </div>
               </div>
               {/* Gemini 風格輸入列：置中膠囊、送出鈕在膠囊內 */}
-              <div className="flex-none" style={{ backgroundColor: '#F0F4F9', paddingBottom: 'calc(max(12px, env(safe-area-inset-bottom)) + 2px)' }}>
+              <div className="flex-none" style={{ backgroundColor: chatC.bg, paddingBottom: 'calc(max(12px, env(safe-area-inset-bottom)) + 2px)' }}>
+                {chatReplyTo && (
+                  <div className="mx-auto w-full max-w-3xl px-4 pt-2">
+                    <div className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ backgroundColor: chatC.surface, border: `1px solid ${chatC.border}`, borderLeft: `3px solid ${chatC.quoteBar}` }}>
+                      <Reply className="w-4 h-4 shrink-0" style={{ color: chatC.secondary }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-bold" style={{ color: chatC.text }}>回覆 {chatReplyTo.by === 'me' ? roleSettings.role1 : roleSettings.role2}</p>
+                        <p className="text-[11px] truncate" style={{ color: chatC.secondary }}>{chatReplyTo.text}</p>
+                      </div>
+                      <button onClick={() => setChatReplyTo(null)} className="p-1 rounded-full hover:opacity-60 active:scale-90 shrink-0" style={{ color: chatC.secondary }} aria-label="取消回覆">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="mx-auto w-full max-w-3xl px-4 pt-1">
-                  <div className="flex items-center gap-1 rounded-full pl-5 pr-1.5 py-1.5 shadow-sm" style={{ backgroundColor: '#FFFFFF', border: '1px solid #DDE3EA' }}>
+                  <div className="flex items-center gap-1 rounded-full pl-5 pr-1.5 py-1.5 shadow-sm" style={{ backgroundColor: chatC.surface, border: `1px solid ${chatC.inputBorder}` }}>
                     <input
+                      ref={chatInputRef}
                       type="text"
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) sendChatMsg(); }}
                       placeholder="輸入訊息…"
                       className="flex-1 min-w-0 text-sm outline-none bg-transparent py-1.5"
-                      style={{ color: '#1F1F1F' }}
+                      style={{ color: chatC.text }}
                     />
                     <button
                       onClick={sendChatMsg}
@@ -1687,7 +1820,7 @@ const App = () => {
                   <Trash2 className="w-3.5 h-3.5" /> 刪除
                 </button>
               )}
-              <button onClick={saveExpense} disabled={finSaving} className="flex-[1.6] py-2.5 text-xs font-bold text-white rounded-xl shadow-md active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-1" style={{ backgroundColor: theme.colors.accent }}>
+              <button onClick={saveExpense} disabled={finSaving} className="flex-[1.6] py-2.5 text-xs font-bold rounded-xl shadow-md active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-1" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}>
                 {finSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} 儲存
               </button>
             </div>
@@ -1721,7 +1854,7 @@ const App = () => {
               </p>
               <div className="space-y-3">
                 <div className="flex gap-3 items-start">
-                  <div className="rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm text-white shrink-0" style={{ backgroundColor: theme.colors.accent }}>1</div>
+                  <div className="rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm shrink-0" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}>1</div>
                   <div className="flex-1">
                     <p className="text-sm font-bold" style={{ color: theme.colors.text }}>點分享按鈕</p>
                     <p className="text-xs mt-1 flex items-center gap-1" style={{ color: theme.colors.secondaryText }}>
@@ -1738,14 +1871,14 @@ const App = () => {
                   </div>
                 </div>
                 <div className="flex gap-3 items-start">
-                  <div className="rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm text-white shrink-0" style={{ backgroundColor: theme.colors.accent }}>2</div>
+                  <div className="rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm shrink-0" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}>2</div>
                   <div className="flex-1">
                     <p className="text-sm font-bold" style={{ color: theme.colors.text }}>選「加入主畫面」</p>
                     <p className="text-xs mt-1" style={{ color: theme.colors.secondaryText }}>往下捲一點找到 ➕「加入主畫面」</p>
                   </div>
                 </div>
                 <div className="flex gap-3 items-start">
-                  <div className="rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm text-white shrink-0" style={{ backgroundColor: theme.colors.accent }}>3</div>
+                  <div className="rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm shrink-0" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}>3</div>
                   <div className="flex-1">
                     <p className="text-sm font-bold" style={{ color: theme.colors.text }}>點右上「加入」</p>
                     <p className="text-xs mt-1" style={{ color: theme.colors.secondaryText }}>主畫面就會出現 BiBi 圖示，跟原生 App 一樣用</p>
@@ -1755,7 +1888,7 @@ const App = () => {
               <div className="text-[10px] p-2 rounded-lg" style={{ color: theme.colors.secondaryText, backgroundColor: theme.colors.gridHeaderBg }}>
                 💡 注意：必須用 <b>Safari</b> 開啟才能加。Chrome / LINE 內建瀏覽器都不行。
               </div>
-              <button onClick={() => setShowIOSInstallGuide(false)} className="w-full py-2.5 text-xs font-bold text-white rounded-lg shadow-sm active:scale-95 transition-transform" style={{ backgroundColor: theme.colors.accent }}>
+              <button onClick={() => setShowIOSInstallGuide(false)} className="w-full py-2.5 text-xs font-bold rounded-lg shadow-sm active:scale-95 transition-transform" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}>
                 知道了
               </button>
             </div>
@@ -1785,7 +1918,8 @@ const App = () => {
                         style={{
                           backgroundColor: t.colors.bg,
                           borderColor: t.colors.border,
-                          '--tw-ring-color': theme.colors.accent
+                          '--tw-ring-color': theme.colors.accent,
+                          '--tw-ring-offset-color': theme.colors.modalBg
                         }}
                       >
                         <div className="w-6 h-6 rounded-full border shadow-sm" style={{ backgroundColor: t.colors.accent }}></div>
@@ -1806,8 +1940,8 @@ const App = () => {
                         if (deferredPrompt) handleInstallApp();
                         else if (isIOSSafari) setShowIOSInstallGuide(true);
                       }}
-                      className="w-full py-2.5 text-xs font-bold text-white rounded-lg shadow-sm transition-transform active:scale-95 hover:opacity-90 flex items-center justify-center gap-2"
-                      style={{ backgroundColor: theme.colors.accent }}
+                      className="w-full py-2.5 text-xs font-bold rounded-lg shadow-sm transition-transform active:scale-95 hover:opacity-90 flex items-center justify-center gap-2"
+                      style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}
                     >
                       <Download className="w-4 h-4" /> 加入桌面
                     </button>
@@ -1828,7 +1962,7 @@ const App = () => {
                   <label className="text-xs font-bold uppercase" style={{ color: theme.colors.secondaryText }}>裝置識別碼 (ID)</label>
                   <div className="flex gap-2 items-center border p-2 rounded-lg" style={{ backgroundColor: theme.colors.gridHeaderBg, borderColor: theme.colors.border }}>
                     <code className="text-[10px] break-all flex-1" style={{ color: theme.colors.text }}>{user?.uid || 'Loading...'}</code>
-                    <button onClick={handleCopyId} className="p-1 rounded hover:bg-white active:scale-90 transition-transform" style={{ color: theme.colors.accent }}><Copy className="w-4 h-4" /></button>
+                    <button onClick={handleCopyId} className="p-1 rounded hover:opacity-60 active:scale-90 transition-transform" style={{ color: theme.colors.accent }}><Copy className="w-4 h-4" /></button>
                   </div>
                   <div className="pt-2">
                     <input 
@@ -1842,7 +1976,7 @@ const App = () => {
                   </div>
                   <div className="flex gap-2 pt-1">
                     <button onClick={handleResetUid} className="flex-1 py-2 text-xs font-bold rounded-lg active:scale-95 transition-transform" style={{ backgroundColor: theme.colors.gridHeaderBg, color: theme.colors.secondaryText }}>重置</button>
-                    <button onClick={handleSaveCustomUid} className="flex-1 py-2 text-xs font-bold text-white rounded-lg shadow-sm active:scale-95 transition-transform" style={{ backgroundColor: theme.colors.accent }}>切換帳號</button>
+                    <button onClick={handleSaveCustomUid} className="flex-1 py-2 text-xs font-bold rounded-lg shadow-sm active:scale-95 transition-transform" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}>切換帳號</button>
                   </div>
                 </div>
 
@@ -1882,8 +2016,8 @@ const App = () => {
                         }
                       }
                     }}
-                    className="w-full py-2 text-xs font-bold rounded-lg active:scale-95 transition-transform text-white shadow-sm"
-                    style={{ backgroundColor: theme.colors.accent }}
+                    className="w-full py-2 text-xs font-bold rounded-lg active:scale-95 transition-transform shadow-sm"
+                    style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}
                   >
                     複製「綁定」指令
                   </button>
@@ -1973,7 +2107,7 @@ const App = () => {
                  )}
               </div>
               <div className="p-4 border-t shrink-0 flex-none" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
-                 <button onClick={() => openEditModal(viewingDate)} className="w-full text-white py-3 rounded-xl shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 hover:opacity-90" style={{ backgroundColor: theme.colors.accent }}><Plus className="w-5 h-5" /> 新增行程</button>
+                 <button onClick={() => openEditModal(viewingDate)} className="w-full py-3 rounded-xl shadow-md font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 hover:opacity-90" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}><Plus className="w-5 h-5" /> 新增行程</button>
               </div>
            </div>
         </div>
@@ -2032,7 +2166,7 @@ const App = () => {
               </div>
             </div>
             <div className="px-5 py-4 border-t flex justify-end shrink-0" style={{ backgroundColor: theme.colors.modalHeaderBg, borderColor: theme.colors.border }}>
-              <button onClick={saveEvent} disabled={isSaving} className="text-white text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2 disabled:opacity-50" style={{ backgroundColor: theme.colors.accent }}>
+              <button onClick={saveEvent} disabled={isSaving} className="text-sm font-bold py-2.5 px-6 rounded-xl shadow-md transition-transform active:scale-95 flex items-center gap-2 disabled:opacity-50" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}>
                 {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4" />} 
                 {isSaving ? '儲存中...' : '儲存行程'}
               </button>
@@ -2060,7 +2194,7 @@ const App = () => {
                  ) : (
                     Object.entries(groupedUpcoming).map(([date, events]) => (
                       <div key={date} className="space-y-2">
-                         <div className="sticky top-0 z-10 py-1 px-2 text-xs font-bold uppercase rounded-md shadow-sm" style={{ backgroundColor: theme.colors.accent, color: '#FFF' }}>
+                         <div className="sticky top-0 z-10 py-1 px-2 text-xs font-bold uppercase rounded-md shadow-sm" style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}>
                            {date} ({new Date(date + 'T00:00:00').toLocaleDateString('zh-TW', { weekday: 'short' })})
                          </div>
                          {events.map(ev => {
