@@ -10,7 +10,8 @@ import {
   setPersistence, browserLocalPersistence, inMemoryPersistence
 } from 'firebase/auth';
 import {
-  getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, arrayUnion, where, serverTimestamp, orderBy, limit
+  getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, arrayUnion, where, serverTimestamp, orderBy, limit
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -25,7 +26,21 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+// 公司網路 (Cloudflare Zero Trust / 各種代理防火牆) 會攔截或緩衝 Firestore 預設的
+// WebChannel 串流連線，造成 onSnapshot 收不到即時更新、連線反覆斷掉。
+// 強制 long-polling 讓每個請求都是會結束的短連線，代理環境才穩；
+// persistentLocalCache 讓斷線瞬間仍先顯示上次同步的資料，不會整頁空掉。
+let db;
+try {
+  db = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+    experimentalLongPollingOptions: { timeoutSeconds: 25 },
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  });
+} catch (e) {
+  console.warn('initializeFirestore with proxy-safe settings failed, falling back to defaults:', e);
+  db = getFirestore(app);
+}
 const appId = 'schdule-f5cda';
 
 // --- Helper: Haptic Feedback ---
