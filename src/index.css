@@ -59,6 +59,13 @@ textarea {
   to { transform: translateY(0); opacity: 1; }
 }
 
+/* 聊天室：點引用跳回原訊息時的短暫高亮 */
+.chat-flash { animation: chatFlash 1.4s ease-out; }
+@keyframes chatFlash {
+  0%, 55% { box-shadow: 0 0 0 2.5px #8AB4F8; }
+  100% { box-shadow: 0 0 0 2.5px transparent; }
+}
+
 .modal-enter { animation: modalZoomIn 0.2s ease-out forwards; }
 @keyframes modalZoomIn {
   from { opacity: 0; transform: scale(0.95) translateY(10px); }

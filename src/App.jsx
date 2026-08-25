@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   ChevronLeft, ChevronRight, X, Sparkles, Clock, Trash2,
   Loader2, Save, AlignLeft, Leaf, CheckSquare, Plus, Edit, Coffee, Settings, Copy, User, Users, CalendarHeart, Palette, Check, AlertCircle, Type, Download, List, AlertTriangle, Calendar,
-  ArrowLeft, Wallet, MessageCircle, Send
+  ArrowLeft, Wallet, MessageCircle, Send, Reply
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
@@ -157,11 +157,13 @@ const THEMES = {
 // 聊天室配色 (Gemini 風格)：亮色主題共用原本的淺色系，深色主題換成對應暗色
 const CHAT_COLORS_LIGHT = {
   bg: '#F0F4F9', surface: '#FFFFFF', border: '#E0E3E7', inputBorder: '#DDE3EA',
-  text: '#1F1F1F', secondary: '#575B5F', ownBubble: '#D3E3FD', ownText: '#1F1F1F', datePill: '#E1E6ED'
+  text: '#1F1F1F', secondary: '#575B5F', ownBubble: '#D3E3FD', ownText: '#1F1F1F', datePill: '#E1E6ED',
+  quoteOwnBg: 'rgba(255,255,255,0.6)', quoteOtherBg: '#F0F4F9', quoteBar: '#7BA7F0'
 };
 const CHAT_COLORS_DARK = {
   bg: '#101013', surface: '#1E1E22', border: '#2C2C31', inputBorder: '#3A3A41',
-  text: '#EAE5DF', secondary: '#98908A', ownBubble: '#3B4A61', ownText: '#E9EEF8', datePill: '#232328'
+  text: '#EAE5DF', secondary: '#98908A', ownBubble: '#3B4A61', ownText: '#E9EEF8', datePill: '#232328',
+  quoteOwnBg: 'rgba(255,255,255,0.12)', quoteOtherBg: 'rgba(255,255,255,0.07)', quoteBar: '#8AB4F8'
 };
 
 // --- Palette (Techo + Morandi + Pastels) ---
@@ -420,6 +422,13 @@ const App = () => {
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const chatListRef = useRef(null);
+  const [chatReplyTo, setChatReplyTo] = useState(null); // { id, by, text }：回覆模式中的目標訊息
+  const [chatFlashId, setChatFlashId] = useState(null); // 點引用跳回原訊息時短暫高亮
+  const chatInputRef = useRef(null);
+  const chatMsgEls = useRef({});        // 訊息 id → DOM 節點，供「跳回原訊息」捲動用
+  const chatPressTimer = useRef(null);
+  const chatPressFired = useRef(false); // 長按觸發後吃掉接著的 click，避免誤觸刪除/跳轉
+  const chatLastTouchAt = useRef(0);    // 忽略 touch 之後瀏覽器補發的合成 mouse 事件
   const [financeId, setFinanceId] = useState(safeStorage.getItem('bibi_finance_id') || '');
   const [financeIdInput, setFinanceIdInput] = useState('');
   const [finTab, setFinTab] = useState('bills'); // 'bills' | 'expenses'
@@ -684,6 +693,31 @@ const App = () => {
     setChatRole(role);
   };
 
+  // --- 回覆指定訊息 (LINE 式)：長按氣泡 (手機) / hover 回覆鈕 (桌機) 進入回覆模式 ---
+  const startReplyTo = (m) => {
+    triggerHaptic();
+    setChatReplyTo({ id: m.id, by: m.by, text: m.text });
+    setTimeout(() => chatInputRef.current?.focus(), 60);
+  };
+  const bubblePressStart = (m, isTouch) => {
+    if (isTouch) chatLastTouchAt.current = Date.now();
+    else if (Date.now() - chatLastTouchAt.current < 700) return; // touch 後的合成 mousedown
+    clearTimeout(chatPressTimer.current);
+    chatPressFired.current = false;
+    chatPressTimer.current = setTimeout(() => { chatPressFired.current = true; startReplyTo(m); }, 450);
+  };
+  const bubblePressEnd = (isTouch) => {
+    if (isTouch) chatLastTouchAt.current = Date.now();
+    clearTimeout(chatPressTimer.current);
+  };
+  const jumpToChatMsg = (id) => {
+    const el = chatMsgEls.current[id];
+    if (!el) { addToast('找不到原訊息（可能已刪除或太久遠）', 'error'); return; }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setChatFlashId(id);
+    setTimeout(() => setChatFlashId(null), 1400);
+  };
+
   const sendChatMsg = async () => {
     const text = chatInput.trim();
     const targetUid = customUserId || user?.uid;
@@ -691,10 +725,12 @@ const App = () => {
     if (text.length > 1000) { addToast('訊息太長了（上限 1000 字）', 'error'); return; }
     setChatSending(true);
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_chat'), {
-        text, by: chatRole, at: serverTimestamp(),
-      });
+      const payload = { text, by: chatRole, at: serverTimestamp() };
+      // 引用只存摘要快照，原訊息之後被刪除也還顯示得出來
+      if (chatReplyTo) payload.replyTo = { id: chatReplyTo.id, by: chatReplyTo.by, text: String(chatReplyTo.text || '').slice(0, 120) };
+      await addDoc(collection(db, 'artifacts', appId, 'users', targetUid, 'bibi_chat'), payload);
       setChatInput('');
+      setChatReplyTo(null);
     } catch (e) {
       console.error('Send chat error:', e);
       addToast(e?.code === 'permission-denied' ? '資料庫規則尚未開放聊天室路徑' : '傳送失敗，請重試', 'error');
@@ -1570,7 +1606,7 @@ const App = () => {
           <header className="flex-none z-10" style={{ backgroundColor: chatC.surface, borderBottom: `1px solid ${chatC.border}` }}>
             <div className="mx-auto w-full max-w-3xl flex items-center justify-between px-3 pb-2.5 pt-[calc(env(safe-area-inset-top)+10px)]">
               <div className="flex items-center gap-2">
-                <button onClick={() => { triggerHaptic(); setView('calendar'); }} className="p-2 rounded-full hover:opacity-60 active:scale-95 transition-all" style={{ color: chatC.secondary }} aria-label="返回月曆">
+                <button onClick={() => { triggerHaptic(); setChatReplyTo(null); setView('calendar'); }} className="p-2 rounded-full hover:opacity-60 active:scale-95 transition-all" style={{ color: chatC.secondary }} aria-label="返回月曆">
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 <div className="w-7 h-7 rounded-full flex items-center justify-center text-sm" style={{ background: 'linear-gradient(135deg, #4285F4, #9B72CB, #D96570)' }}>💬</div>
@@ -1635,21 +1671,48 @@ const App = () => {
                               </span>
                             </div>
                           )}
-                          <div className={`flex items-end gap-2 mb-2 ${mine ? 'flex-row-reverse' : ''}`}>
+                          <div className={`group flex items-end gap-2 mb-2 ${mine ? 'flex-row-reverse' : ''}`}>
                             {!mine && (
                               <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-white text-[11px] font-bold" style={{ background: 'linear-gradient(135deg, #4285F4, #9B72CB, #D96570)' }}>
                                 {(partnerName || '?').slice(0, 1)}
                               </div>
                             )}
                             <div
-                              onClick={() => mine && deleteChatMsg(m)}
-                              className={`max-w-[75%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${mine ? 'rounded-3xl rounded-br-lg cursor-pointer' : 'rounded-3xl rounded-bl-lg shadow-sm'}`}
+                              ref={(el) => { if (el) chatMsgEls.current[m.id] = el; else delete chatMsgEls.current[m.id]; }}
+                              onClick={() => { if (chatPressFired.current) { chatPressFired.current = false; return; } if (mine) deleteChatMsg(m); }}
+                              onTouchStart={() => bubblePressStart(m, true)}
+                              onTouchEnd={() => bubblePressEnd(true)}
+                              onTouchMove={() => bubblePressEnd(true)}
+                              onMouseDown={() => bubblePressStart(m, false)}
+                              onMouseUp={() => bubblePressEnd(false)}
+                              onMouseLeave={() => bubblePressEnd(false)}
+                              onContextMenu={(e) => e.preventDefault()}
+                              className={`max-w-[75%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${mine ? 'rounded-3xl rounded-br-lg cursor-pointer' : 'rounded-3xl rounded-bl-lg shadow-sm'}${chatFlashId === m.id ? ' chat-flash' : ''}`}
                               style={mine
                                 ? { backgroundColor: chatC.ownBubble, color: chatC.ownText }
                                 : { backgroundColor: chatC.surface, color: chatC.text, border: `1px solid ${chatC.border}` }}
                             >
+                              {m.replyTo && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); if (chatPressFired.current) { chatPressFired.current = false; return; } jumpToChatMsg(m.replyTo.id); }}
+                                  className="block w-full text-left mb-1.5 px-2.5 py-1.5 rounded-lg text-[11px] leading-snug active:opacity-70"
+                                  style={{ backgroundColor: mine ? chatC.quoteOwnBg : chatC.quoteOtherBg, borderLeft: `3px solid ${chatC.quoteBar}` }}
+                                >
+                                  <span className="block font-bold opacity-80">{m.replyTo.by === 'me' ? roleSettings.role1 : roleSettings.role2}</span>
+                                  <span className="block opacity-70 line-clamp-2 break-words">{m.replyTo.text}</span>
+                                </button>
+                              )}
                               {m.text}
                             </div>
+                            {/* 桌機 hover 才出現的回覆鈕；手機直接長按氣泡 */}
+                            <button
+                              onClick={() => startReplyTo(m)}
+                              className="hidden sm:group-hover:flex w-7 h-7 rounded-full items-center justify-center shrink-0 self-center active:scale-90 transition-all hover:opacity-80"
+                              style={{ backgroundColor: chatC.datePill, color: chatC.secondary }}
+                              aria-label="回覆這則訊息"
+                            >
+                              <Reply className="w-3.5 h-3.5" />
+                            </button>
                             <span className="text-[9px] shrink-0 font-num-naikai pb-1" style={{ color: '#9AA0A6' }}>{timeStr}</span>
                           </div>
                         </React.Fragment>
@@ -1660,9 +1723,24 @@ const App = () => {
               </div>
               {/* Gemini 風格輸入列：置中膠囊、送出鈕在膠囊內 */}
               <div className="flex-none" style={{ backgroundColor: chatC.bg, paddingBottom: 'calc(max(12px, env(safe-area-inset-bottom)) + 2px)' }}>
+                {chatReplyTo && (
+                  <div className="mx-auto w-full max-w-3xl px-4 pt-2">
+                    <div className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ backgroundColor: chatC.surface, border: `1px solid ${chatC.border}`, borderLeft: `3px solid ${chatC.quoteBar}` }}>
+                      <Reply className="w-4 h-4 shrink-0" style={{ color: chatC.secondary }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-bold" style={{ color: chatC.text }}>回覆 {chatReplyTo.by === 'me' ? roleSettings.role1 : roleSettings.role2}</p>
+                        <p className="text-[11px] truncate" style={{ color: chatC.secondary }}>{chatReplyTo.text}</p>
+                      </div>
+                      <button onClick={() => setChatReplyTo(null)} className="p-1 rounded-full hover:opacity-60 active:scale-90 shrink-0" style={{ color: chatC.secondary }} aria-label="取消回覆">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="mx-auto w-full max-w-3xl px-4 pt-1">
                   <div className="flex items-center gap-1 rounded-full pl-5 pr-1.5 py-1.5 shadow-sm" style={{ backgroundColor: chatC.surface, border: `1px solid ${chatC.inputBorder}` }}>
                     <input
+                      ref={chatInputRef}
                       type="text"
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
