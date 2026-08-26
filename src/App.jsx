@@ -424,6 +424,7 @@ const App = () => {
   const chatListRef = useRef(null);
   const [chatReplyTo, setChatReplyTo] = useState(null); // { id, by, text }：回覆模式中的目標訊息
   const [chatFlashId, setChatFlashId] = useState(null); // 點引用跳回原訊息時短暫高亮
+  const [chatMenu, setChatMenu] = useState(null);       // { msg, top, left }：長按彈出的訊息選單
   const chatInputRef = useRef(null);
   const chatMsgEls = useRef({});        // 訊息 id → DOM 節點，供「跳回原訊息」捲動用
   const chatPressTimer = useRef(null);
@@ -693,21 +694,51 @@ const App = () => {
     setChatRole(role);
   };
 
-  // --- 回覆指定訊息 (LINE 式)：長按氣泡 (手機) / hover 回覆鈕 (桌機) 進入回覆模式 ---
+  // --- 訊息互動 (LINE 式)：手機長按氣泡彈出選單 (回覆/複製/刪除)；
+  //     桌機 hover 出動作鈕 + 可直接反白選取文字 ---
   const startReplyTo = (m) => {
     triggerHaptic();
     setChatReplyTo({ id: m.id, by: m.by, text: m.text });
     setTimeout(() => chatInputRef.current?.focus(), 60);
   };
-  const bubblePressStart = (m, isTouch) => {
-    if (isTouch) chatLastTouchAt.current = Date.now();
-    else if (Date.now() - chatLastTouchAt.current < 700) return; // touch 後的合成 mousedown
+  const copyChatMsg = async (text) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      addToast('已複製訊息 ✨');
+    } catch (e) {
+      addToast('複製失敗', 'error');
+    }
+  };
+  const openChatMenu = (m) => {
+    triggerHaptic();
+    const r = chatMsgEls.current[m.id]?.getBoundingClientRect();
+    const mid = r ? r.left + r.width / 2 : window.innerWidth / 2;
+    // 半寬夾限：自己的訊息選單有三顆鈕比較寬
+    const half = m.by === chatRole ? 125 : 90;
+    const left = Math.min(Math.max(mid, half + 8), window.innerWidth - half - 8);
+    let top = r ? r.top - 54 : 120;
+    if (top < 70) top = (r ? r.bottom : 80) + 10; // 太靠近頂端就改彈在氣泡下方
+    setChatMenu({ msg: m, top, left });
+  };
+  const bubbleTouchStart = (m) => {
+    chatLastTouchAt.current = Date.now();
     clearTimeout(chatPressTimer.current);
     chatPressFired.current = false;
-    chatPressTimer.current = setTimeout(() => { chatPressFired.current = true; startReplyTo(m); }, 450);
+    chatPressTimer.current = setTimeout(() => { chatPressFired.current = true; openChatMenu(m); }, 450);
   };
-  const bubblePressEnd = (isTouch) => {
-    if (isTouch) chatLastTouchAt.current = Date.now();
+  const bubbleTouchEnd = () => {
+    chatLastTouchAt.current = Date.now();
     clearTimeout(chatPressTimer.current);
   };
   const jumpToChatMsg = (id) => {
@@ -1679,15 +1710,11 @@ const App = () => {
                             )}
                             <div
                               ref={(el) => { if (el) chatMsgEls.current[m.id] = el; else delete chatMsgEls.current[m.id]; }}
-                              onClick={() => { if (chatPressFired.current) { chatPressFired.current = false; return; } if (mine) deleteChatMsg(m); }}
-                              onTouchStart={() => bubblePressStart(m, true)}
-                              onTouchEnd={() => bubblePressEnd(true)}
-                              onTouchMove={() => bubblePressEnd(true)}
-                              onMouseDown={() => bubblePressStart(m, false)}
-                              onMouseUp={() => bubblePressEnd(false)}
-                              onMouseLeave={() => bubblePressEnd(false)}
-                              onContextMenu={(e) => e.preventDefault()}
-                              className={`max-w-[75%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${mine ? 'rounded-3xl rounded-br-lg cursor-pointer' : 'rounded-3xl rounded-bl-lg shadow-sm'}${chatFlashId === m.id ? ' chat-flash' : ''}`}
+                              onTouchStart={() => bubbleTouchStart(m)}
+                              onTouchEnd={bubbleTouchEnd}
+                              onTouchMove={bubbleTouchEnd}
+                              onContextMenu={(e) => { if (Date.now() - chatLastTouchAt.current < 800) e.preventDefault(); }} // 只擋觸控長按的系統選單，桌機右鍵複製保留
+                              className={`chat-bubble-text max-w-[75%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${mine ? 'rounded-3xl rounded-br-lg' : 'rounded-3xl rounded-bl-lg shadow-sm'}${chatFlashId === m.id ? ' chat-flash' : ''}`}
                               style={mine
                                 ? { backgroundColor: chatC.ownBubble, color: chatC.ownText }
                                 : { backgroundColor: chatC.surface, color: chatC.text, border: `1px solid ${chatC.border}` }}
@@ -1704,15 +1731,27 @@ const App = () => {
                               )}
                               {m.text}
                             </div>
-                            {/* 桌機 hover 才出現的回覆鈕；手機直接長按氣泡 */}
-                            <button
-                              onClick={() => startReplyTo(m)}
-                              className="hidden sm:group-hover:flex w-7 h-7 rounded-full items-center justify-center shrink-0 self-center active:scale-90 transition-all hover:opacity-80"
-                              style={{ backgroundColor: chatC.datePill, color: chatC.secondary }}
-                              aria-label="回覆這則訊息"
-                            >
-                              <Reply className="w-3.5 h-3.5" />
-                            </button>
+                            {/* 桌機 hover 才出現的動作鈕；手機用長按選單 */}
+                            <div className="chat-hover-actions items-center gap-1 shrink-0 self-center">
+                              <button
+                                onClick={() => startReplyTo(m)}
+                                className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-all hover:opacity-80"
+                                style={{ backgroundColor: chatC.datePill, color: chatC.secondary }}
+                                aria-label="回覆這則訊息"
+                              >
+                                <Reply className="w-3.5 h-3.5" />
+                              </button>
+                              {mine && (
+                                <button
+                                  onClick={() => deleteChatMsg(m)}
+                                  className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-all hover:opacity-80"
+                                  style={{ backgroundColor: chatC.datePill, color: theme.colors.danger }}
+                                  aria-label="刪除這則訊息"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                             <span className="text-[9px] shrink-0 font-num-naikai pb-1" style={{ color: '#9AA0A6' }}>{timeStr}</span>
                           </div>
                         </React.Fragment>
@@ -1761,6 +1800,31 @@ const App = () => {
                   </div>
                 </div>
               </div>
+              {/* 長按訊息的動作選單 (LINE 式)：回覆 / 複製 / 刪除(自己的) */}
+              {chatMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => { if (chatPressFired.current) { chatPressFired.current = false; return; } setChatMenu(null); }}
+                  />
+                  <div
+                    className="fixed z-50 flex items-center gap-0.5 whitespace-nowrap rounded-2xl shadow-xl px-1.5 py-1.5"
+                    style={{ top: chatMenu.top, left: chatMenu.left, transform: 'translateX(-50%)', backgroundColor: chatC.surface, border: `1px solid ${chatC.border}` }}
+                  >
+                    <button onClick={() => { setChatMenu(null); startReplyTo(chatMenu.msg); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold active:scale-95 transition-transform" style={{ color: chatC.text }}>
+                      <Reply className="w-4 h-4" /> 回覆
+                    </button>
+                    <button onClick={() => { setChatMenu(null); copyChatMsg(chatMenu.msg.text); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold active:scale-95 transition-transform" style={{ color: chatC.text }}>
+                      <Copy className="w-4 h-4" /> 複製
+                    </button>
+                    {chatMenu.msg.by === chatRole && (
+                      <button onClick={() => { setChatMenu(null); deleteChatMsg(chatMenu.msg); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold active:scale-95 transition-transform" style={{ color: theme.colors.danger }}>
+                        <Trash2 className="w-4 h-4" /> 刪除
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

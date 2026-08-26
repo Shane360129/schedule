@@ -59,6 +59,14 @@ textarea {
   to { transform: translateY(0); opacity: 1; }
 }
 
+/* 聊天室：桌機（有滑鼠）開放反白選取訊息文字、hover 顯示動作鈕；
+   手機維持不可選取（避免與長按選單衝突），複製走長按選單 */
+.chat-hover-actions { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .chat-bubble-text { user-select: text; -webkit-user-select: text; }
+  .group:hover .chat-hover-actions { display: flex; }
+}
+
 /* 聊天室：點引用跳回原訊息時的短暫高亮 */
 .chat-flash { animation: chatFlash 1.4s ease-out; }
 @keyframes chatFlash {
