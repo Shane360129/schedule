@@ -414,6 +414,8 @@ const App = () => {
   const [isIOSSafari, setIsIOSSafari] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [showIOSInstallGuide, setShowIOSInstallGuide] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const [installTipHidden, setInstallTipHidden] = useState(safeStorage.getItem('bibi_install_tip_hidden') === '1');
 
   // --- 帳務頁 (隱藏頁：長按 logo 進入) / 聊天室 ---
   const [view, setView] = useState('calendar'); // 'calendar' | 'finance' | 'chat'
@@ -500,6 +502,7 @@ const App = () => {
       window.matchMedia('(display-mode: standalone)').matches;
     setIsIOSSafari(isSafari);
     setIsStandalone(standalone);
+    setIsMobileDevice(/Android|iPhone|iPad|iPod/i.test(ua));
   }, []);
 
   useEffect(() => {
@@ -1253,6 +1256,36 @@ const App = () => {
           <button onClick={openSettings} className="p-2.5 rounded-xl shadow-sm border hover:brightness-95 transition-all active:scale-95" style={{ backgroundColor: theme.colors.modalBg, color: theme.colors.secondaryText, borderColor: theme.colors.border }}><Settings className="w-5 h-5" /></button>
         </div>
       </header>
+
+      {/* 行動裝置的一鍵「加入主畫面」捷徑：已安裝 (standalone) 或關閉過就不顯示 */}
+      {!isStandalone && isMobileDevice && !installTipHidden && (deferredPrompt || isIOSSafari) && (
+        <div className="flex-none px-3 pt-2 pb-1">
+          <div className="flex items-center gap-2.5 rounded-2xl border px-3 py-2 shadow-sm" style={{ backgroundColor: theme.colors.modalBg, borderColor: theme.colors.border }}>
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: theme.colors.gridHeaderBg }}>
+              <Download className="w-4 h-4" style={{ color: theme.colors.accent }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold leading-tight" style={{ color: theme.colors.text }}>把 BiBi 加到主畫面</p>
+              <p className="text-[10px] leading-tight mt-0.5" style={{ color: theme.colors.secondaryText }}>像 App 一樣全螢幕開啟，更快更順手</p>
+            </div>
+            <button
+              onClick={() => { triggerHaptic(); if (deferredPrompt) handleInstallApp(); else setShowIOSInstallGuide(true); }}
+              className="shrink-0 text-xs font-bold px-3.5 py-1.5 rounded-full shadow-sm active:scale-95 transition-transform hover:brightness-105"
+              style={{ backgroundColor: theme.colors.accent, color: theme.colors.onAccent }}
+            >
+              加入
+            </button>
+            <button
+              onClick={() => { setInstallTipHidden(true); safeStorage.setItem('bibi_install_tip_hidden', '1'); }}
+              className="shrink-0 p-1 rounded-full active:scale-90 hover:opacity-60 transition-all"
+              style={{ color: theme.colors.secondaryText }}
+              aria-label="關閉安裝提示"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex-none grid grid-cols-7" style={{ backgroundColor: theme.colors.gridHeaderBg, borderBottom: `1px solid ${theme.colors.border}40` }}>
         {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d, i) => (
