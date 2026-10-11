@@ -3949,14 +3949,16 @@ function parseMonthCalendarCommand(text) {
   return null;
 }
 
-function calendarWebUrl(y, mo) {
-  // openExternalBrowser=1：用手機預設瀏覽器開，才吃得到使用者原本的裝置 ID / 主題設定
-  return `${CALENDAR_WEB_URL}?month=${y}-${String(mo).padStart(2, '0')}&openExternalBrowser=1`;
+function calendarWebUrl(y, mo, uid) {
+  // uid：網頁靠裝置 ID 決定讀哪本行事曆，帶上綁定的 ID 才會打開同一本 (網頁會記住)
+  // openExternalBrowser=1：用手機預設瀏覽器開
+  const uidParam = uid ? `uid=${encodeURIComponent(uid)}&` : '';
+  return `${CALENDAR_WEB_URL}?${uidParam}month=${y}-${String(mo).padStart(2, '0')}&openExternalBrowser=1`;
 }
 
-function buildMonthCalendarFlex(y, mo, eventsByDate, holidaysByDate, theme) {
+function buildMonthCalendarFlex(y, mo, eventsByDate, holidaysByDate, theme, uid) {
   const th = theme || FLEX_THEMES.classic;
-  const url = calendarWebUrl(y, mo);
+  const url = calendarWebUrl(y, mo, uid);
   const todayStr = formatDateTW(new Date());
   const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
   const firstDow = new Date(Date.UTC(y, mo - 1, 1)).getUTCDay(); // 0=日
@@ -4103,7 +4105,7 @@ async function replyMonthCalendar(client, ev, y, mo) {
   });
 
   const theme = flexThemeForToday(formatDateTW(new Date()));
-  const message = buildMonthCalendarFlex(y, mo, eventsByDate, holidaysByDate, theme);
+  const message = buildMonthCalendarFlex(y, mo, eventsByDate, holidaysByDate, theme, uids[0]);
   return safeReply(client, ev.replyToken, withQuickReply(message));
 }
 

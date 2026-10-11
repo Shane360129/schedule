@@ -349,23 +349,31 @@ const HolidayAnimation = ({ type, onDismiss }) => {
    );
 };
 
+// LINE「本月行事曆」卡片帶 ?uid=<綁定的裝置ID>&month=YYYY-MM：
+// 套用綁定的行事曆 (存成自訂 ID，之後直接開也是這本)、跳到該月，再把參數從網址清掉
+const LAUNCH_PARAMS = (() => {
+  const result = { month: null };
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const uid = params.get('uid');
+    if (uid && /^[A-Za-z0-9_-]{6,128}$/.test(uid)) safeStorage.setItem('bibi_custom_uid', uid);
+    const m = params.get('month')?.match(/^(\d{4})-(\d{1,2})$/);
+    if (m && +m[2] >= 1 && +m[2] <= 12) result.month = new Date(+m[1], +m[2] - 1, 1);
+    if (params.has('uid') || params.has('month') || params.has('openExternalBrowser')) {
+      ['uid', 'month', 'openExternalBrowser'].forEach((k) => params.delete(k));
+      const qs = params.toString();
+      window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+    }
+  } catch {}
+  return result;
+})();
+
 const App = () => {
   const [user, setUser] = useState(null);
   const [customUserId, setCustomUserId] = useState(safeStorage.getItem('bibi_custom_uid') || '');
 
   const [currentDate, setCurrentDate] = useState(() => {
-      // LINE「本月行事曆」卡片會帶 ?month=YYYY-MM，直接跳到該月
-      try {
-        const m = new URLSearchParams(window.location.search).get('month')?.match(/^(\d{4})-(\d{1,2})$/);
-        if (m && +m[2] >= 1 && +m[2] <= 12) {
-          const params = new URLSearchParams(window.location.search);
-          params.delete('month');
-          params.delete('openExternalBrowser');
-          const qs = params.toString();
-          window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
-          return new Date(+m[1], +m[2] - 1, 1);
-        }
-      } catch {}
+      if (LAUNCH_PARAMS.month) return LAUNCH_PARAMS.month;
       const savedDate = safeStorage.getItem('bibi_last_view_date');
       return savedDate && !isNaN(new Date(savedDate).getTime()) ? new Date(savedDate) : new Date();
   });
