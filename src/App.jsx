@@ -354,6 +354,18 @@ const App = () => {
   const [customUserId, setCustomUserId] = useState(safeStorage.getItem('bibi_custom_uid') || '');
 
   const [currentDate, setCurrentDate] = useState(() => {
+      // LINE「本月行事曆」卡片會帶 ?month=YYYY-MM，直接跳到該月
+      try {
+        const m = new URLSearchParams(window.location.search).get('month')?.match(/^(\d{4})-(\d{1,2})$/);
+        if (m && +m[2] >= 1 && +m[2] <= 12) {
+          const params = new URLSearchParams(window.location.search);
+          params.delete('month');
+          params.delete('openExternalBrowser');
+          const qs = params.toString();
+          window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+          return new Date(+m[1], +m[2] - 1, 1);
+        }
+      } catch {}
       const savedDate = safeStorage.getItem('bibi_last_view_date');
       return savedDate && !isNaN(new Date(savedDate).getTime()) ? new Date(savedDate) : new Date();
   });
