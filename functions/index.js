@@ -18,7 +18,7 @@ const LINE_CHANNEL_SECRET = defineSecret('LINE_CHANNEL_SECRET');
 const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 
 const APP_ID = 'schdule-f5cda';
-const BUILD_VERSION = '2026-08-08-v25-themed-cards';
+const BUILD_VERSION = '2026-10-11-v26-month-calendar';
 
 // 通知開關 (true=開, false=關，省 LINE push 額度)
 const NOTIFY_ON_CREATE = true;
@@ -3904,6 +3904,209 @@ async function replyAgenda(client, ev, range) {
   return safeReply(client, ev.replyToken, withQuickReply(message));
 }
 
+// -------- 本月行事曆：月曆格子卡片，點擊直接開行事曆網頁 --------
+const CALENDAR_WEB_URL = 'https://shane360129.github.io/schedule/';
+// 對應 App.jsx 的 TECHO_COLORS (bg / text)
+const TECHO_COLOR_HEX = {
+  smokedPlum: ['#8E4A49', '#FFFFFF'], ironBlue: ['#546E7A', '#FFFFFF'],
+  mossGreen: ['#556B2F', '#FFFFFF'], ocher: ['#B8860B', '#FFFFFF'],
+  latte: ['#6D4C41', '#FFFFFF'], tea: ['#A1887F', '#FFFFFF'],
+  mist: ['#78909C', '#FFFFFF'], sakura: ['#EC407A', '#FFFFFF'],
+  mint: ['#26A69A', '#FFFFFF'], lemon: ['#C0CA33', '#FFFFFF'],
+  lavender: ['#7E57C2', '#FFFFFF'], slate: ['#475569', '#FFFFFF'],
+  pastelSakura: ['#F8BBD0', '#880E4F'], pastelPeach: ['#FFCCBC', '#BF360C'],
+  pastelCream: ['#FFF9C4', '#827717'], pastelMatcha: ['#DCEDC8', '#33691E'],
+  pastelSky: ['#B3E5FC', '#01579B'], pastelTaro: ['#E1BEE7', '#4A148C'],
+  pastelBeige: ['#F5F5DC', '#5D4037'], pastelGrey: ['#CFD8DC', '#37474F'],
+};
+
+// 「本月行事曆」「下個月行事曆」「7月行事曆」「2026/7行事曆」→ { y, mo }
+function parseMonthCalendarCommand(text) {
+  const t = text.replace(/[\s　]+/g, '');
+  const m0 = t.match(/^(.*?)(行事曆|月曆)$/);
+  if (!m0) return null;
+  const head = m0[1];
+  const [curY, curMo] = formatDateTW(new Date()).split('-').map(Number);
+  if (head === '本月' || head === '這個月' || head === '當月' || head === '整月' ||
+      (head === '' && m0[2] === '月曆')) {
+    return { y: curY, mo: curMo };
+  }
+  if (head === '下個月' || head === '下月') {
+    return curMo === 12 ? { y: curY + 1, mo: 1 } : { y: curY, mo: curMo + 1 };
+  }
+  if (head === '上個月' || head === '上月') {
+    return curMo === 1 ? { y: curY - 1, mo: 12 } : { y: curY, mo: curMo - 1 };
+  }
+  let mm;
+  if ((mm = head.match(/^(\d{4})[\/\-年](\d{1,2})月?$/))) {
+    const mo = parseInt(mm[2], 10);
+    if (mo >= 1 && mo <= 12) return { y: parseInt(mm[1], 10), mo };
+  }
+  if ((mm = head.match(/^(\d{1,2})月$/))) {
+    const mo = parseInt(mm[1], 10);
+    if (mo >= 1 && mo <= 12) return { y: mo >= curMo ? curY : curY + 1, mo };
+  }
+  return null;
+}
+
+function calendarWebUrl(y, mo) {
+  // openExternalBrowser=1：用手機預設瀏覽器開，才吃得到使用者原本的裝置 ID / 主題設定
+  return `${CALENDAR_WEB_URL}?month=${y}-${String(mo).padStart(2, '0')}&openExternalBrowser=1`;
+}
+
+function buildMonthCalendarFlex(y, mo, eventsByDate, holidaysByDate, theme) {
+  const th = theme || FLEX_THEMES.classic;
+  const url = calendarWebUrl(y, mo);
+  const todayStr = formatDateTW(new Date());
+  const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const firstDow = new Date(Date.UTC(y, mo - 1, 1)).getUTCDay(); // 0=日
+  const ymPrefix = `${y}-${String(mo).padStart(2, '0')}-`;
+  const MAX_CHIPS = 2;
+
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= lastDay; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const weekHeader = {
+    type: 'box', layout: 'horizontal', spacing: 'xs',
+    contents: WEEK_DAYS_TW.map((w, i) => ({
+      type: 'text', text: w, size: 'xxs', align: 'center', flex: 1, weight: 'bold',
+      color: i === 0 || i === 6 ? '#D32F2F' : th.sub,
+    })),
+  };
+
+  const rows = [];
+  for (let r = 0; r < cells.length / 7; r++) {
+    const rowCells = cells.slice(r * 7, r * 7 + 7).map((d, i) => {
+      if (d === null) {
+        return { type: 'box', layout: 'vertical', flex: 1, contents: [{ type: 'filler' }] };
+      }
+      const dateStr = `${ymPrefix}${String(d).padStart(2, '0')}`;
+      const isToday = dateStr === todayStr;
+      const holiday = holidaysByDate[dateStr];
+      const isRed = i === 0 || i === 6 || !!holiday;
+      const dayEvents = eventsByDate[dateStr] || [];
+      const contents = [{
+        type: 'text', text: String(d), size: 'xxs', align: 'center', weight: 'bold',
+        color: isToday ? th.headerText : isRed ? '#D32F2F' : th.text,
+      }];
+      dayEvents.slice(0, MAX_CHIPS).forEach((e) => {
+        const [bg, fg] = TECHO_COLOR_HEX[e.color] || TECHO_COLOR_HEX.latte;
+        contents.push({
+          type: 'box', layout: 'vertical', backgroundColor: bg, cornerRadius: '2px',
+          paddingStart: '1px', paddingEnd: '1px', margin: 'xs',
+          contents: [{ type: 'text', text: (e.title || '').trim().slice(0, 12) || '·', size: 'xxs', color: fg, wrap: false }],
+        });
+      });
+      if (dayEvents.length > MAX_CHIPS) {
+        contents.push({
+          type: 'text', text: `+${dayEvents.length - MAX_CHIPS}`, size: 'xxs',
+          align: 'center', color: th.sub, margin: 'xs',
+        });
+      }
+      return {
+        type: 'box', layout: 'vertical', flex: 1, paddingAll: '2px', cornerRadius: '4px',
+        backgroundColor: isToday ? th.accent : (holiday ? '#FFEBEE' : '#FFFFFF00'),
+        contents,
+      };
+    });
+    rows.push({
+      type: 'box', layout: 'horizontal', spacing: 'xs', contents: rowCells,
+    });
+    rows.push({ type: 'separator', color: th.accentSoft });
+  }
+
+  const total = Object.values(eventsByDate).reduce((n, list) => n + list.length, 0);
+  const header = {
+    type: 'box', layout: 'vertical', paddingAll: 'lg', backgroundColor: th.headerBg,
+    contents: [
+      { type: 'text', text: `${th.deco ? th.deco + ' ' : ''}${y} 年 ${mo} 月行事曆`,
+        weight: 'bold', size: 'lg', color: th.headerText },
+      { type: 'text', text: total ? `本月共 ${total} 件行程・點一下打開行事曆` : '本月還沒有行程・點一下打開行事曆',
+        size: 'xs', color: th.headerText, margin: 'xs' },
+    ],
+  };
+  if (th.gradient) {
+    header.background = {
+      type: 'linearGradient', angle: '90deg',
+      startColor: th.gradient[0], endColor: th.gradient[1],
+    };
+  }
+
+  return {
+    type: 'flex',
+    altText: `📅 ${y}/${mo} 月行事曆`,
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      action: { type: 'uri', label: '打開行事曆', uri: url },
+      header,
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: 'sm', spacing: 'xs',
+        contents: [weekHeader, { type: 'separator', color: th.accentSoft }, ...rows],
+      },
+      footer: {
+        type: 'box', layout: 'vertical', paddingAll: 'sm',
+        contents: [{
+          type: 'button', style: 'primary', height: 'sm', color: th.accent,
+          action: { type: 'uri', label: '🌐 打開行事曆網頁', uri: url },
+        }],
+      },
+    },
+  };
+}
+
+async function replyMonthCalendar(client, ev, y, mo) {
+  const sourceId = getSourceId(ev);
+  const uids = await getBoundUidsForSource(sourceId);
+  if (uids.length === 0) {
+    return safeReply(client, ev.replyToken, withQuickReply({
+      type: 'text',
+      text: '你還沒綁定任何行事曆。請先傳：綁定 <你的裝置 ID>',
+    }));
+  }
+  const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const monthStart = `${y}-${String(mo).padStart(2, '0')}-01`;
+  const monthEnd = `${y}-${String(mo).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+  const eventsByDate = {};
+  for (const uid of uids) {
+    const snap = await db()
+      .collection('artifacts').doc(APP_ID)
+      .collection('users').doc(uid)
+      .collection('bibi_events')
+      .where('startDate', '<=', monthEnd)
+      .get();
+    snap.forEach((doc) => {
+      const e = doc.data();
+      if (!e.endDate || e.endDate < monthStart) return;
+      // 多日事件：在範圍內的每一天都放一格，跟網頁月曆一致
+      for (let d = 1; d <= lastDay; d++) {
+        const ds = `${monthStart.slice(0, 8)}${String(d).padStart(2, '0')}`;
+        if (ds < e.startDate || ds > e.endDate) continue;
+        (eventsByDate[ds] = eventsByDate[ds] || []).push(e);
+      }
+    });
+  }
+  for (const list of Object.values(eventsByDate)) {
+    list.sort((a, b) => {
+      if (a.isAllDay && !b.isAllDay) return -1;
+      if (!a.isAllDay && b.isAllDay) return 1;
+      return (a.startTime || '00:00').localeCompare(b.startTime || '00:00');
+    });
+  }
+
+  const holidaysByDate = {};
+  (await getHolidayList()).forEach((h) => {
+    if (h.date >= monthStart && h.date <= monthEnd) holidaysByDate[h.date] = h.name;
+  });
+
+  const theme = flexThemeForToday(formatDateTW(new Date()));
+  const message = buildMonthCalendarFlex(y, mo, eventsByDate, holidaysByDate, theme);
+  return safeReply(client, ev.replyToken, withQuickReply(message));
+}
+
 async function incrementPushCount(uid, count = 1, category = 'other') {
   if (!count || count < 1) return;
   const monthKey = formatDateTW(new Date()).slice(0, 7); // YYYY-MM
@@ -3977,6 +4180,8 @@ function getHelpText(showFinanceHint = false) {
     '　週末／這週末',
     '　本月／這個月／整月行程',
     '　7月／2026/7　— 指定月份',
+    '　本月行事曆／下個月行事曆／7月行事曆',
+    '　　— 月曆格子圖，點一下直接開行事曆網頁',
     '　直接傳日期：「5/16」「週三」「下週一」',
     '　下一個 / 最近（接下來 5 件）',
     '',
@@ -5274,6 +5479,9 @@ exports.lineWebhook = onRequest(
             await safeReply(client, ev.replyToken, withQuickReply({
               type: 'text', text: getHelpText(ev.source?.type === 'user'),
             }));
+          } else if (parseMonthCalendarCommand(text)) {
+            const { y, mo } = parseMonthCalendarCommand(text);
+            await replyMonthCalendar(client, ev, y, mo);
           } else if (text === '下一個' || text === '下個' || text === 'next') {
             await replyNextEvents(client, ev, 1);
           } else if (text === '最近' || text === '即將' || text === '即將到來') {
